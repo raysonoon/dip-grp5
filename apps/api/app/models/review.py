@@ -50,6 +50,11 @@ class Review(Base):
         nullable=False,
         server_default=func.now(),
     )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        onupdate=func.now(),
+    )
 
     user: Mapped["User"] = relationship(back_populates="reviews")
     vendor: Mapped["Vendor"] = relationship(back_populates="reviews")

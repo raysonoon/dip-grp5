@@ -1,0 +1,35 @@
+Data Needed for the Chatbot
+
+Required information:
+
+Stall name
+
+Location or food court
+
+Cuisine type
+
+Short food description
+
+Average price
+
+Halal: Yes / No / Unknown
+
+Vegetarian: Yes / No / Unknown
+
+Opening hours
+
+Useful tags, such as spicy, filling, or large portion
+
+Information source
+
+If available, also provide student reviews with:
+
+Stall name
+
+Rating
+
+Review comment
+
+Please use Unknown for missing information and do not guess.
+
+No prompts or chatbot code are required.

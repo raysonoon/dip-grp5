@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ReviewCreate(BaseModel):
@@ -26,6 +26,37 @@ class ReviewCreate(BaseModel):
         return normalized or None
 
 
+class ReviewUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rating: float | None = Field(default=None, ge=1.0, le=5.0)
+    comment: str | None = None
+
+    @field_validator("rating")
+    @classmethod
+    def rating_must_use_half_star_steps(cls, value: float | None) -> float | None:
+        if value is not None and not (value * 2).is_integer():
+            raise ValueError("rating must use 0.5-star increments")
+        return value
+
+    @field_validator("comment")
+    @classmethod
+    def normalize_comment(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def require_an_edit(self) -> "ReviewUpdate":
+        editable_fields = self.model_fields_set & {"rating", "comment"}
+        if not editable_fields:
+            raise ValueError("at least one of rating or comment must be provided")
+        if "rating" in editable_fields and self.rating is None:
+            raise ValueError("rating cannot be null")
+        return self
+
+
 class ReviewRead(BaseModel):
     id: int
     user_id: int
@@ -33,11 +64,13 @@ class ReviewRead(BaseModel):
     rating: float
     comment: str | None
     created_at: datetime
+    updated_at: datetime | None
+    is_edited: bool
 
 
 class ReviewUserRead(BaseModel):
     id: int
-    username: str
+    display_name: str
     affiliation: str | None
 
 
@@ -63,6 +96,8 @@ class ReviewDetailRead(BaseModel):
     rating: float
     comment: str | None
     created_at: datetime
+    updated_at: datetime | None
+    is_edited: bool
     user: ReviewUserRead
     vendor: ReviewVendorRead
     images: list[ReviewImageRead]

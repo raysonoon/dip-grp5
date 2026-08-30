@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, Response, status
@@ -12,6 +13,7 @@ from app.schemas import (
     ReviewImageRead,
     ReviewListRead,
     ReviewRead,
+    ReviewUpdate,
     ReviewUserRead,
     ReviewVendorRead,
 )
@@ -26,16 +28,22 @@ def _review_detail(review: Review) -> ReviewDetailRead:
         rating=review.rating_half_steps / 2,
         comment=review.comment,
         created_at=review.created_at,
+        updated_at=review.updated_at,
+        is_edited=review.updated_at is not None,
         user=ReviewUserRead(
             id=review.user.id,
-            username=review.user.username,
+            display_name=review.user.display_name,
             affiliation=review.user.affiliation,
         ),
         vendor=ReviewVendorRead(
             id=review.vendor.id,
             name=review.vendor.name,
             location=review.vendor.location,
-            image_url=review.vendor.image_url,
+            image_url=(
+                review.vendor.images[0].image_url
+                if review.vendor.images
+                else None
+            ),
             category=review.vendor.category,
             opening_hours=review.vendor.opening_hours,
         ),
@@ -49,6 +57,19 @@ def _review_detail(review: Review) -> ReviewDetailRead:
             )
             for image in review.images
         ],
+    )
+
+
+def _review_read(review: Review) -> ReviewRead:
+    return ReviewRead(
+        id=review.id,
+        user_id=review.user_id,
+        vendor_id=review.vendor_id,
+        rating=review.rating_half_steps / 2,
+        comment=review.comment,
+        created_at=review.created_at,
+        updated_at=review.updated_at,
+        is_edited=review.updated_at is not None,
     )
 
 
@@ -70,7 +91,7 @@ def list_reviews(
         select(Review)
         .options(
             selectinload(Review.user),
-            selectinload(Review.vendor),
+            selectinload(Review.vendor).selectinload(Vendor.images),
             selectinload(Review.images),
         )
         .where(*filters)
@@ -96,7 +117,7 @@ def get_review(
         select(Review)
         .options(
             selectinload(Review.user),
-            selectinload(Review.vendor),
+            selectinload(Review.vendor).selectinload(Vendor.images),
             selectinload(Review.images),
         )
         .where(Review.id == review_id)
@@ -108,6 +129,43 @@ def get_review(
         )
 
     return _review_detail(review)
+
+
+@router.patch("/{review_id}", response_model=ReviewRead)
+def update_review(
+    review_id: Annotated[int, Path(gt=0)],
+    review_data: ReviewUpdate,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ReviewRead:
+    review = session.get(Review, review_id)
+    if review is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Review not found",
+        )
+
+    if review.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You may edit only your own reviews",
+        )
+
+    if "rating" in review_data.model_fields_set:
+        rating = review_data.rating
+        if rating is None:  # Defensive guard; ReviewUpdate rejects this input.
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="rating cannot be null",
+            )
+        review.rating_half_steps = int(rating * 2)
+    if "comment" in review_data.model_fields_set:
+        review.comment = review_data.comment
+    review.updated_at = datetime.now(timezone.utc)
+
+    session.commit()
+    session.refresh(review)
+    return _review_read(review)
 
 
 @router.delete("/{review_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -159,11 +217,4 @@ def create_review(
     session.commit()
     session.refresh(review)
 
-    return ReviewRead(
-        id=review.id,
-        user_id=review.user_id,
-        vendor_id=review.vendor_id,
-        rating=review.rating_half_steps / 2,
-        comment=review.comment,
-        created_at=review.created_at,
-    )
+    return _review_read(review)
