@@ -4,10 +4,17 @@ from app.schemas.review import (
     ReviewImageRead,
     ReviewListRead,
     ReviewRead,
+    ReviewUpdate,
     ReviewUserRead,
     ReviewVendorRead,
 )
-from app.schemas.vendor import VendorListItem, VendorListRead
+from app.schemas.vendor import (
+    VendorImageCreate,
+    VendorImageRead,
+    VendorImageUpdate,
+    VendorListItem,
+    VendorListRead,
+)
 
 __all__ = [
     "ReviewCreate",
@@ -15,8 +22,12 @@ __all__ = [
     "ReviewImageRead",
     "ReviewListRead",
     "ReviewRead",
+    "ReviewUpdate",
     "ReviewUserRead",
     "ReviewVendorRead",
+    "VendorImageCreate",
+    "VendorImageRead",
+    "VendorImageUpdate",
     "VendorListItem",
     "VendorListRead",
 ]

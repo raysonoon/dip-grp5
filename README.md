@@ -102,6 +102,7 @@ Python 3.12 and Docker Desktop are used for local backend development.
 ### First-time setup
 
 ```powershell
+Set-Location apps\api
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -125,15 +126,20 @@ Create or update the database tables, then seed the local placeholder data:
 
 The repeatable seed command creates or confirms these local placeholders:
 
-| Type | Name | Password/role |
+| Type | Display name / email | Password/role |
 | --- | --- | --- |
-| Administrator | `admin` | password `admin`, role `admin` |
-| Normal user | `test_user` | password `test`, role `user` |
+| Administrator | `Administrator` / `admin@local.invalid` | password `admin`, role `admin` |
+| Normal user | `Test User` / `test-user@local.invalid` | password `test`, role `user` |
 | Food stall | `Demo Vendor 1` | `Demo Canteen` |
 | Food stall | `Demo Vendor 2` | `Demo Canteen` |
 
 Passwords are stored as Argon2 hashes. Running the seed command again does not
 create duplicate placeholders. Its output shows the generated IDs.
+Email addresses are trimmed and preserved for display and delivery. A separate
+lowercase canonical value enforces uniqueness without regard to case. Display
+names are not unique and may be shared by multiple users.
+The optional `affiliation` field is retained as part of the user profile and is
+included with the public review-author summary.
 
 ### Temporary local authentication
 
@@ -162,7 +168,7 @@ environment.
 
 ## Run the API
 
-Start FastAPI from the project root:
+Start FastAPI from `apps/api`:
 
 ```powershell
 .\.venv\Scripts\python.exe -m fastapi dev app\main.py
@@ -219,8 +225,30 @@ http://127.0.0.1:8000/reviews?vendor_id=3&limit=20&offset=0
 ```
 
 Each returned review includes its user, vendor, rating, optional comment,
-creation time, and image metadata. The list response also includes `total`,
-`limit`, and `offset` so the frontend can build pagination controls.
+creation time, optional `updated_at`, `is_edited`, and image metadata. Public
+user data exposes `display_name`, not the email address. The list response also
+includes `total`, `limit`, and `offset` so the frontend can build pagination.
+
+### Edit a review
+
+`PATCH /reviews/{review_id}` allows the review author to change the rating,
+comment, or both. The API rejects edits by other users. A successful edit sets
+`updated_at` and returns `is_edited: true`, which the frontend can render as
+`(edited)`.
+
+```powershell
+$body = @{
+    rating = 4.5
+    comment = "Updated review"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+    -Method Patch `
+    -Uri http://127.0.0.1:8000/reviews/1 `
+    -Headers @{ "X-Dev-User-Id" = "1" } `
+    -ContentType "application/json" `
+    -Body $body
+```
 
 ### Delete a review
 
@@ -257,9 +285,40 @@ It supports:
 | `limit` | `100` | Number of food stalls to return; maximum `100` |
 | `offset` | `0` | Number of food stalls to skip for pagination |
 
-Each item contains the vendor fields, `review_count`, and `average_rating`.
-The average is calculated from current reviews and is `null` when a food stall
-has no reviews.
+Vendor images are stored in the separate `vendor_images` table. Each item
+contains an ordered `images` list and retains a derived `image_url` containing
+the first image for frontend compatibility. Items also contain `updated_at`,
+`review_count`, and `average_rating`. The average is calculated from current
+reviews and is `null` when a food stall has no reviews.
+
+Vendor image metadata can be managed through these endpoints:
+
+```text
+GET    /vendors/{vendor_id}/images
+POST   /vendors/{vendor_id}/images
+PATCH  /vendors/{vendor_id}/images/{image_id}
+DELETE /vendors/{vendor_id}/images/{image_id}
+```
+
+Reading is public. Creating, editing, reordering, and deleting images require an
+administrator through the temporary development authentication dependency.
+`POST` accepts `image_url` and an optional positive `display_order`; when the
+order is omitted, the API appends the image. The first ordered image is the
+vendor thumbnail. This API stores image URLs and metadata only—it does not
+upload binary image files.
+
+### Chatbot prompt storage
+
+The `chatbot_prompts` table first stores the curated example questions used to
+design the chatbot. Each question has a stable key, its original text, a concise
+question scope, a search type (`SQL`, `Vector`, or `SQL + Vector`), source-file
+metadata, an `is_active` switch, and timestamps. `prompt_template` remains
+nullable until prompt authoring begins.
+
+The repeatable development seed imports 59 unique questions from
+`DIP AI chatbot questions.xlsx` and `DIP Chatbot Schema.xlsx`. One exact question
+appears in both files and is stored once with both sources. Prompt lookup APIs
+and the LLM connection are intentionally left for the next chatbot step.
 
 Run the schema and database integration tests:
 
