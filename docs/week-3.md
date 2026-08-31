@@ -3,12 +3,12 @@
   - [x] users table
     - [x] sign in with email
     - [x] use display_name instead of username
-    - [ ] is affiliation necessary?
+    - [x] is affiliation necessary? optional
   - [ ] vendors table
-    - [ ] multi-image gallery
-      - [ ] include vendor images
-    - [ ] follow kai schema + image_url + created_at
-      - [ ] rename last_updated to updated_at
+    - [x] multi-image gallery
+      - [x] include vendor images table
+      - [x] rename last_updated to updated_at
+      - [ ] price_range, halal, vegetarian
   - [x] reviews table
     - [x] updated_at
     - [x] to allow user to edit their reviews? or delete and create new one?
@@ -16,10 +16,11 @@
     - [x] limit to 5?
 - [x] Refactor backend into repo  
 - Setup backend
-  - [ ] Download docker
-  - [ ] Download postgresql
-  - [ ] env variables
-  - [ ] test API
+  - [x] Download docker
+  - [x] Download postgresql
+  - [x] env variables
+  - [x] test API
+  > only BE ppl
 - Finalise UI/UX
   - Bring map to homepage
   - Homepage and discover
