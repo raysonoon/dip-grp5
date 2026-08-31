@@ -1,92 +1,103 @@
 # dip-grp5
 
 ## Folder structure
-dip-grp-5/
-├── package.json                          # Root orchestration & workspace scripts
-├── package-lock.json
-├── .prettierrc                           # Shared Prettier rules
-├── .prettierignore                       # Ignore build dirs, python files, etc.
-├── docker-compose.yml                    # Root Postgres (pgvector) container
-├── .env.example                          # Root environment variable template
-├── .gitignore
+
+```text
+dip-grp5/
 ├── README.md
+├── chatbot.md                          # Chatbot RAG vector-search design notes
+├── .gitignore
+├── diagrams/
+│   ├── dip_architecture_220826.jpg     # Software architecture overview
+│   └── rag_chabot.jpg                  # Chatbot RAG flow
+├── docs/
+│   ├── DIP AI chatbot questions.xlsx   # Curated chatbot questions workbook
+│   ├── DIP Chatbot Schema.xlsx         # Chatbot schema workbook
+│   ├── Still NEED.txt
+│   ├── TODO.md
+│   ├── week-3.md
+│   └── What Baihao Did wk 3.md
 │
-├── apps/
-│   ├── api/                              # FastAPI Backend
-│   │   ├── app/
-│   │   │   ├── main.py
-│   │   │   ├── api/
-│   │   │   │   ├── dependencies.py
-│   │   │   │   └── routes/
-│   │   │   │       ├── reviews.py
-│   │   │   │       └── vendors.py
-│   │   │   ├── core/
-│   │   │   │   ├── config.py
-│   │   │   │   └── security.py
-│   │   │   ├── db/
-│   │   │   │   ├── alembic/              # Co-located migration environment
-│   │   │   │   │   ├── versions/
-│   │   │   │   │   ├── env.py
-│   │   │   │   │   └── script.py.mako
-│   │   │   │   ├── base.py
-│   │   │   │   ├── seed.py
-│   │   │   │   └── session.py
-│   │   │   ├── models/
-│   │   │   │   ├── review.py
-│   │   │   │   ├── user.py
-│   │   │   │   └── vendor.py
-│   │   │   └── schemas/
-│   │   │       ├── review.py
-│   │   │       └── vendor.py
-│   │   ├── docker/
-│   │   │   └── init/
-│   │   │       └── 01-enable-vector.sql
-│   │   ├── docs/
-│   │   │   ├── community-review-database-design.md
-│   │   │   ├── community-review-erd.png
-│   │   │   ├── community-review-erd.svg
-│   │   │   └── tables/
-│   │   ├── tests/
-│   │   │   ├── test_create_review_api.py
-│   │   │   ├── test_database_integration.py
-│   │   │   ├── test_dev_auth.py
-│   │   │   ├── test_model_metadata.py
-│   │   │   └── test_vendor_api.py
-│   │   ├── .venv/                        # Gitignored local virtual environment
-│   │   ├── .env.example
-│   │   ├── alembic.ini
-│   │   ├── Manual.md
-│   │   ├── pytest.ini
-│   │   └── requirements.txt              # Ruff / Black / Flake8 configured here
-│   │
-│   └── web/                              # Vite + React (TS) SPA Frontend
-│       ├── index.html
-│       ├── package.json                  # App dependencies + ESLint/Prettier callers
-│       ├── eslint.config.js              # App-specific ESLint config (extends workspace base)
-│       ├── tsconfig.json
-│       ├── tsconfig.node.json
-│       ├── vite.config.ts                # Dev proxy settings
-│       ├── public/
-│       │   └── favicon.svg
-│       └── src/
-│           ├── main.tsx
-│           ├── App.tsx
-│           ├── App.css
-│           ├── index.css
-│           ├── vite-env.d.ts
-│           ├── components/               # Shared / Atomic UI elements (Buttons, Modals)
-│           ├── features/                 # Domain-driven feature modules
-│           │   ├── reviews/              # Review UI, hooks, and sub-components
-│           │   └── vendors/              # Vendor UI, hooks, and sub-components
-│           ├── lib/                      # Axios/Fetch API client instances
-│           ├── pages/                    # Router page view components
-│           └── types/                    # Frontend TypeScript interfaces
-│
-└── packages/                             # Workspace shared packages
-    └── config-eslint/                    # Centralized ESLint Flat Config package
-        ├── package.json
-        ├── base.js                       # Shared JS/TS rules
-        └── react.js                      # React + Hooks + Vite plugin rules
+└── apps/
+    ├── api/                            # FastAPI backend
+        ├── app/
+        │   ├── main.py                 # App entrypoint + router registration
+        │   ├── api/
+        │   │   ├── dependencies.py     # Dev auth + DB session dependencies
+        │   │   └── routes/
+        │   │       ├── reviews.py
+        │   │       └── vendors.py
+        │   ├── core/
+        │   │   ├── config.py           # Pydantic settings (env vars)
+        │   │   └── security.py         # Argon2 password hashing
+        │   ├── db/
+        │   │   ├── base.py             # Shared declarative Base + naming convention
+        │   │   ├── vector_base.py      # Separate Base for pgvector tables
+        │   │   ├── chatbot_question_data.py  # Curated 59 question rows
+        │   │   ├── seed.py             # Repeatable dev seed
+        │   │   └── session.py          # Engine + session factory
+        │   ├── models/                 # SQLAlchemy ORM (database tables)
+        │   │   ├── chatbot_prompt.py
+        │   │   ├── knowledge.py        # knowledge_chunks (vector RAG)
+        │   │   ├── review.py
+        │   │   ├── user.py
+        │   │   └── vendor.py
+        │   └── schemas/                # Pydantic API request/response DTOs
+        │       ├── review.py
+        │       └── vendor.py
+        ├── alembic/                    # Database migrations
+        │   ├── env.py
+        │   ├── script.py.mako
+        │   └── versions/
+        │       ├── 66ba667f797c_create_community_review_schema.py
+        │       ├── a8f1c2d3e4b5_add_user_vendor_and_review_updates.py
+        │       ├── d9e7f6a5b4c3_make_email_case_insensitively_unique.py
+        │       ├── e2c4b6a8d0f1_preserve_email_and_add_canonical_identity.py
+        │       ├── f4a6b8c0d2e3_create_chatbot_prompts.py
+        │       ├── g5b7c9d1e3f4_store_chatbot_questions.py
+        │       └── 176565c7b04e_create_knowledge_chunks.py
+        ├── docker/
+        │   └── init/
+        │       └── 01-enable-vector.sql # Enables the pgvector extension
+        ├── tests/
+        │   ├── conftest.py
+        │   ├── test_backend_todo_updates.py
+        │   ├── test_chatbot_prompt_model.py
+        │   └── test_vendor_image_api.py
+        ├── alembic.ini
+        ├── compose.yaml                # Local Postgres (pgvector) container
+        ├── manual_wk3.md
+        ├── requirements.txt
+        ├── .env.example
+        └── .venv/                      # Gitignored local virtual environment
+    │
+    └── web/                            # Vite + React (TS) SPA frontend (sample)
+        ├── index.html
+        ├── package.json                # App dependencies + ESLint/Prettier callers
+        ├── eslint.config.js            # App-specific ESLint config
+        ├── tsconfig.json
+        ├── tsconfig.node.json
+        ├── vite.config.ts              # Dev proxy settings
+        ├── public/
+        │   └── favicon.svg
+        └── src/
+            ├── main.tsx
+            ├── App.tsx
+            ├── App.css
+            ├── index.css
+            ├── vite-env.d.ts
+            ├── components/             # Shared / atomic UI elements (Buttons, Modals)
+            ├── features/               # Domain-driven feature modules
+            │   ├── reviews/            # Review UI, hooks, and sub-components
+            │   └── vendors/            # Vendor UI, hooks, and sub-components
+            ├── lib/                    # Axios/Fetch API client instances
+            ├── pages/                  # Router page view components
+            └── types/                  # Frontend TypeScript interfaces
+```
+
+## Architecture
+
+![software architecture](diagrams/dip_architecture_220826.jpg)
 
 ## Project documentation
 

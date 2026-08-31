@@ -1,0 +1,30 @@
+## 26/8/26
+- Settle database schema
+  - [x] users table
+    - [x] sign in with email
+    - [x] use display_name instead of username
+    - [ ] is affiliation necessary?
+  - [ ] vendors table
+    - [ ] multi-image gallery
+      - [ ] include vendor images
+    - [ ] follow kai schema + image_url + created_at
+      - [ ] rename last_updated to updated_at
+  - [x] reviews table
+    - [x] updated_at
+    - [x] to allow user to edit their reviews? or delete and create new one?
+  - [x] review_images table
+    - [x] limit to 5?
+- [x] Refactor backend into repo  
+- Setup backend
+  - [ ] Download docker
+  - [ ] Download postgresql
+  - [ ] env variables
+  - [ ] test API
+- Finalise UI/UX
+  - Bring map to homepage
+  - Homepage and discover
+  - Community review
+    - Omit name field? Get display name from user db
+  - To add menu info in stall/vendor page?
+    - Or just pictures, like a gallery
+- Setup frontend
