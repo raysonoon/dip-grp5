@@ -1,13 +1,29 @@
 from logging.config import fileConfig
 
+from alembic import context
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
-from alembic import context
-
 from app.core.config import settings
 from app.db.base import Base
+from app.db.vector_base import VectorBase
 from app import models  # noqa: F401 - registers all model tables
+from app.models import knowledge  # noqa: F401 - registers pgvector tables
+
+
+def render_item(
+    type_: str,
+    obj: object,
+    autogen_context: object,
+) -> str | bool:
+    """Render pgvector types as ``Vector(dim)`` with the import emitted."""
+    if type_ == "type" and isinstance(obj, Vector):
+        autogen_context.imports.add("from pgvector.sqlalchemy import Vector")
+        if obj.dim is None:
+            return "Vector()"
+        return f"Vector({obj.dim})"
+    return False
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -27,7 +43,7 @@ config.set_main_option(
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = Base.metadata
+target_metadata = [Base.metadata, VectorBase.metadata]
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -53,6 +69,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        render_item=render_item,
     )
 
     with context.begin_transaction():
@@ -77,6 +94,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            render_item=render_item,
         )
 
         with context.begin_transaction():

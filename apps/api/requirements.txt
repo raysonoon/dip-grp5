@@ -7,3 +7,4 @@ pydantic-settings==2.15.0
 pytest==9.1.1
 httpx==0.28.1
 pwdlib[argon2]==0.3.1
+google-genai==2.20.0

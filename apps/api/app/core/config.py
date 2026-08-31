@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     seed_test_password: SecretStr = SecretStr("test")
     dev_auth_enabled: bool = False
 
+    gemini_api_key: SecretStr | None = None
+    embedding_model: str = "text-embedding-004"
+    embedding_dimensions: int = 768
+    embedding_batch_size: int = 100
+    chat_model: str = "gemini-2.5-flash-lite"
+    vector_top_k: int = 8
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
