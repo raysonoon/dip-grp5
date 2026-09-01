@@ -1,4 +1,4 @@
-# dip-grp5
+git checkout -b feature/explore-page# dip-grp5
 
 ## Folder structure
 
