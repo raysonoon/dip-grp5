@@ -1,6 +1,6 @@
 import csv
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.db.chatbot_question_data import CHATBOT_QUESTION_ROWS
 from app.db.session import SessionLocal
-from app.models import ChatbotPrompt, Review, User, Vendor
+from app.models import ChatbotPrompt, GoogleReview, User, Vendor
 
 
 DEMO_VENDORS = (
@@ -166,10 +166,7 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
 
     existing_review_ids = set(
         session.scalars(
-            select(Review.external_review_id).where(
-                Review.source == "google",
-                Review.external_review_id.is_not(None),
-            )
+            select(GoogleReview.external_review_id)
         ).all()
     )
 
@@ -199,19 +196,24 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
 
             rating = float(row["rating"])
 
-            review = Review(
-                user_id=None,
+            published_at = datetime.fromisoformat(
+                row["published_at_date"].strip()
+            )
+
+            if published_at.tzinfo is None:
+                published_at = published_at.replace(
+                    tzinfo=timezone.utc
+                )
+
+            google_review = GoogleReview(
                 vendor_id=vendor.id,
-                source="google",
                 external_review_id=external_review_id,
                 rating_half_steps=round(rating * 2),
                 comment=(row["review_text"] or "").strip() or None,
-                created_at=datetime.fromisoformat(
-                    row["published_at_date"].strip()
-                ),
+                published_at=published_at,
             )
 
-            session.add(review)
+            session.add(google_review)
             existing_review_ids.add(external_review_id)
             created_count += 1
 

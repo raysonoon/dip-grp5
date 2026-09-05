@@ -26,8 +26,7 @@ V024,Food Court 9,Hall9-01-FC,Canteen,Daily: 7am to 9pm,$1-10,null,FALSE
 V025,Food Court @ NIE,NIE4,Canteen,"Mon to Fri: 8am to 3pm; Sat, Sun & PH: Closed; 15 Dec 2025 - 4 Jan 2026: Closed",$1-10,null,TRUE
 V026,Geláre,NS3-01-19,Café/Restaurant,Mon - Fri: 10am to 8pm; Sat: 10am to 7pm; Sun & PH: Closed,$10-20,TRUE,TRUE
 V027,Hill Yard North Hill,TJH-01-03,Café/Restaurant,Daily: 10am to 10pm,$10-20,FALSE,FALSE
-V028,"June's Breathe Cafe
-@ LKC Medicine",EMB-03-Café,Café/Restaurant,"Mon to Fri: 8am to 5pm; Sat, Sun & PH: Closed",$1-10,FALSE,TRUE
+V028,"June's Breathe Cafe @ LKC Medicine",EMB-03-Café,Café/Restaurant,"Mon to Fri: 8am to 5pm; Sat, Sun & PH: Closed",$1-10,FALSE,TRUE
 V029,luckin coffee,SS3-B4-03,Coffee,"Mon to Fri: 8am to 8pm; Sat, Sun & PH: 9am to 8pm",$1-10,TRUE,TRUE
 V030,Mad Roaster at SHHK,SHHK-01-01,Coffee,"Mon to Fri: 9am to 4pm; Sat, Sun & PH: Closed",$1-10,FALSE,TRUE
 V031,Malay Stall at South Spine (from Canteen 11),SS1-01-05A,Fast Food/Takeout,"Sat, Sun and PH: Closed; Mon to Fri: 8am to 3pm",$1-10,TRUE,FALSE

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.google_review import GoogleReview
     from app.models.review import Review
 
 
@@ -33,9 +34,9 @@ class Vendor(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
-    directory_id: Mapped[str] = mapped_column(
+    directory_id: Mapped[str | None] = mapped_column(
         String(10),
-        nullable=False,
+        nullable=True,
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -54,6 +55,9 @@ class Vendor(Base):
     )
 
     reviews: Mapped[list["Review"]] = relationship(back_populates="vendor")
+    google_reviews: Mapped[list["GoogleReview"]] = relationship(
+        back_populates="vendor"
+    )
     images: Mapped[list["VendorImage"]] = relationship(
         back_populates="vendor",
         cascade="all, delete-orphan",

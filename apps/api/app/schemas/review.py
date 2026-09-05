@@ -59,10 +59,8 @@ class ReviewUpdate(BaseModel):
 
 class ReviewRead(BaseModel):
     id: int
-    user_id: int | None
+    user_id: int
     vendor_id: int
-    source: str
-    external_review_id: str | None
     rating: float
     comment: str | None
     created_at: datetime
@@ -95,14 +93,12 @@ class ReviewImageRead(BaseModel):
 
 class ReviewDetailRead(BaseModel):
     id: int
-    source: str
-    external_review_id: str | None
     rating: float
     comment: str | None
     created_at: datetime
     updated_at: datetime | None
     is_edited: bool
-    user: ReviewUserRead | None
+    user: ReviewUserRead
     vendor: ReviewVendorRead
     images: list[ReviewImageRead]
 

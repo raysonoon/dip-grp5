@@ -25,21 +25,15 @@ router = APIRouter(prefix="/reviews", tags=["reviews"])
 def _review_detail(review: Review) -> ReviewDetailRead:
     return ReviewDetailRead(
         id=review.id,
-        source=review.source,
-        external_review_id=review.external_review_id,
         rating=review.rating_half_steps / 2,
         comment=review.comment,
         created_at=review.created_at,
         updated_at=review.updated_at,
         is_edited=review.updated_at is not None,
-        user=(
-            ReviewUserRead(
-                id=review.user.id,
-                display_name=review.user.display_name,
-                affiliation=review.user.affiliation,
-            )
-            if review.user is not None
-            else None
+        user=ReviewUserRead(
+            id=review.user.id,
+            display_name=review.user.display_name,
+            affiliation=review.user.affiliation,
         ),
         vendor=ReviewVendorRead(
             id=review.vendor.id,
@@ -71,8 +65,6 @@ def _review_read(review: Review) -> ReviewRead:
         id=review.id,
         user_id=review.user_id,
         vendor_id=review.vendor_id,
-        source=review.source,
-        external_review_id=review.external_review_id,
         rating=review.rating_half_steps / 2,
         comment=review.comment,
         created_at=review.created_at,
@@ -218,8 +210,6 @@ def create_review(
     review = Review(
         user_id=current_user.id,
         vendor_id=vendor.id,
-        source="app",
-        external_review_id=None,
         rating_half_steps=int(review_data.rating * 2),
         comment=review_data.comment,
     )
