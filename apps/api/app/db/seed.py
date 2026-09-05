@@ -1,3 +1,6 @@
+import csv
+from pathlib import Path
+from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -5,7 +8,7 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.db.chatbot_question_data import CHATBOT_QUESTION_ROWS
 from app.db.session import SessionLocal
-from app.models import ChatbotPrompt, User, Vendor
+from app.models import ChatbotPrompt, Review, User, Vendor
 
 
 DEMO_VENDORS = (
@@ -22,7 +25,18 @@ DEMO_VENDORS = (
         "opening_hours": "10:00 - 22:00",
     },
 )
+NTU_VENDOR_CSV = (
+    Path(__file__).resolve().parents[4]
+    / "data"
+    / "fnb-directory-v2.csv"
+)
 
+GOOGLE_REVIEWS_CSV = (
+    Path(__file__).resolve().parents[4]
+    / "data"
+    / "google_reviews"
+    / "ntu_detailed_reviews_final.csv"
+)
 
 def _seed_user(
     session: Session,
@@ -105,6 +119,107 @@ def seed_demo_vendors(session: Session) -> list[tuple[Vendor, bool]]:
     return results
 
 
+def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
+    results: list[tuple[Vendor, bool]] = []
+
+    with NTU_VENDOR_CSV.open(newline="", encoding="utf-8-sig") as file:
+        reader = csv.DictReader(file)
+
+        for row in reader:
+            directory_id = row["id"].strip()
+
+            vendor = session.scalar(
+                select(Vendor).where(
+                    Vendor.directory_id == directory_id
+                )
+            )
+
+            if vendor is not None:
+                results.append((vendor, False))
+                continue
+
+            vendor = Vendor(
+                directory_id=directory_id,
+                name=row["name"].strip(),
+                location=row["location"].strip() or None,
+                category=row["category"].strip() or None,
+                opening_hours=row["opening_hours"].strip() or None,
+            )
+            session.add(vendor)
+            session.commit()
+            session.refresh(vendor)
+            results.append((vendor, True))
+
+    return results
+
+def seed_google_reviews(session: Session) -> tuple[int, int, int]:
+    created_count = 0
+    skipped_count = 0
+    missing_vendor_count = 0
+
+    vendors_by_directory_id = {
+        vendor.directory_id: vendor
+        for vendor in session.scalars(
+            select(Vendor).where(Vendor.directory_id.is_not(None))
+        ).all()
+    }
+
+    existing_review_ids = set(
+        session.scalars(
+            select(Review.external_review_id).where(
+                Review.source == "google",
+                Review.external_review_id.is_not(None),
+            )
+        ).all()
+    )
+
+    with GOOGLE_REVIEWS_CSV.open(
+        newline="",
+        encoding="utf-8-sig",
+    ) as file:
+        reader = csv.DictReader(file)
+
+        for row in reader:
+            directory_id = row["ID"].strip()
+            external_review_id = row["review_id"].strip()
+
+            if external_review_id in existing_review_ids:
+                skipped_count += 1
+                continue
+
+            vendor = vendors_by_directory_id.get(directory_id)
+
+            if vendor is None:
+                print(
+                    f"Skipping review {external_review_id}: "
+                    f"vendor {directory_id} not found"
+                )
+                missing_vendor_count += 1
+                continue
+
+            rating = float(row["rating"])
+
+            review = Review(
+                user_id=None,
+                vendor_id=vendor.id,
+                source="google",
+                external_review_id=external_review_id,
+                rating_half_steps=round(rating * 2),
+                comment=(row["review_text"] or "").strip() or None,
+                created_at=datetime.fromisoformat(
+                    row["published_at_date"].strip()
+                ),
+            )
+
+            session.add(review)
+            existing_review_ids.add(external_review_id)
+            created_count += 1
+
+    session.commit()
+
+    return created_count, skipped_count, missing_vendor_count
+
+
 def seed_chatbot_questions(session: Session) -> tuple[int, int]:
     """Insert or refresh the curated workbook questions without prompts."""
     created_count = 0
@@ -161,6 +276,10 @@ def main() -> None:
         admin, admin_created = seed_development_admin(session)
         test_user, test_user_created = seed_development_user(session)
         vendors = seed_demo_vendors(session)
+        ntu_vendors = seed_ntu_vendors(session)
+        google_reviews_created, google_reviews_skipped, google_reviews_missing = (
+            seed_google_reviews(session)
+        )
         chatbot_created, chatbot_updated = seed_chatbot_questions(session)
 
     admin_action = "Created" if admin_created else "Confirmed"
@@ -177,6 +296,18 @@ def main() -> None:
     for vendor, created in vendors:
         action = "Created" if created else "Confirmed"
         print(f"{action} demo vendor: {vendor.name} (id={vendor.id})")
+    for vendor, created in ntu_vendors:
+        action = "Created" if created else "Confirmed"
+        print(
+            f"{action} NTU vendor: {vendor.directory_id} - "
+            f"{vendor.name} (id={vendor.id})"
+    )
+    print(
+        "Google reviews: "
+        f"created={google_reviews_created}, "
+        f"skipped={google_reviews_skipped}, "
+        f"missing_vendor={google_reviews_missing}"
+    )
     print(
         "Chatbot workbook questions: "
         f"created={chatbot_created}, updated={chatbot_updated}, "

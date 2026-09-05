@@ -25,7 +25,18 @@ if TYPE_CHECKING:
 class Vendor(Base):
     __tablename__ = "vendors"
 
+    __table_args__ = (
+        UniqueConstraint(
+            "directory_id",
+            name="uq_vendors_directory_id",
+        ),
+    )
+
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
+    directory_id: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)

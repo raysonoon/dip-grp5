@@ -30,19 +30,39 @@ class Review(Base):
             "rating_half_steps BETWEEN 2 AND 10",
             name="rating_half_steps_range",
         ),
+        CheckConstraint(
+            "source IN ('app', 'google')",
+            name="review_source_allowed",
+        ),
+        UniqueConstraint(
+            "source",
+            "external_review_id",
+            name="uq_reviews_source_external_review_id",
+        ),
         Index("ix_reviews_user_id", "user_id"),
         Index("ix_reviews_vendor_created_at", "vendor_id", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
-    user_id: Mapped[int] = mapped_column(
+    user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
     )
     vendor_id: Mapped[int] = mapped_column(
         ForeignKey("vendors.id", ondelete="RESTRICT"),
         nullable=False,
     )
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="app",
+    )
+
+    external_review_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
     rating_half_steps: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
