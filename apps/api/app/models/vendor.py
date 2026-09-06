@@ -8,6 +8,7 @@ from sqlalchemy import (
     Identity,
     Index,
     Integer,
+    Numeric,
     SmallInteger,
     String,
     Text,
@@ -31,6 +32,11 @@ class Vendor(Base):
             "directory_id",
             name="uq_vendors_directory_id",
         ),
+        CheckConstraint(
+            "average_google_rating IS NULL "
+            "OR average_google_rating BETWEEN 0 AND 5",
+            name="average_google_rating_range",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
@@ -42,6 +48,10 @@ class Vendor(Base):
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     opening_hours: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    average_google_rating: Mapped[float | None] = mapped_column(
+        Numeric(2, 1),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
