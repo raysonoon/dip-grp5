@@ -45,6 +45,26 @@ GOOGLE_RATINGS_CSV = (
     / "ntu_food_places_final.csv"
 )
 
+
+def _parse_nullable_bool(
+    raw_value: str,
+    *,
+    column_name: str,
+    directory_id: str,
+) -> bool | None:
+    normalized = raw_value.strip().lower()
+    if normalized in {"", "null"}:
+        return None
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise ValueError(
+        f"Invalid {column_name} value for vendor {directory_id}: "
+        f"{raw_value!r}"
+    )
+
+
 def _seed_user(
     session: Session,
     *,
@@ -134,6 +154,19 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
 
         for row in reader:
             directory_id = row["id"].strip()
+            vendor_metadata = {
+                "price_range": row["price_range"].strip() or None,
+                "halal": _parse_nullable_bool(
+                    row["halal"],
+                    column_name="halal",
+                    directory_id=directory_id,
+                ),
+                "vegetarian": _parse_nullable_bool(
+                    row["vegetarian"],
+                    column_name="vegetarian",
+                    directory_id=directory_id,
+                ),
+            }
 
             vendor = session.scalar(
                 select(Vendor).where(
@@ -142,6 +175,10 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
             )
 
             if vendor is not None:
+                for field, value in vendor_metadata.items():
+                    setattr(vendor, field, value)
+                session.commit()
+                session.refresh(vendor)
                 results.append((vendor, False))
                 continue
 
@@ -151,6 +188,7 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
                 location=row["location"].strip() or None,
                 category=row["category"].strip() or None,
                 opening_hours=row["opening_hours"].strip() or None,
+                **vendor_metadata,
             )
             session.add(vendor)
             session.commit()

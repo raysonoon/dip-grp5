@@ -4,11 +4,11 @@
     - [x] sign in with email
     - [x] use display_name instead of username
     - [x] is affiliation necessary? optional
-  - [ ] vendors table
+  - [x] vendors table
     - [x] multi-image gallery
       - [x] include vendor images table
       - [x] rename last_updated to updated_at
-      - [ ] price_range, halal, vegetarian
+    - [x] price_range, halal, vegetarian
   - [x] reviews table
     - [x] updated_at
     - [x] to allow user to edit their reviews? or delete and create new one?

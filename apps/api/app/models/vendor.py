@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -48,6 +49,9 @@ class Vendor(Base):
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     opening_hours: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    price_range: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    halal: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    vegetarian: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     average_google_rating: Mapped[float | None] = mapped_column(
         Numeric(2, 1),
         nullable=True,

@@ -2,3 +2,15 @@
 .venv/
 __pycache__/
 *.py[cod]
+
+# Local uploaded images. Keep the directory structure, not runtime files.
+uploads/vendor_images/*
+!uploads/vendor_images/.gitkeep
+!uploads/vendor_images/*/
+uploads/vendor_images/*/*
+!uploads/vendor_images/*/.gitkeep
+uploads/review_images/*
+!uploads/review_images/.gitkeep
+!uploads/review_images/*/
+uploads/review_images/*/*
+!uploads/review_images/*/.gitkeep

@@ -25,6 +25,9 @@ def _seed_records(session: Session) -> tuple[User, User, Vendor, Review]:
         location="North Spine",
         category="Asian",
         opening_hours="09:00 - 18:00",
+        price_range="$1-10",
+        halal=True,
+        vegetarian=False,
         images=[
             VendorImage(
                 image_url="https://example.com/second.jpg",
@@ -68,6 +71,9 @@ def test_user_and_vendor_storage_follow_the_new_schema(session: Session) -> None
 
     assert "image_url" not in vendor_columns
     assert "updated_at" in vendor_columns
+    assert "price_range" in vendor_columns
+    assert "halal" in vendor_columns
+    assert "vegetarian" in vendor_columns
     assert VendorImage.__tablename__ == "vendor_images"
 
 
@@ -133,6 +139,9 @@ def test_vendor_api_returns_ordered_images_and_compatibility_thumbnail(
     assert item["id"] == vendor.id
     assert item["image_url"] == "https://example.com/thumbnail.jpg"
     assert [image["display_order"] for image in item["images"]] == [1, 2]
+    assert item["price_range"] == "$1-10"
+    assert item["halal"] is True
+    assert item["vegetarian"] is False
     assert item["updated_at"] is not None
 
 

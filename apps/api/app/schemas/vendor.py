@@ -61,6 +61,9 @@ class VendorListItem(BaseModel):
     image_url: str | None
     category: str | None
     opening_hours: str | None
+    price_range: str | None
+    halal: bool | None
+    vegetarian: bool | None
     created_at: datetime
     updated_at: datetime
     average_rating: float | None
