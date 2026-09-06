@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Identity,
@@ -20,6 +21,12 @@ if TYPE_CHECKING:
 
 class GoogleReview(Base):
     __tablename__ = "google_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "rating BETWEEN 1 AND 5",
+            name="rating_range",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(
         Integer,
@@ -38,7 +45,7 @@ class GoogleReview(Base):
         unique=True,
     )
 
-    rating_half_steps: Mapped[int] = mapped_column(
+    rating: Mapped[int] = mapped_column(
         SmallInteger,
         nullable=False,
     )
