@@ -43,6 +43,7 @@ class Review(Base):
         ForeignKey("vendors.id", ondelete="RESTRICT"),
         nullable=False,
     )
+
     rating_half_steps: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

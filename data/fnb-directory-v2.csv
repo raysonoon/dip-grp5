@@ -1,0 +1,57 @@
+﻿id,name,location,category,opening_hours,price_range,halal,vegetarian
+V001,7 Tea,NS3-01-07,Bubble Tea,Daily: 10am to 8pm,$1-10,FALSE,TRUE
+V002,A Hot Hideout,TJH-03-02,Café/Restaurant,Daily: 11.30am to 8.30pm,$10-20,FALSE,FALSE
+V003,Acai Guru,NS2.1-02-01/03,Dessert,Mon to Fri: 10am to 8pm; Sat: 10am to 2.30pm; Sun & PH: Closed,$1-10,FALSE,TRUE
+V004,Ananda's TAJ Restaurant,BJH-01-02,Café/Restaurant,Daily: 11.30am to 10.30pm,$10-20,TRUE,TRUE
+V005,ANDES by ASTONS,Hall13-01-13ANDES,Café/Restaurant,Daily: 11am to 8pm,$10-20,TRUE,FALSE
+V006,Bakery Cuisine,NS3-01-20,Bakery,Mon to Fri: 7am to 9pm; Sat & Sun: 8am to 6pm,$1-10,FALSE,TRUE
+V007,Bismillah Biryani,NS3-01-12,Fast Food/Takeout,Mon to Fri: 11.30am to 7.30pm; Sat: 11.30am to 5pm; Sun & PH: Closed,$10-20,TRUE,TRUE
+V008,Blue Ocean Kopi & Toast,N2.1-01-05,Fast Food/Takeout,Daily: 8am to 8.30pm (last order),$1-10,TRUE,FALSE
+V009,Boost Juice Bars,NS3-01-11,Juice,Mon to Fri: 10am to 9pm; Sat & Sun: 10am to 6pm; PH: Closed,$1-10,FALSE,TRUE
+V010,Chateraise Unmanned Store,NS3-01-08,Dessert,Daily: 24 hours,$1-10,FALSE,FALSE
+V011,CHICHA San Chen - North Spine,NS3-01-23,Bubble Tea,Mon to Fri: 10am to 7.30pm; Sat: 10am to 3pm; Sun & PH: Closed,$1-10,FALSE,TRUE
+V012,Co-op @ NTU Cafe,LHS-B5-ME3/4,Café/Restaurant,"Mon to Fri: 9.30am to 7pm; Sat, Sun & PH: Closed",$1-10,TRUE,TRUE
+V013,Coffee Faculty,SS1-01-05,Coffee,"School Term - Mon to Fri: 8am to 5pm; School Vacation - Mon to Fri: 8am to 3pm; Sat, Sun & PH: Closed",$1-10,FALSE,TRUE
+V014,Connect 71 Cafe (C71),NIC-03-23,Café/Restaurant,Mon to Fri: 9am to 9pm; Sat & Sun: By reservations only; PH: Closed,$10-20,FALSE,TRUE
+V015,Domino's Pizza (The Arc),LHN-B1-01,Fast Food/Takeout,Daily: 10.30am to 11pm,$10-20,TRUE,TRUE
+V016,Each-A-Cup,NS3-01-21,Bubble Tea,"Mon to Fri: 9am to 9pm; Sat, Sun & PH: 9am to 8pm",$1-10,TRUE,TRUE
+V017,Encik Tan,N2.1-01-04,Café/Restaurant,Daily: 9.30am to 7.45pm,$1-10,TRUE,FALSE
+V018,Food Court 1,Hall1-01-FC1,Canteen,Not stated,$1-10,FALSE,TRUE
+V019,Food Court 11,Hall11-01-FC,Canteen,Daily: 7am to 8pm,$1-10,null,FALSE
+V020,Food Court 14,Hall14-01-FC,Canteen,Daily: 7am to 10pm,$1-10,FALSE,FALSE
+V021,Food Court 16,Hall16-01-FC,Canteen,Daily: 7am to 10.30pm,$1-10,FALSE,FALSE
+V022,Food Court 2,Hall2-01-01,Canteen,Daily: 7am to 10pm,$1-10,FALSE,TRUE
+V023,Food Court 4,Hall4-01-FC,Canteen,Daily: 8am to 9pm,$1-10,FALSE,FALSE
+V024,Food Court 9,Hall9-01-FC,Canteen,Daily: 7am to 9pm,$1-10,null,FALSE
+V025,Food Court @ NIE,NIE4,Canteen,"Mon to Fri: 8am to 3pm; Sat, Sun & PH: Closed; 15 Dec 2025 - 4 Jan 2026: Closed",$1-10,null,TRUE
+V026,Geláre,NS3-01-19,Café/Restaurant,Mon - Fri: 10am to 8pm; Sat: 10am to 7pm; Sun & PH: Closed,$10-20,TRUE,TRUE
+V027,Hill Yard North Hill,TJH-01-03,Café/Restaurant,Daily: 10am to 10pm,$10-20,FALSE,FALSE
+V028,"June's Breathe Cafe @ LKC Medicine",EMB-03-Café,Café/Restaurant,"Mon to Fri: 8am to 5pm; Sat, Sun & PH: Closed",$1-10,FALSE,TRUE
+V029,luckin coffee,SS3-B4-03,Coffee,"Mon to Fri: 8am to 8pm; Sat, Sun & PH: 9am to 8pm",$1-10,TRUE,TRUE
+V030,Mad Roaster at SHHK,SHHK-01-01,Coffee,"Mon to Fri: 9am to 4pm; Sat, Sun & PH: Closed",$1-10,FALSE,TRUE
+V031,Malay Stall at South Spine (from Canteen 11),SS1-01-05A,Fast Food/Takeout,"Sat, Sun and PH: Closed; Mon to Fri: 8am to 3pm",$1-10,TRUE,FALSE
+V032,Man Le Chinese Restaurant,CCH-01-ManLe,Café/Restaurant,Daily: 11.30am to 3pm; 5.30pm to 10pm,$20-30,FALSE,FALSE
+V033,McDonald's,N2.1-01-08,Fast Food/Takeout,Mon to Sat: 7am to 10pm; Sun & PH: 10am to 8pm,$1-10,TRUE,TRUE
+V034,Mr Bean,NS3-01-16,Fast Food/Takeout,"Mon to Fri: 7am to 4pm; Sat, Sun & PH: Closed",$1-10,TRUE,TRUE
+V035,Nanyang Crescent Food Court,SRH-01-FC,Canteen,Daily: 7am to 10pm,$1-10,null,TRUE
+V036,North Hill Food Court (Colour Box),NH-02-02,Canteen,Daily: 7am to 10pm,$1-10,null,FALSE
+V037,North Spine Food Court & International Food Court (Koufu),NS2.1-02-01/03,Canteen,Mon to Fri: 7am to 8.30pm; Sat: 7am to 2.30pm; Sun & PH: Closed,$1-10,null,TRUE
+V038,Paik's Bibim,NS3-01-15,Fast Food/Takeout,Mon to Fri: 10am to 9pm; Sat: 10am to 8pm; Sun & PH: Closed,$10-20,FALSE,TRUE
+V039,Pasta Express,NS3-01-17,Fast Food/Takeout,Mon to Fri: 10.30am to 7.30pm; Sat: 10.30am to 1.30pm; Sun & PH: Closed,$10-20,FALSE,TRUE
+V040,PEN & INC,NS2.1-01-01,Café/Restaurant,"Mon to Fri: 11am to 9pm; Sat, Sun & PH: Closed",$20-30,FALSE,TRUE
+V041,Pioneer Food Court,PH-01-FC,Canteen,Mon to Fri: 8am to 9pm; Sat & Sun: 8am to 8pm,$1-10,null,TRUE
+V042,Popeyes,N2.1-01-04,Fast Food/Takeout,"Mon to Fri: 10am to 9pm; Sat, Sun & PH: 11am to 9pm",$1-10,TRUE,FALSE
+V043,QQ Rice,NS3-01-22,Fast Food/Takeout,Mon to Fri: 8am to 7pm; Sat: 8am to 5pm; Sun & PH: Closed,$1-10,FALSE,TRUE
+V044,Quad Cafe (SBS),SBS-B1N-QUAD,Canteen,Mon to Fri: 7am to 8pm; Sat: 7am to 2pm; Sun & PH: Closed,$1-10,TRUE,TRUE
+V045,South Spine Food Court (Foodies' Clan),SS3-B4,Canteen,Daily: 7.30am to 9pm; 9 - 10 Aug 2026: Closed,$1-10,FALSE,TRUE
+V046,Starbucks,N2.1-01-06,Café/Restaurant,"School Term - Mon to Fri: 7am to 10pm; School Vacation - Mon to Fri, Eve of PH: 7.30am to 9pm; Sat, Sun & PH: 8am to 8pm",$1-10,FALSE,TRUE
+V047,Subway,N2.1-01-07,Fast Food/Takeout,"Sat, Sun & PH: 11am to 7pm; Mon to Fri: 8am to 9pm",$1-10,TRUE,TRUE
+V048,Thai Dynasty Express,NS3-01-24,Café/Restaurant,"PH: Closed; School Term - Mon to Fri: 8.30am to 8.30pm; School Term - Sat, Sun & PH: 10.30am to 8.30pm; School Vacation - Mon to Sun: 10.30am to 7.30pm",$1-10,FALSE,FALSE
+V049,The Crowded Bowl at North Spine,NS3-01-18,Fast Food/Takeout,Mon to Fri: 8am to 8pm; Sat: 8am to 5pm; Sun & PH: Closed,$1-10,FALSE,TRUE
+V050,The Crowded Bowl at Wee Cho Yaw Plaza,ABS-01-013A,Fast Food/Takeout,"School Term - Mon to Fri: 8.30am to 6.30pm; School Vacation - Mon to Fri: 8.30am to 4pm; Sat, Sun & PH: Closed",$1-10,FALSE,TRUE
+V051,The Soup Spoon Union,NS3-01-14,Café/Restaurant,"Mon to Fri: 11am to 8pm; Sat, Sun & PH: Closed",$10-20,TRUE,TRUE
+V052,Vending Machine Cafe @ SSC,SSC-01-02A,Vending Machine,Daily: 24-hour,$1-10,FALSE,FALSE
+V053,Venture Drive Coffee at North Spine,NS3-01-13,Coffee,"School Term - Mon to Fri: 8am to 6pm; School Vacation - Mon to Fri: 8am to 4pm; Sat, Sun & PH: Closed",$1-10,FALSE,TRUE
+V054,Venture Drive Coffee at Wee Cho Yaw Plaza,ABS-01-013B,Coffee,"School Term - Mon to Fri: 8am to 6pm; School Vacation - Mon to Fri: 8am to 4pm; Sat, Sun & PH: Closed",$1-10,FALSE,TRUE
+V055,Wok Express,NS2.1-02-01/03,Fast Food/Takeout,Mon to Fri: 9.30am to 8pm; Sat: 9.30am to 2pm; Sun & PH: Closed,$1-10,FALSE,FALSE
+V056,Yew Kee Specialities,NS3-01-23,Café/Restaurant,Mon to Fri: 10am to 7.30pm (last order); Sat: 10am to 3pm; Sun & PH: Closed,$1-10,FALSE,FALSE
