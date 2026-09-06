@@ -38,6 +38,13 @@ GOOGLE_REVIEWS_CSV = (
     / "ntu_detailed_reviews_final.csv"
 )
 
+GOOGLE_RATINGS_CSV = (
+    Path(__file__).resolve().parents[4]
+    / "data"
+    / "google_reviews"
+    / "ntu_food_places_final.csv"
+)
+
 def _seed_user(
     session: Session,
     *,
@@ -152,6 +159,43 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
 
     return results
 
+
+def seed_vendor_google_ratings(session: Session) -> tuple[int, int]:
+    updated_count = 0
+    missing_vendor_count = 0
+
+    vendors_by_directory_id = {
+        vendor.directory_id: vendor
+        for vendor in session.scalars(
+            select(Vendor).where(Vendor.directory_id.is_not(None))
+        ).all()
+    }
+
+    with GOOGLE_RATINGS_CSV.open(
+        newline="",
+        encoding="utf-8-sig",
+    ) as file:
+        for row in csv.DictReader(file):
+            directory_id = row["ID"].strip()
+            vendor = vendors_by_directory_id.get(directory_id)
+            if vendor is None:
+                missing_vendor_count += 1
+                continue
+
+            rating_raw = (row.get("rating") or "").strip()
+            if not rating_raw:
+                vendor.average_google_rating = None
+            else:
+                rating_value = float(rating_raw)
+                vendor.average_google_rating = (
+                    None if rating_value == 0 else rating_value
+                )
+            updated_count += 1
+
+    session.commit()
+    return updated_count, missing_vendor_count
+
+
 def seed_google_reviews(session: Session) -> tuple[int, int, int]:
     created_count = 0
     skipped_count = 0
@@ -194,8 +238,6 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
                 missing_vendor_count += 1
                 continue
 
-            rating = float(row["rating"])
-
             published_at = datetime.fromisoformat(
                 row["published_at_date"].strip()
             )
@@ -208,7 +250,7 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
             google_review = GoogleReview(
                 vendor_id=vendor.id,
                 external_review_id=external_review_id,
-                rating_half_steps=round(rating * 2),
+                rating=int(row["rating"]),
                 comment=(row["review_text"] or "").strip() or None,
                 published_at=published_at,
             )
@@ -279,6 +321,9 @@ def main() -> None:
         test_user, test_user_created = seed_development_user(session)
         vendors = seed_demo_vendors(session)
         ntu_vendors = seed_ntu_vendors(session)
+        google_ratings_updated, google_ratings_missing = (
+            seed_vendor_google_ratings(session)
+        )
         google_reviews_created, google_reviews_skipped, google_reviews_missing = (
             seed_google_reviews(session)
         )
@@ -309,6 +354,11 @@ def main() -> None:
         f"created={google_reviews_created}, "
         f"skipped={google_reviews_skipped}, "
         f"missing_vendor={google_reviews_missing}"
+    )
+    print(
+        "Vendor Google ratings: "
+        f"updated={google_ratings_updated}, "
+        f"missing_vendor={google_ratings_missing}"
     )
     print(
         "Chatbot workbook questions: "
