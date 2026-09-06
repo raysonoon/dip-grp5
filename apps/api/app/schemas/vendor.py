@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -58,12 +59,29 @@ class VendorListItem(BaseModel):
     id: int
     name: str
     location: str | None
+    level_unit: str | None
     image_url: str | None
     category: str | None
     opening_hours: str | None
     price_range: str | None
     halal: bool | None
     vegetarian: bool | None
+    average_google_rating: float | None
+    google_place_id: str | None
+    google_name: str | None
+    google_review_count: int | None
+    google_price_range: str | None
+    google_address: str | None
+    google_main_category: str | None
+    google_categories: list[str] | None
+    website_url: str | None
+    phone_number: str | None
+    google_hours: list[dict[str, Any]] | None
+    google_status: str | None
+    is_temporarily_closed: bool | None
+    is_permanently_closed: bool | None
+    google_maps_url: str | None
+    google_search_query: str | None
     created_at: datetime
     updated_at: datetime
     average_rating: float | None

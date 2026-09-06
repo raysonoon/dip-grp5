@@ -1,3 +1,4 @@
+import csv
 from pathlib import Path
 
 from sqlalchemy import select
@@ -7,6 +8,34 @@ from app.db import seed
 from app.models import Vendor
 
 
+GOOGLE_VENDOR_COLUMNS = (
+    "ID",
+    "Name",
+    "Location",
+    "Level / unit",
+    "Cuisine / type",
+    "Halal",
+    "Vegetarian",
+    "Opening hours",
+    "place_id",
+    "name",
+    "rating",
+    "reviews",
+    "price_range",
+    "address",
+    "main_category",
+    "categories",
+    "website",
+    "phone",
+    "hours",
+    "status",
+    "is_temporarily_closed",
+    "is_permanently_closed",
+    "link",
+    "query",
+)
+
+
 def _write_vendor_csv(path: Path) -> None:
     path.write_text(
         "id,name,location,category,opening_hours,price_range,halal,vegetarian\n"
@@ -14,6 +43,16 @@ def _write_vendor_csv(path: Path) -> None:
         "V002,Unknown Halal,South Spine,Food Court,Weekdays,$10-20,null,TRUE\n",
         encoding="utf-8",
     )
+
+
+def _write_google_vendor_csv(
+    path: Path,
+    rows: list[dict[str, str]],
+) -> None:
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=GOOGLE_VENDOR_COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def test_seed_ntu_vendors_populates_metadata_for_new_and_existing_rows(
@@ -42,6 +81,11 @@ def test_seed_ntu_vendors_populates_metadata_for_new_and_existing_rows(
         select(Vendor).where(Vendor.directory_id == "V001")
     )
     assert refreshed_existing is not None
+    assert refreshed_existing.name == "Existing Vendor"
+    assert refreshed_existing.location == "North Spine"
+    assert refreshed_existing.level_unit == "North Spine"
+    assert refreshed_existing.category == "Cafe"
+    assert refreshed_existing.opening_hours == "Daily"
     assert refreshed_existing.price_range == "$1-10"
     assert refreshed_existing.halal is True
     assert refreshed_existing.vegetarian is False
@@ -74,3 +118,150 @@ def test_seed_ntu_vendors_rejects_invalid_boolean_metadata(
         assert "Invalid halal value for vendor V001" in str(error)
     else:
         raise AssertionError("invalid boolean metadata should be rejected")
+
+
+def test_seed_ntu_vendors_refreshes_directory_metadata(
+    session: Session,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "vendors.csv"
+    _write_vendor_csv(csv_path)
+    monkeypatch.setattr(seed, "NTU_VENDOR_CSV", csv_path)
+    existing = Vendor(
+        directory_id="V001",
+        name="Stale Vendor",
+        location="Existing Building",
+        level_unit="Old Unit",
+        category="Old Category",
+        opening_hours="Old Hours",
+        price_range="$20-30",
+        halal=False,
+        vegetarian=True,
+    )
+    session.add(existing)
+    session.commit()
+
+    seed.seed_ntu_vendors(session)
+
+    assert existing.name == "Existing Vendor"
+    assert existing.location == "Existing Building"
+    assert existing.level_unit == "North Spine"
+    assert existing.category == "Cafe"
+    assert existing.opening_hours == "Daily"
+    assert existing.price_range == "$1-10"
+    assert existing.halal is True
+    assert existing.vegetarian is False
+
+
+def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
+    session: Session,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "google-vendors.csv"
+    _write_google_vendor_csv(
+        csv_path,
+        [
+            {
+                "ID": "V001",
+                "Name": "Updated Vendor",
+                "Location": "North Spine Plaza",
+                "Level / unit": "NS3-01-01",
+                "Cuisine / type": "Cafe",
+                "Halal": "No",
+                "Vegetarian": "Vegetarian option(s) available",
+                "Opening hours": "Daily: 9am to 6pm",
+                "place_id": "place-1",
+                "name": "Updated Vendor on Google",
+                "rating": "4.8",
+                "reviews": "123",
+                "price_range": "$1-10",
+                "address": "1 Test Street, Singapore",
+                "main_category": "Restaurant",
+                "categories": '["Restaurant", "Cafe"]',
+                "website": "https://example.com/vendor",
+                "phone": "6123 4567",
+                "hours": '[{"day": "Monday", "times": ["9 am-6 pm"]}]',
+                "status": "Open",
+                "is_temporarily_closed": "false",
+                "is_permanently_closed": "false",
+                "link": "https://maps.example.com/vendor",
+                "query": "updated vendor ntu",
+            },
+            {
+                "ID": "V002",
+                "Name": "GelÃ¡re",
+                "Location": "North Spine Plazaâ€‹",
+                "Cuisine / type": "Desserts / cafÃ©",
+                "Halal": "Yes â€” halal certified",
+                "Vegetarian": "Not stated",
+                "name": "Gelare @ NTU",
+            },
+        ],
+    )
+    monkeypatch.setattr(seed, "GOOGLE_RATINGS_CSV", csv_path)
+
+    safe_vendor = Vendor(
+        directory_id="V001",
+        name="Directory Vendor",
+        level_unit="Directory Unit",
+        category="Directory Category",
+        opening_hours="Directory Hours",
+        price_range="$20-30",
+        halal=True,
+        vegetarian=False,
+    )
+    mojibake_vendor = Vendor(
+        directory_id="V002",
+        name="Geláre",
+        location="NS3-01-19",
+        category="Desserts / café",
+        halal=True,
+    )
+    session.add_all([safe_vendor, mojibake_vendor])
+    session.commit()
+
+    result = seed.seed_vendor_google_metadata(session)
+
+    assert result[0] == 2
+    assert result[1] == 0
+    assert result[2] > 0
+    assert result[3] == 4
+    assert result[4] == 0
+
+    assert safe_vendor.name == "Directory Vendor"
+    assert safe_vendor.location == "North Spine Plaza"
+    assert safe_vendor.level_unit == "Directory Unit"
+    assert safe_vendor.category == "Directory Category"
+    assert safe_vendor.opening_hours == "Directory Hours"
+    assert safe_vendor.price_range == "$20-30"
+    assert safe_vendor.halal is True
+    assert safe_vendor.vegetarian is False
+    assert safe_vendor.google_place_id == "place-1"
+    assert safe_vendor.google_name == "Updated Vendor on Google"
+    assert safe_vendor.google_price_range == "$1-10"
+    assert float(safe_vendor.average_google_rating) == 4.8
+    assert safe_vendor.google_review_count == 123
+    assert safe_vendor.google_address == "1 Test Street, Singapore"
+    assert safe_vendor.google_main_category == "Restaurant"
+    assert safe_vendor.google_categories == ["Restaurant", "Cafe"]
+    assert safe_vendor.website_url == "https://example.com/vendor"
+    assert safe_vendor.phone_number == "6123 4567"
+    assert safe_vendor.google_hours == [
+        {"day": "Monday", "times": ["9 am-6 pm"]}
+    ]
+    assert safe_vendor.google_status == "Open"
+    assert safe_vendor.is_temporarily_closed is False
+    assert safe_vendor.is_permanently_closed is False
+    assert safe_vendor.google_maps_url == "https://maps.example.com/vendor"
+    assert safe_vendor.google_search_query == "updated vendor ntu"
+
+    assert mojibake_vendor.name == "Geláre"
+    assert mojibake_vendor.location == "NS3-01-19"
+    assert mojibake_vendor.category == "Desserts / café"
+    assert mojibake_vendor.halal is True
+    assert mojibake_vendor.google_name == "Gelare @ NTU"
+
+    second_result = seed.seed_vendor_google_metadata(session)
+    assert second_result[2] == 0

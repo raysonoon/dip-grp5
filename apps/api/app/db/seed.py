@@ -1,6 +1,9 @@
 import csv
-from pathlib import Path
+import json
 from datetime import datetime, timezone
+from decimal import Decimal
+from pathlib import Path
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -45,6 +48,54 @@ GOOGLE_RATINGS_CSV = (
     / "ntu_food_places_final.csv"
 )
 
+MOJIBAKE_MARKERS = (
+    "\ufffd",
+    "\u00c3",
+    "\u00c2",
+    "\u00e2",
+    "\u00f0\u0178",
+)
+GOOGLE_TEXT_FIELD_MAP = (
+    ("Location", "location"),
+    ("place_id", "google_place_id"),
+    ("name", "google_name"),
+    ("price_range", "google_price_range"),
+    ("address", "google_address"),
+    ("main_category", "google_main_category"),
+    ("website", "website_url"),
+    ("phone", "phone_number"),
+    ("status", "google_status"),
+    ("link", "google_maps_url"),
+    ("query", "google_search_query"),
+)
+GOOGLE_DIRECTORY_DUPLICATE_FIELDS = (
+    "Name",
+    "Level / unit",
+    "Cuisine / type",
+    "Halal",
+    "Vegetarian",
+    "Opening hours",
+)
+GOOGLE_REVIEW_TEXT_FIELD_MAP = (
+    ("review_link", "review_link"),
+    ("name", "reviewer_name"),
+    ("reviewer_id", "reviewer_id"),
+    ("reviewer_profile", "reviewer_profile_url"),
+    ("review_text", "comment"),
+    ("original_language", "original_language"),
+    ("review_translated_text", "translated_comment"),
+    ("translated_language", "translated_language"),
+    ("published_at", "published_at_text"),
+    ("response_from_owner_text", "owner_response_text"),
+    ("response_from_owner_ago", "owner_response_age_text"),
+    (
+        "response_from_owner_translated_text",
+        "owner_response_translated_text",
+    ),
+    ("avatar_link", "reviewer_avatar_url"),
+    ("review_origin", "review_origin"),
+)
+
 
 def _parse_nullable_bool(
     raw_value: str,
@@ -63,6 +114,37 @@ def _parse_nullable_bool(
         f"Invalid {column_name} value for vendor {directory_id}: "
         f"{raw_value!r}"
     )
+
+
+def _safe_csv_text(raw_value: str) -> tuple[str | None, bool]:
+    """Return normalized text and whether it was rejected as mojibake."""
+    normalized = raw_value.strip()
+    if not normalized:
+        return None, False
+    if any(marker in normalized for marker in MOJIBAKE_MARKERS):
+        return None, True
+    return normalized, False
+
+
+def _set_if_changed(entity: object, field: str, value: object) -> bool:
+    current_value = getattr(entity, field)
+    if isinstance(current_value, datetime) and isinstance(value, datetime):
+        normalized_current = (
+            current_value.replace(tzinfo=timezone.utc)
+            if current_value.tzinfo is None
+            else current_value.astimezone(timezone.utc)
+        )
+        normalized_value = (
+            value.replace(tzinfo=timezone.utc)
+            if value.tzinfo is None
+            else value.astimezone(timezone.utc)
+        )
+        if normalized_current == normalized_value:
+            return False
+    elif current_value == value:
+        return False
+    setattr(entity, field, value)
+    return True
 
 
 def _seed_user(
@@ -154,7 +236,11 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
 
         for row in reader:
             directory_id = row["id"].strip()
-            vendor_metadata = {
+            vendor_directory_data = {
+                "name": row["name"].strip(),
+                "level_unit": row["location"].strip() or None,
+                "category": row["category"].strip() or None,
+                "opening_hours": row["opening_hours"].strip() or None,
                 "price_range": row["price_range"].strip() or None,
                 "halal": _parse_nullable_bool(
                     row["halal"],
@@ -175,8 +261,10 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
             )
 
             if vendor is not None:
-                for field, value in vendor_metadata.items():
-                    setattr(vendor, field, value)
+                for field, value in vendor_directory_data.items():
+                    _set_if_changed(vendor, field, value)
+                if vendor.location is None:
+                    vendor.location = vendor_directory_data["level_unit"]
                 session.commit()
                 session.refresh(vendor)
                 results.append((vendor, False))
@@ -184,11 +272,8 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
 
             vendor = Vendor(
                 directory_id=directory_id,
-                name=row["name"].strip(),
-                location=row["location"].strip() or None,
-                category=row["category"].strip() or None,
-                opening_hours=row["opening_hours"].strip() or None,
-                **vendor_metadata,
+                location=vendor_directory_data["level_unit"],
+                **vendor_directory_data,
             )
             session.add(vendor)
             session.commit()
@@ -198,9 +283,20 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
     return results
 
 
-def seed_vendor_google_ratings(session: Session) -> tuple[int, int]:
-    updated_count = 0
+def seed_vendor_google_metadata(
+    session: Session,
+) -> tuple[int, int, int, int, int]:
+    """Synchronize safe fields from ntu_food_places_final.csv.
+
+    Blank, ambiguous, and mojibake values do not overwrite existing data.
+    The return value contains matched vendors, missing vendors, changed fields,
+    rejected mojibake fields, and skipped ambiguous fields.
+    """
+    matched_vendor_count = 0
     missing_vendor_count = 0
+    changed_field_count = 0
+    skipped_mojibake_count = 0
+    skipped_ambiguous_count = 0
 
     vendors_by_directory_id = {
         vendor.directory_id: vendor
@@ -220,24 +316,146 @@ def seed_vendor_google_ratings(session: Session) -> tuple[int, int]:
                 missing_vendor_count += 1
                 continue
 
-            rating_raw = (row.get("rating") or "").strip()
-            if not rating_raw:
-                vendor.average_google_rating = None
-            else:
-                rating_value = float(rating_raw)
-                vendor.average_google_rating = (
+            matched_vendor_count += 1
+
+            # The clean directory CSV owns these display fields. We still
+            # inspect their duplicates here so corrupt source text is visible,
+            # but do not let Google enrichment overwrite directory data.
+            for source_column in GOOGLE_DIRECTORY_DUPLICATE_FIELDS:
+                _, is_mojibake = _safe_csv_text(
+                    row.get(source_column) or ""
+                )
+                if is_mojibake:
+                    skipped_mojibake_count += 1
+                    print(
+                        "Skipping mojibake vendor field: "
+                        f"vendor={directory_id}, column={source_column}"
+                    )
+
+            for source_column, target_field in GOOGLE_TEXT_FIELD_MAP:
+                value, is_mojibake = _safe_csv_text(
+                    row.get(source_column) or ""
+                )
+                if is_mojibake:
+                    skipped_mojibake_count += 1
+                    print(
+                        "Skipping mojibake vendor field: "
+                        f"vendor={directory_id}, column={source_column}"
+                    )
+                    continue
+                if value is not None and _set_if_changed(
+                    vendor,
+                    target_field,
+                    value,
+                ):
+                    changed_field_count += 1
+
+            rating_raw, rating_is_mojibake = _safe_csv_text(
+                row.get("rating") or ""
+            )
+            if rating_is_mojibake:
+                skipped_mojibake_count += 1
+                print(
+                    "Skipping mojibake vendor field: "
+                    f"vendor={directory_id}, column=rating"
+                )
+            elif rating_raw is not None:
+                rating_value = Decimal(rating_raw)
+                normalized_rating = (
                     None if rating_value == 0 else rating_value
                 )
-            updated_count += 1
+                if _set_if_changed(
+                    vendor,
+                    "average_google_rating",
+                    normalized_rating,
+                ):
+                    changed_field_count += 1
+
+            review_count_raw, reviews_is_mojibake = _safe_csv_text(
+                row.get("reviews") or ""
+            )
+            if reviews_is_mojibake:
+                skipped_mojibake_count += 1
+                print(
+                    "Skipping mojibake vendor field: "
+                    f"vendor={directory_id}, column=reviews"
+                )
+            elif review_count_raw is not None and _set_if_changed(
+                vendor,
+                "google_review_count",
+                int(review_count_raw),
+            ):
+                changed_field_count += 1
+
+            for source_column, target_field in (
+                ("categories", "google_categories"),
+                ("hours", "google_hours"),
+            ):
+                json_raw, is_mojibake = _safe_csv_text(
+                    row.get(source_column) or ""
+                )
+                if is_mojibake:
+                    skipped_mojibake_count += 1
+                    print(
+                        "Skipping mojibake vendor field: "
+                        f"vendor={directory_id}, column={source_column}"
+                    )
+                    continue
+                if json_raw is not None and _set_if_changed(
+                    vendor,
+                    target_field,
+                    json.loads(json_raw),
+                ):
+                    changed_field_count += 1
+
+            for source_column, target_field, value_map in (
+                (
+                    "is_temporarily_closed",
+                    "is_temporarily_closed",
+                    {"true": True, "false": False},
+                ),
+                (
+                    "is_permanently_closed",
+                    "is_permanently_closed",
+                    {"true": True, "false": False},
+                ),
+            ):
+                value, is_mojibake = _safe_csv_text(
+                    row.get(source_column) or ""
+                )
+                if is_mojibake:
+                    skipped_mojibake_count += 1
+                    print(
+                        "Skipping mojibake vendor field: "
+                        f"vendor={directory_id}, column={source_column}"
+                    )
+                    continue
+                if value is None:
+                    continue
+                parsed_value = value_map.get(value.casefold())
+                if parsed_value is None:
+                    skipped_ambiguous_count += 1
+                    continue
+                if _set_if_changed(vendor, target_field, parsed_value):
+                    changed_field_count += 1
 
     session.commit()
-    return updated_count, missing_vendor_count
+    return (
+        matched_vendor_count,
+        missing_vendor_count,
+        changed_field_count,
+        skipped_mojibake_count,
+        skipped_ambiguous_count,
+    )
 
 
-def seed_google_reviews(session: Session) -> tuple[int, int, int]:
+def seed_google_reviews(session: Session) -> tuple[int, int, int, int, int]:
+    """Create or refresh Google reviews from the detailed review export."""
     created_count = 0
-    skipped_count = 0
+    updated_count = 0
+    unchanged_count = 0
     missing_vendor_count = 0
+    skipped_mojibake_count = 0
 
     vendors_by_directory_id = {
         vendor.directory_id: vendor
@@ -246,11 +464,10 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
         ).all()
     }
 
-    existing_review_ids = set(
-        session.scalars(
-            select(GoogleReview.external_review_id)
-        ).all()
-    )
+    existing_reviews = {
+        review.external_review_id: review
+        for review in session.scalars(select(GoogleReview)).all()
+    }
 
     with GOOGLE_REVIEWS_CSV.open(
         newline="",
@@ -260,10 +477,11 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
 
         for row in reader:
             directory_id = row["ID"].strip()
-            external_review_id = row["review_id"].strip()
-
-            if external_review_id in existing_review_ids:
-                skipped_count += 1
+            external_review_id, review_id_is_mojibake = _safe_csv_text(
+                row.get("review_id") or ""
+            )
+            if review_id_is_mojibake or external_review_id is None:
+                skipped_mojibake_count += int(review_id_is_mojibake)
                 continue
 
             vendor = vendors_by_directory_id.get(directory_id)
@@ -276,30 +494,166 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
                 missing_vendor_count += 1
                 continue
 
-            published_at = datetime.fromisoformat(
-                row["published_at_date"].strip()
+            review_data: dict[str, object] = {
+                "vendor_id": vendor.id,
+                "rating": int(row["rating"]),
+            }
+
+            for source_column, target_field in GOOGLE_REVIEW_TEXT_FIELD_MAP:
+                value, is_mojibake = _safe_csv_text(
+                    row.get(source_column) or ""
+                )
+                if is_mojibake:
+                    skipped_mojibake_count += 1
+                    print(
+                        "Skipping mojibake review field: "
+                        f"review={external_review_id}, column={source_column}"
+                    )
+                    continue
+                review_data[target_field] = value
+
+            published_at_raw, published_at_is_mojibake = _safe_csv_text(
+                row.get("published_at_date") or ""
             )
+            if published_at_is_mojibake or published_at_raw is None:
+                skipped_mojibake_count += int(published_at_is_mojibake)
+                continue
+            published_at = datetime.fromisoformat(published_at_raw)
 
             if published_at.tzinfo is None:
                 published_at = published_at.replace(
                     tzinfo=timezone.utc
                 )
+            review_data["published_at"] = published_at
+
+            owner_response_at_raw, response_date_is_mojibake = _safe_csv_text(
+                row.get("response_from_owner_date") or ""
+            )
+            if response_date_is_mojibake:
+                skipped_mojibake_count += 1
+                print(
+                    "Skipping mojibake review field: "
+                    f"review={external_review_id}, "
+                    "column=response_from_owner_date"
+                )
+            else:
+                owner_response_at = (
+                    datetime.fromisoformat(owner_response_at_raw)
+                    if owner_response_at_raw is not None
+                    else None
+                )
+                if (
+                    owner_response_at is not None
+                    and owner_response_at.tzinfo is None
+                ):
+                    owner_response_at = owner_response_at.replace(
+                        tzinfo=timezone.utc
+                    )
+                review_data["owner_response_at"] = owner_response_at
+
+            for source_column, target_field in (
+                (
+                    "total_number_of_reviews_by_reviewer",
+                    "reviewer_review_count",
+                ),
+                (
+                    "total_number_of_photos_by_reviewer",
+                    "reviewer_photo_count",
+                ),
+            ):
+                raw_value, is_mojibake = _safe_csv_text(
+                    row.get(source_column) or ""
+                )
+                if is_mojibake:
+                    skipped_mojibake_count += 1
+                    print(
+                        "Skipping mojibake review field: "
+                        f"review={external_review_id}, column={source_column}"
+                    )
+                    continue
+                review_data[target_field] = (
+                    int(raw_value) if raw_value is not None else None
+                )
+
+            local_guide_raw, local_guide_is_mojibake = _safe_csv_text(
+                row.get("is_local_guide") or ""
+            )
+            if local_guide_is_mojibake:
+                skipped_mojibake_count += 1
+                print(
+                    "Skipping mojibake review field: "
+                    f"review={external_review_id}, column=is_local_guide"
+                )
+            else:
+                local_guide_values = {
+                    None: None,
+                    "1": True,
+                    "1.0": True,
+                    "true": True,
+                    "0": False,
+                    "0.0": False,
+                    "false": False,
+                }
+                normalized_local_guide = (
+                    None
+                    if local_guide_raw is None
+                    else local_guide_raw.casefold()
+                )
+                if normalized_local_guide not in local_guide_values:
+                    raise ValueError(
+                        "Invalid is_local_guide value for review "
+                        f"{external_review_id}: {local_guide_raw!r}"
+                    )
+                review_data["is_local_guide"] = local_guide_values[
+                    normalized_local_guide
+                ]
+
+            for source_column, target_field in (
+                ("experience_details", "experience_details"),
+                ("review_photos", "review_photos"),
+            ):
+                json_raw, is_mojibake = _safe_csv_text(
+                    row.get(source_column) or ""
+                )
+                if is_mojibake:
+                    skipped_mojibake_count += 1
+                    print(
+                        "Skipping mojibake review field: "
+                        f"review={external_review_id}, column={source_column}"
+                    )
+                    continue
+                review_data[target_field] = (
+                    json.loads(json_raw) if json_raw is not None else None
+                )
+
+            google_review = existing_reviews.get(external_review_id)
+            if google_review is not None:
+                changed = False
+                for field, value in review_data.items():
+                    changed |= _set_if_changed(google_review, field, value)
+                if changed:
+                    updated_count += 1
+                else:
+                    unchanged_count += 1
+                continue
 
             google_review = GoogleReview(
-                vendor_id=vendor.id,
                 external_review_id=external_review_id,
-                rating=int(row["rating"]),
-                comment=(row["review_text"] or "").strip() or None,
-                published_at=published_at,
+                **review_data,
             )
-
             session.add(google_review)
-            existing_review_ids.add(external_review_id)
+            existing_reviews[external_review_id] = google_review
             created_count += 1
 
     session.commit()
 
-    return created_count, skipped_count, missing_vendor_count
+    return (
+        created_count,
+        updated_count,
+        unchanged_count,
+        missing_vendor_count,
+        skipped_mojibake_count,
+    )
 
 
 def seed_chatbot_questions(session: Session) -> tuple[int, int]:
@@ -359,12 +713,20 @@ def main() -> None:
         test_user, test_user_created = seed_development_user(session)
         vendors = seed_demo_vendors(session)
         ntu_vendors = seed_ntu_vendors(session)
-        google_ratings_updated, google_ratings_missing = (
-            seed_vendor_google_ratings(session)
-        )
-        google_reviews_created, google_reviews_skipped, google_reviews_missing = (
-            seed_google_reviews(session)
-        )
+        (
+            google_metadata_matched,
+            google_metadata_missing,
+            google_metadata_changed_fields,
+            google_metadata_mojibake_skipped,
+            google_metadata_ambiguous_skipped,
+        ) = seed_vendor_google_metadata(session)
+        (
+            google_reviews_created,
+            google_reviews_updated,
+            google_reviews_unchanged,
+            google_reviews_missing,
+            google_reviews_mojibake_skipped,
+        ) = seed_google_reviews(session)
         chatbot_created, chatbot_updated = seed_chatbot_questions(session)
 
     admin_action = "Created" if admin_created else "Confirmed"
@@ -390,13 +752,18 @@ def main() -> None:
     print(
         "Google reviews: "
         f"created={google_reviews_created}, "
-        f"skipped={google_reviews_skipped}, "
-        f"missing_vendor={google_reviews_missing}"
+        f"updated={google_reviews_updated}, "
+        f"unchanged={google_reviews_unchanged}, "
+        f"missing_vendor={google_reviews_missing}, "
+        f"mojibake_skipped={google_reviews_mojibake_skipped}"
     )
     print(
-        "Vendor Google ratings: "
-        f"updated={google_ratings_updated}, "
-        f"missing_vendor={google_ratings_missing}"
+        "Vendor Google metadata: "
+        f"matched={google_metadata_matched}, "
+        f"missing_vendor={google_metadata_missing}, "
+        f"changed_fields={google_metadata_changed_fields}, "
+        f"mojibake_skipped={google_metadata_mojibake_skipped}, "
+        f"ambiguous_skipped={google_metadata_ambiguous_skipped}"
     )
     print(
         "Chatbot workbook questions: "

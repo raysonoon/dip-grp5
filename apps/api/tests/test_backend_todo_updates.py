@@ -28,6 +28,23 @@ def _seed_records(session: Session) -> tuple[User, User, Vendor, Review]:
         price_range="$1-10",
         halal=True,
         vegetarian=False,
+        level_unit="N2.1-01-01",
+        google_place_id="google-place-1",
+        google_name="Test Stall on Google",
+        google_price_range="$10-20",
+        average_google_rating=4.6,
+        google_review_count=123,
+        google_address="1 Test Street, Singapore",
+        google_main_category="Restaurant",
+        google_categories=["Restaurant", "Cafe"],
+        website_url="https://example.com",
+        phone_number="6123 4567",
+        google_hours=[{"day": "Monday", "times": ["9 am-6 pm"]}],
+        google_status="Open",
+        is_temporarily_closed=False,
+        is_permanently_closed=False,
+        google_maps_url="https://maps.example.com/test-stall",
+        google_search_query="test stall ntu",
         images=[
             VendorImage(
                 image_url="https://example.com/second.jpg",
@@ -74,6 +91,11 @@ def test_user_and_vendor_storage_follow_the_new_schema(session: Session) -> None
     assert "price_range" in vendor_columns
     assert "halal" in vendor_columns
     assert "vegetarian" in vendor_columns
+    assert "google_place_id" in vendor_columns
+    assert "google_price_range" in vendor_columns
+    assert "google_review_count" in vendor_columns
+    assert "google_categories" in vendor_columns
+    assert "google_hours" in vendor_columns
     assert VendorImage.__tablename__ == "vendor_images"
 
 
@@ -142,6 +164,16 @@ def test_vendor_api_returns_ordered_images_and_compatibility_thumbnail(
     assert item["price_range"] == "$1-10"
     assert item["halal"] is True
     assert item["vegetarian"] is False
+    assert item["level_unit"] == "N2.1-01-01"
+    assert item["google_place_id"] == "google-place-1"
+    assert item["google_name"] == "Test Stall on Google"
+    assert item["google_price_range"] == "$10-20"
+    assert item["average_google_rating"] == 4.6
+    assert item["google_review_count"] == 123
+    assert item["google_categories"] == ["Restaurant", "Cafe"]
+    assert item["google_hours"][0]["day"] == "Monday"
+    assert item["is_temporarily_closed"] is False
+    assert item["is_permanently_closed"] is False
     assert item["updated_at"] is not None
 
 
