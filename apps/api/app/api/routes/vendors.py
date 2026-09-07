@@ -1,12 +1,15 @@
 from datetime import datetime, timezone
+from pathlib import Path as FilePath
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, Response, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import AdminUser, DbSession
+from app.core.image_storage import resolve_image_path
 from app.models import Review, Vendor, VendorImage
 from app.schemas import (
     VendorImageCreate,
@@ -40,6 +43,18 @@ def _get_vendor(vendor_id: int, session: DbSession) -> Vendor:
     return vendor
 
 
+def _resolve_vendor_image(
+    image_url: str,
+    *,
+    vendor_id: int,
+) -> tuple[FilePath, str]:
+    return resolve_image_path(
+        image_url,
+        collection="vendor_images",
+        owner_id=vendor_id,
+    )
+
+
 @router.get("", response_model=VendorListRead)
 def list_vendors(
     session: DbSession,
@@ -67,7 +82,10 @@ def list_vendors(
             func.count(Review.id).label("review_count"),
             func.avg(Review.rating_half_steps).label("average_half_steps"),
         )
-        .options(selectinload(Vendor.images))
+        .options(
+            selectinload(Vendor.images),
+            selectinload(Vendor.google_profile),
+        )
         .outerjoin(Review, Review.vendor_id == Vendor.id)
         .where(*filters)
         .group_by(Vendor.id)
@@ -78,6 +96,13 @@ def list_vendors(
 
     items = []
     for vendor, review_count, average_half_steps in rows:
+        google_profile = vendor.google_profile
+        google_status = (
+            google_profile.status if google_profile is not None else None
+        )
+        normalized_google_status = (
+            google_status.casefold() if google_status is not None else None
+        )
         average_rating = (
             None
             if average_half_steps is None
@@ -97,24 +122,84 @@ def list_vendors(
                 vegetarian=vendor.vegetarian,
                 average_google_rating=(
                     None
-                    if vendor.average_google_rating is None
-                    else float(vendor.average_google_rating)
+                    if google_profile is None or google_profile.rating is None
+                    else float(google_profile.rating)
                 ),
-                google_place_id=vendor.google_place_id,
-                google_name=vendor.google_name,
-                google_review_count=vendor.google_review_count,
-                google_price_range=vendor.google_price_range,
-                google_address=vendor.google_address,
-                google_main_category=vendor.google_main_category,
-                google_categories=vendor.google_categories,
-                website_url=vendor.website_url,
-                phone_number=vendor.phone_number,
-                google_hours=vendor.google_hours,
-                google_status=vendor.google_status,
-                is_temporarily_closed=vendor.is_temporarily_closed,
-                is_permanently_closed=vendor.is_permanently_closed,
-                google_maps_url=vendor.google_maps_url,
-                google_search_query=vendor.google_search_query,
+                google_place_id=(
+                    google_profile.place_id
+                    if google_profile is not None
+                    else None
+                ),
+                google_name=(
+                    google_profile.display_name
+                    if google_profile is not None
+                    else None
+                ),
+                google_review_count=(
+                    google_profile.review_count
+                    if google_profile is not None
+                    else None
+                ),
+                google_price_range=(
+                    google_profile.price_range
+                    if google_profile is not None
+                    else None
+                ),
+                google_address=(
+                    google_profile.address
+                    if google_profile is not None
+                    else None
+                ),
+                google_main_category=(
+                    google_profile.categories[0]
+                    if google_profile is not None
+                    and google_profile.categories
+                    else None
+                ),
+                google_categories=(
+                    google_profile.categories
+                    if google_profile is not None
+                    else None
+                ),
+                website_url=(
+                    google_profile.website_url
+                    if google_profile is not None
+                    else None
+                ),
+                phone_number=(
+                    google_profile.phone_number
+                    if google_profile is not None
+                    else None
+                ),
+                google_hours=(
+                    google_profile.hours
+                    if google_profile is not None
+                    else None
+                ),
+                google_status=google_status,
+                is_temporarily_closed=(
+                    None
+                    if normalized_google_status is None
+                    else "temporar" in normalized_google_status
+                ),
+                is_permanently_closed=(
+                    None
+                    if normalized_google_status is None
+                    else (
+                        "permanent" in normalized_google_status
+                        or "no longer operating" in normalized_google_status
+                    )
+                ),
+                google_maps_url=(
+                    google_profile.maps_url
+                    if google_profile is not None
+                    else None
+                ),
+                google_search_query=(
+                    google_profile.search_query
+                    if google_profile is not None
+                    else None
+                ),
                 created_at=vendor.created_at,
                 updated_at=vendor.updated_at,
                 average_rating=average_rating,
@@ -154,6 +239,46 @@ def list_vendor_images(
     return [_vendor_image_read(image) for image in images]
 
 
+@router.get(
+    "/{vendor_id}/images/{image_id}",
+    response_class=FileResponse,
+)
+def get_vendor_image_file(
+    vendor_id: Annotated[int, Path(gt=0)],
+    image_id: Annotated[int, Path(gt=0)],
+    session: DbSession,
+) -> FileResponse:
+    image = session.scalar(
+        select(VendorImage).where(
+            VendorImage.id == image_id,
+            VendorImage.vendor_id == vendor_id,
+        )
+    )
+    if image is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vendor image not found",
+        )
+
+    try:
+        image_path, media_type = _resolve_vendor_image(
+            image.image_url,
+            vendor_id=vendor_id,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Stored vendor image path is invalid",
+        ) from error
+    if not image_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vendor image file not found",
+        )
+
+    return FileResponse(image_path, media_type=media_type)
+
+
 @router.post(
     "/{vendor_id}/images",
     response_model=VendorImageRead,
@@ -174,6 +299,17 @@ def create_vendor_image(
             )
         )
         display_order = (highest_order or 0) + 1
+
+    try:
+        _resolve_vendor_image(
+            image_data.image_url,
+            vendor_id=vendor_id,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
 
     image = VendorImage(
         vendor_id=vendor_id,
@@ -225,6 +361,13 @@ def update_vendor_image(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="image_url cannot be null",
             )
+        try:
+            _resolve_vendor_image(image_url, vendor_id=vendor_id)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(error),
+            ) from error
         image.image_url = image_url
     if "display_order" in image_data.model_fields_set:
         display_order = image_data.display_order

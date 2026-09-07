@@ -11,7 +11,13 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.db.chatbot_question_data import CHATBOT_QUESTION_ROWS
 from app.db.session import SessionLocal
-from app.models import ChatbotPrompt, GoogleReview, User, Vendor
+from app.models import (
+    ChatbotPrompt,
+    GoogleReview,
+    User,
+    Vendor,
+    VendorGoogleProfile,
+)
 
 
 DEMO_VENDORS = (
@@ -55,18 +61,16 @@ MOJIBAKE_MARKERS = (
     "\u00e2",
     "\u00f0\u0178",
 )
-GOOGLE_TEXT_FIELD_MAP = (
-    ("Location", "location"),
-    ("place_id", "google_place_id"),
-    ("name", "google_name"),
-    ("price_range", "google_price_range"),
-    ("address", "google_address"),
-    ("main_category", "google_main_category"),
+GOOGLE_PROFILE_TEXT_FIELD_MAP = (
+    ("place_id", "place_id"),
+    ("name", "display_name"),
+    ("price_range", "price_range"),
+    ("address", "address"),
     ("website", "website_url"),
     ("phone", "phone_number"),
-    ("status", "google_status"),
-    ("link", "google_maps_url"),
-    ("query", "google_search_query"),
+    ("status", "status"),
+    ("link", "maps_url"),
+    ("query", "search_query"),
 )
 GOOGLE_DIRECTORY_DUPLICATE_FIELDS = (
     "Name",
@@ -318,6 +322,11 @@ def seed_vendor_google_metadata(
 
             matched_vendor_count += 1
 
+            google_profile = vendor.google_profile
+            if google_profile is None:
+                google_profile = VendorGoogleProfile(vendor=vendor)
+                session.add(google_profile)
+
             # The clean directory CSV owns these display fields. We still
             # inspect their duplicates here so corrupt source text is visible,
             # but do not let Google enrichment overwrite directory data.
@@ -332,7 +341,23 @@ def seed_vendor_google_metadata(
                         f"vendor={directory_id}, column={source_column}"
                     )
 
-            for source_column, target_field in GOOGLE_TEXT_FIELD_MAP:
+            location, location_is_mojibake = _safe_csv_text(
+                row.get("Location") or ""
+            )
+            if location_is_mojibake:
+                skipped_mojibake_count += 1
+                print(
+                    "Skipping mojibake vendor field: "
+                    f"vendor={directory_id}, column=Location"
+                )
+            elif location is not None and _set_if_changed(
+                vendor,
+                "location",
+                location,
+            ):
+                changed_field_count += 1
+
+            for source_column, target_field in GOOGLE_PROFILE_TEXT_FIELD_MAP:
                 value, is_mojibake = _safe_csv_text(
                     row.get(source_column) or ""
                 )
@@ -344,7 +369,7 @@ def seed_vendor_google_metadata(
                     )
                     continue
                 if value is not None and _set_if_changed(
-                    vendor,
+                    google_profile,
                     target_field,
                     value,
                 ):
@@ -365,8 +390,8 @@ def seed_vendor_google_metadata(
                     None if rating_value == 0 else rating_value
                 )
                 if _set_if_changed(
-                    vendor,
-                    "average_google_rating",
+                    google_profile,
+                    "rating",
                     normalized_rating,
                 ):
                     changed_field_count += 1
@@ -381,44 +406,76 @@ def seed_vendor_google_metadata(
                     f"vendor={directory_id}, column=reviews"
                 )
             elif review_count_raw is not None and _set_if_changed(
-                vendor,
-                "google_review_count",
+                google_profile,
+                "review_count",
                 int(review_count_raw),
             ):
                 changed_field_count += 1
 
-            for source_column, target_field in (
-                ("categories", "google_categories"),
-                ("hours", "google_hours"),
-            ):
-                json_raw, is_mojibake = _safe_csv_text(
-                    row.get(source_column) or ""
+            main_category, main_category_is_mojibake = _safe_csv_text(
+                row.get("main_category") or ""
+            )
+            if main_category_is_mojibake:
+                skipped_mojibake_count += 1
+                print(
+                    "Skipping mojibake vendor field: "
+                    f"vendor={directory_id}, column=main_category"
                 )
-                if is_mojibake:
-                    skipped_mojibake_count += 1
-                    print(
-                        "Skipping mojibake vendor field: "
-                        f"vendor={directory_id}, column={source_column}"
-                    )
-                    continue
-                if json_raw is not None and _set_if_changed(
-                    vendor,
-                    target_field,
-                    json.loads(json_raw),
-                ):
-                    changed_field_count += 1
+                main_category = None
 
-            for source_column, target_field, value_map in (
-                (
-                    "is_temporarily_closed",
-                    "is_temporarily_closed",
-                    {"true": True, "false": False},
-                ),
-                (
-                    "is_permanently_closed",
-                    "is_permanently_closed",
-                    {"true": True, "false": False},
-                ),
+            categories_raw, categories_is_mojibake = _safe_csv_text(
+                row.get("categories") or ""
+            )
+            categories: list[str] | None = None
+            if categories_is_mojibake:
+                skipped_mojibake_count += 1
+                print(
+                    "Skipping mojibake vendor field: "
+                    f"vendor={directory_id}, column=categories"
+                )
+            elif categories_raw is not None:
+                categories = json.loads(categories_raw)
+
+            if main_category is not None:
+                categories = categories or []
+                categories = [
+                    main_category,
+                    *(
+                        category
+                        for category in categories
+                        if category != main_category
+                    ),
+                ]
+            if categories is not None and _set_if_changed(
+                google_profile,
+                "categories",
+                categories,
+            ):
+                changed_field_count += 1
+
+            hours_raw, hours_is_mojibake = _safe_csv_text(
+                row.get("hours") or ""
+            )
+            if hours_is_mojibake:
+                skipped_mojibake_count += 1
+                print(
+                    "Skipping mojibake vendor field: "
+                    f"vendor={directory_id}, column=hours"
+                )
+            elif hours_raw is not None and _set_if_changed(
+                google_profile,
+                "hours",
+                json.loads(hours_raw),
+            ):
+                changed_field_count += 1
+
+            closed_flags: dict[str, bool | None] = {
+                "temporary": None,
+                "permanent": None,
+            }
+            for source_column, flag_name in (
+                ("is_temporarily_closed", "temporary"),
+                ("is_permanently_closed", "permanent"),
             ):
                 value, is_mojibake = _safe_csv_text(
                     row.get(source_column) or ""
@@ -432,11 +489,27 @@ def seed_vendor_google_metadata(
                     continue
                 if value is None:
                     continue
-                parsed_value = value_map.get(value.casefold())
+                parsed_value = {"true": True, "false": False}.get(
+                    value.casefold()
+                )
                 if parsed_value is None:
                     skipped_ambiguous_count += 1
                     continue
-                if _set_if_changed(vendor, target_field, parsed_value):
+                closed_flags[flag_name] = parsed_value
+
+            merged_status = None
+            if google_profile.status is None:
+                if closed_flags["permanent"] is True:
+                    merged_status = "permanently_closed"
+                elif closed_flags["temporary"] is True:
+                    merged_status = "temporarily_closed"
+                elif (
+                    closed_flags["temporary"] is False
+                    and closed_flags["permanent"] is False
+                ):
+                    merged_status = "open"
+            if merged_status is not None:
+                if _set_if_changed(google_profile, "status", merged_status):
                     changed_field_count += 1
 
     session.commit()

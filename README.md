@@ -306,17 +306,23 @@ Vendor image metadata can be managed through these endpoints:
 
 ```text
 GET    /vendors/{vendor_id}/images
+GET    /vendors/{vendor_id}/images/{image_id}
 POST   /vendors/{vendor_id}/images
 PATCH  /vendors/{vendor_id}/images/{image_id}
 DELETE /vendors/{vendor_id}/images/{image_id}
+GET    /reviews/{review_id}/images/{image_id}
 ```
 
-Reading is public. Creating, editing, reordering, and deleting images require an
+The two item-level `GET` endpoints are public. They load the image record from
+the database, resolve its root-relative `/media/...` URL inside the matching
+integer vendor/review upload directory, and return the JPEG or PNG file.
+Creating, editing, reordering, and deleting vendor image metadata require an
 administrator through the temporary development authentication dependency.
-`POST` accepts `image_url` and an optional positive `display_order`; when the
-order is omitted, the API appends the image. The first ordered image is the
-vendor thumbnail. This API stores image URLs and metadata only—it does not
-upload binary image files.
+`POST` accepts a root-relative `image_url` under the matching
+`/media/vendor_images/{vendor_id}/` directory and an optional positive
+`display_order`; when the order is omitted, the API appends the image. The first
+ordered image is the vendor thumbnail. This API stores image URLs and metadata
+only—it does not upload binary image files.
 
 ### Chatbot prompt storage
 

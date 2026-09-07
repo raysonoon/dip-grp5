@@ -1,7 +1,7 @@
 from app.models.chatbot_prompt import ChatbotPrompt
 from app.models.review import Review, ReviewImage
 from app.models.user import User
-from app.models.vendor import Vendor, VendorImage
+from app.models.vendor import Vendor, VendorGoogleProfile, VendorImage
 from app.models.google_review import GoogleReview
 
 __all__ = [
@@ -11,6 +11,7 @@ __all__ = [
     "ReviewImage",
     "User",
     "Vendor",
+    "VendorGoogleProfile",
     "VendorImage",
 ]
 

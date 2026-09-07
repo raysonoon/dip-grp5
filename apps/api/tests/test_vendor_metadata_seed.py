@@ -238,30 +238,30 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
     assert safe_vendor.price_range == "$20-30"
     assert safe_vendor.halal is True
     assert safe_vendor.vegetarian is False
-    assert safe_vendor.google_place_id == "place-1"
-    assert safe_vendor.google_name == "Updated Vendor on Google"
-    assert safe_vendor.google_price_range == "$1-10"
-    assert float(safe_vendor.average_google_rating) == 4.8
-    assert safe_vendor.google_review_count == 123
-    assert safe_vendor.google_address == "1 Test Street, Singapore"
-    assert safe_vendor.google_main_category == "Restaurant"
-    assert safe_vendor.google_categories == ["Restaurant", "Cafe"]
-    assert safe_vendor.website_url == "https://example.com/vendor"
-    assert safe_vendor.phone_number == "6123 4567"
-    assert safe_vendor.google_hours == [
+    safe_profile = safe_vendor.google_profile
+    assert safe_profile is not None
+    assert safe_profile.place_id == "place-1"
+    assert safe_profile.display_name == "Updated Vendor on Google"
+    assert safe_profile.price_range == "$1-10"
+    assert float(safe_profile.rating) == 4.8
+    assert safe_profile.review_count == 123
+    assert safe_profile.address == "1 Test Street, Singapore"
+    assert safe_profile.categories == ["Restaurant", "Cafe"]
+    assert safe_profile.website_url == "https://example.com/vendor"
+    assert safe_profile.phone_number == "6123 4567"
+    assert safe_profile.hours == [
         {"day": "Monday", "times": ["9 am-6 pm"]}
     ]
-    assert safe_vendor.google_status == "Open"
-    assert safe_vendor.is_temporarily_closed is False
-    assert safe_vendor.is_permanently_closed is False
-    assert safe_vendor.google_maps_url == "https://maps.example.com/vendor"
-    assert safe_vendor.google_search_query == "updated vendor ntu"
+    assert safe_profile.status == "Open"
+    assert safe_profile.maps_url == "https://maps.example.com/vendor"
+    assert safe_profile.search_query == "updated vendor ntu"
 
     assert mojibake_vendor.name == "Geláre"
     assert mojibake_vendor.location == "NS3-01-19"
     assert mojibake_vendor.category == "Desserts / café"
     assert mojibake_vendor.halal is True
-    assert mojibake_vendor.google_name == "Gelare @ NTU"
+    assert mojibake_vendor.google_profile is not None
+    assert mojibake_vendor.google_profile.display_name == "Gelare @ NTU"
 
     second_result = seed.seed_vendor_google_metadata(session)
     assert second_result[2] == 0

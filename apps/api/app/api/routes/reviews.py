@@ -2,11 +2,13 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, Response, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import CurrentUser, DbSession
-from app.models import Review, Vendor
+from app.core.image_storage import resolve_image_path
+from app.models import Review, ReviewImage, Vendor
 from app.schemas import (
     ReviewCreate,
     ReviewDetailRead,
@@ -106,6 +108,52 @@ def list_reviews(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get(
+    "/{review_id}/images/{image_id}",
+    response_class=FileResponse,
+)
+def get_review_image_file(
+    review_id: Annotated[int, Path(gt=0)],
+    image_id: Annotated[int, Path(gt=0)],
+    session: DbSession,
+) -> FileResponse:
+    image = session.scalar(
+        select(ReviewImage).where(
+            ReviewImage.id == image_id,
+            ReviewImage.review_id == review_id,
+        )
+    )
+    if image is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Review image not found",
+        )
+
+    try:
+        image_path, media_type = resolve_image_path(
+            image.image_url,
+            collection="review_images",
+            owner_id=review_id,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Stored review image path is invalid",
+        ) from error
+    if media_type != image.mime_type:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Stored review image type does not match its path",
+        )
+    if not image_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Review image file not found",
+        )
+
+    return FileResponse(image_path, media_type=media_type)
 
 
 @router.get("/{review_id}", response_model=ReviewDetailRead)
