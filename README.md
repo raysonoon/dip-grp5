@@ -5,7 +5,6 @@
 ```text
 dip-grp5/
 ├── README.md
-├── chatbot.md                          # Chatbot RAG vector-search design notes
 ├── .gitignore
 ├── diagrams/
 │   ├── dip_architecture_220826.jpg     # Software architecture overview
@@ -15,6 +14,8 @@ dip-grp5/
 │   ├── DIP Chatbot Schema.xlsx         # Chatbot schema workbook
 │   ├── Still NEED.txt
 │   ├── TODO.md
+│   ├── chatbot.md                      # Chatbot RAG vector-search design notes
+│   ├── db-schema.md                    # Database tables reference
 │   ├── week-3.md
 │   └── What Baihao Did wk 3.md
 │
@@ -38,6 +39,7 @@ dip-grp5/
         │   │   └── session.py          # Engine + session factory
         │   ├── models/                 # SQLAlchemy ORM (database tables)
         │   │   ├── chatbot_prompt.py
+        │   │   ├── google_review.py
         │   │   ├── knowledge.py        # knowledge_chunks (vector RAG)
         │   │   ├── review.py
         │   │   ├── user.py
@@ -101,10 +103,7 @@ dip-grp5/
 
 ## Project documentation
 
-- [Backend setup and API manual](Manual.md)
-- [Community review database design](docs/community-review-database-design.md)
-- [Community review database ERD](docs/community-review-erd.svg)
-- [Database tables reference](docs/tables/README.md)
+- [Database schema reference](docs/db-schema.md)
 
 ## Local backend environment
 

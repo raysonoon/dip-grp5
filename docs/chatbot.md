@@ -90,7 +90,7 @@ class VectorBase(DeclarativeBase):
 | `id` | `Integer` identity PK | |
 | `source_type` | `varchar(32)` | `internal_review` \| `reddit` \| `google_review` (CHECK) |
 | `source_id` | `varchar(255)` nullable | external id, or `str(review.id)` for internal |
-| `vendor_id` | `int` nullable | plain integer (no FK); set for `internal_review` chunks, `NULL` for external |
+| `vendor_id` | `int` nullable | plain integer (no FK); set for `internal_review` and `google_review` chunks, `NULL` for `reddit` |
 | `content` | `text` | the retrievable chunk text (CHECK non-blank) |
 | `embedding` | `vector(768)` | `pgvector.sqlalchemy.Vector` |
 | `metadata` | `json` nullable | `{rating, author, url, posted_at, subreddit, …}` |
@@ -172,6 +172,48 @@ Notes:
   criteria first (via `vendor_id` or `metadata`), then ranks by similarity.
 - The retrieval layer exposes optional `filters` so the Hybrid path can be
   wired to intent classification.
+
+## Ratings in knowledge chunks
+
+App and Google ratings are stored at different granularities and must be
+mapped into `knowledge_chunks` separately — they are never merged or averaged
+together.
+
+| Signal | Granularity | Column | Type | Notes |
+|---|---|---|---|---|
+| App review rating | per review | `reviews.rating_half_steps` | `smallint` | half-star steps ×2 (2–10); `/ 2` for a 0–5 display value |
+| Google review rating | per review | `google_reviews.rating` | `smallint` | raw integer 1–5 (NOT NULL) |
+| Google average rating | per vendor | `vendors.average_google_rating` | `numeric(2,1)` | raw decimal (e.g. `4.3`); `NULL` when unrated |
+
+### Mapping a Google review into a chunk
+
+Each individual Google review becomes one chunk:
+
+| Chunk field | Value |
+|---|---|
+| `source_type` | `google_review` |
+| `source_id` | `google_reviews.external_review_id` |
+| `vendor_id` | the review's `vendor_id` |
+| `content` | `review_text` (this is what gets embedded) |
+| `metadata.rating` | the individual integer 1–5 |
+| `metadata.published_at` | `published_at` |
+
+### Where the average Google rating fits
+
+`vendors.average_google_rating` is a **vendor attribute**, not a review, so it
+is not embedded as its own chunk. Surface it in one of two ways:
+
+- **SQL path**: query `vendors.average_google_rating` directly for
+  "highest-rated place" style intents (alongside `func.avg(reviews.rating_half_steps)`
+  for the app-review average).
+- **Vector/Hybrid path**: stamp it onto any chunk for that vendor as
+  `metadata.vendor_average_google_rating`, so the LLM can quote the vendor's
+  Google score in an answer even though the number itself is not embedded.
+
+App reviews map analogously with `source_type = internal_review` and
+`metadata.rating = rating_half_steps / 2`. Keep the app-review average and the
+Google average as distinct numbers — the chatbot reports them side by side and
+never averages across the two sources.
 
 ## Services (next steps)
 
