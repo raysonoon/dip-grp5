@@ -84,7 +84,6 @@ def list_vendors(
         )
         .options(
             selectinload(Vendor.images),
-            selectinload(Vendor.google_profile),
         )
         .outerjoin(Review, Review.vendor_id == Vendor.id)
         .where(*filters)
@@ -96,13 +95,6 @@ def list_vendors(
 
     items = []
     for vendor, review_count, average_half_steps in rows:
-        google_profile = vendor.google_profile
-        google_status = (
-            google_profile.status if google_profile is not None else None
-        )
-        normalized_google_status = (
-            google_status.casefold() if google_status is not None else None
-        )
         average_rating = (
             None
             if average_half_steps is None
@@ -113,7 +105,7 @@ def list_vendors(
                 id=vendor.id,
                 name=vendor.name,
                 location=vendor.location,
-                level_unit=vendor.level_unit,
+                unit_code=vendor.unit_code,
                 image_url=(vendor.images[0].image_url if vendor.images else None),
                 category=vendor.category,
                 opening_hours=vendor.opening_hours,
@@ -122,83 +114,8 @@ def list_vendors(
                 vegetarian=vendor.vegetarian,
                 average_google_rating=(
                     None
-                    if google_profile is None or google_profile.rating is None
-                    else float(google_profile.rating)
-                ),
-                google_place_id=(
-                    google_profile.place_id
-                    if google_profile is not None
-                    else None
-                ),
-                google_name=(
-                    google_profile.display_name
-                    if google_profile is not None
-                    else None
-                ),
-                google_review_count=(
-                    google_profile.review_count
-                    if google_profile is not None
-                    else None
-                ),
-                google_price_range=(
-                    google_profile.price_range
-                    if google_profile is not None
-                    else None
-                ),
-                google_address=(
-                    google_profile.address
-                    if google_profile is not None
-                    else None
-                ),
-                google_main_category=(
-                    google_profile.categories[0]
-                    if google_profile is not None
-                    and google_profile.categories
-                    else None
-                ),
-                google_categories=(
-                    google_profile.categories
-                    if google_profile is not None
-                    else None
-                ),
-                website_url=(
-                    google_profile.website_url
-                    if google_profile is not None
-                    else None
-                ),
-                phone_number=(
-                    google_profile.phone_number
-                    if google_profile is not None
-                    else None
-                ),
-                google_hours=(
-                    google_profile.hours
-                    if google_profile is not None
-                    else None
-                ),
-                google_status=google_status,
-                is_temporarily_closed=(
-                    None
-                    if normalized_google_status is None
-                    else "temporar" in normalized_google_status
-                ),
-                is_permanently_closed=(
-                    None
-                    if normalized_google_status is None
-                    else (
-                        "permanent" in normalized_google_status
-                        or "no longer operating" in normalized_google_status
-                    )
-                ),
-                google_maps_url=(
-                    google_profile.maps_url
-                    if google_profile is not None
-                    else None
-                ),
-                google_search_query=(
-                    google_profile.search_query
-                    if google_profile is not None
-                    else None
+                    if vendor.average_google_rating is None
+                    else float(vendor.average_google_rating)
                 ),
                 created_at=vendor.created_at,
                 updated_at=vendor.updated_at,

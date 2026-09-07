@@ -1,14 +1,17 @@
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import image_storage
 from app.models import (
     Review,
+    ReviewImage,
     User,
     Vendor,
-    VendorGoogleProfile,
     VendorImage,
 )
 
@@ -34,22 +37,8 @@ def _seed_records(session: Session) -> tuple[User, User, Vendor, Review]:
         price_range="$1-10",
         halal=True,
         vegetarian=False,
-        level_unit="N2.1-01-01",
-        google_profile=VendorGoogleProfile(
-            place_id="google-place-1",
-            display_name="Test Stall on Google",
-            price_range="$10-20",
-            rating=4.6,
-            review_count=123,
-            address="1 Test Street, Singapore",
-            categories=["Restaurant", "Cafe"],
-            website_url="https://example.com",
-            phone_number="6123 4567",
-            hours=[{"day": "Monday", "times": ["9 am-6 pm"]}],
-            status="Open",
-            maps_url="https://maps.example.com/test-stall",
-            search_query="test stall ntu",
-        ),
+        unit_code="N2.1-01-01",
+        average_google_rating=4.6,
         images=[
             VendorImage(
                 image_url="/media/vendor_images/1/second.jpg",
@@ -82,7 +71,6 @@ def _seed_records(session: Session) -> tuple[User, User, Vendor, Review]:
 def test_user_and_vendor_storage_follow_the_new_schema(session: Session) -> None:
     user_columns = User.__table__.columns
     vendor_columns = Vendor.__table__.columns
-    google_profile_columns = VendorGoogleProfile.__table__.columns
 
     assert "username" not in user_columns
     assert "display_name" in user_columns
@@ -97,19 +85,16 @@ def test_user_and_vendor_storage_follow_the_new_schema(session: Session) -> None
     assert "price_range" in vendor_columns
     assert "halal" in vendor_columns
     assert "vegetarian" in vendor_columns
-    assert len(vendor_columns) == 12
-    assert "google_place_id" not in vendor_columns
-    assert "google_price_range" not in vendor_columns
-    assert "google_review_count" not in vendor_columns
-    assert "google_categories" not in vendor_columns
-    assert "google_hours" not in vendor_columns
-    assert "place_id" in google_profile_columns
-    assert "rating" in google_profile_columns
-    assert "review_count" in google_profile_columns
-    assert "categories" in google_profile_columns
-    assert "hours" in google_profile_columns
-    assert "is_temporarily_closed" not in google_profile_columns
-    assert "is_permanently_closed" not in google_profile_columns
+    assert "unit_code" in vendor_columns
+    assert "level_unit" not in vendor_columns
+    assert "average_google_rating" in vendor_columns
+    assert len(vendor_columns) == 13
+    google_columns = {
+        column.name
+        for column in vendor_columns
+        if "google" in column.name
+    }
+    assert google_columns == {"average_google_rating"}
     assert VendorImage.__tablename__ == "vendor_images"
 
 
@@ -178,16 +163,11 @@ def test_vendor_api_returns_ordered_images_and_compatibility_thumbnail(
     assert item["price_range"] == "$1-10"
     assert item["halal"] is True
     assert item["vegetarian"] is False
-    assert item["level_unit"] == "N2.1-01-01"
-    assert item["google_place_id"] == "google-place-1"
-    assert item["google_name"] == "Test Stall on Google"
-    assert item["google_price_range"] == "$10-20"
+    assert item["unit_code"] == "N2.1-01-01"
     assert item["average_google_rating"] == 4.6
-    assert item["google_review_count"] == 123
-    assert item["google_categories"] == ["Restaurant", "Cafe"]
-    assert item["google_hours"][0]["day"] == "Monday"
-    assert item["is_temporarily_closed"] is False
-    assert item["is_permanently_closed"] is False
+    assert {
+        key for key in item if "google" in key
+    } == {"average_google_rating"}
     assert item["updated_at"] is not None
 
 
@@ -256,3 +236,54 @@ def test_review_edit_requires_at_least_one_valid_field(
         ).status_code
         == 422
     )
+
+
+def test_review_delete_checks_ownership_and_removes_images(
+    client: TestClient,
+    session: Session,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    uploads_root = tmp_path / "uploads"
+    monkeypatch.setattr(image_storage, "UPLOADS_ROOT", uploads_root)
+    author, other_user, _, review = _seed_records(session)
+    image = ReviewImage(
+        review_id=review.id,
+        image_url=f"/media/review_images/{review.id}/1.png",
+        mime_type="image/png",
+        file_size_bytes=8,
+        display_order=1,
+    )
+    session.add(image)
+    session.commit()
+    session.refresh(image)
+    image_id = image.id
+    image_path = (
+        uploads_root / "review_images" / str(review.id) / "1.png"
+    )
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(b"test-png")
+
+    forbidden = client.delete(
+        f"/reviews/{review.id}",
+        headers={"X-Dev-User-Id": str(other_user.id)},
+    )
+    assert forbidden.status_code == 403
+    assert session.get(Review, review.id) is not None
+    assert image_path.is_file()
+
+    deleted = client.delete(
+        f"/reviews/{review.id}",
+        headers={"X-Dev-User-Id": str(author.id)},
+    )
+    assert deleted.status_code == 204
+    session.expire_all()
+    assert session.get(Review, review.id) is None
+    assert session.get(ReviewImage, image_id) is None
+    assert not image_path.exists()
+
+    missing = client.delete(
+        f"/reviews/{review.id}",
+        headers={"X-Dev-User-Id": str(author.id)},
+    )
+    assert missing.status_code == 404

@@ -83,7 +83,7 @@ def test_seed_ntu_vendors_populates_metadata_for_new_and_existing_rows(
     assert refreshed_existing is not None
     assert refreshed_existing.name == "Existing Vendor"
     assert refreshed_existing.location == "North Spine"
-    assert refreshed_existing.level_unit == "North Spine"
+    assert refreshed_existing.unit_code == "North Spine"
     assert refreshed_existing.category == "Cafe"
     assert refreshed_existing.opening_hours == "Daily"
     assert refreshed_existing.price_range == "$1-10"
@@ -120,6 +120,33 @@ def test_seed_ntu_vendors_rejects_invalid_boolean_metadata(
         raise AssertionError("invalid boolean metadata should be rejected")
 
 
+def test_seed_ntu_vendors_preserves_existing_mojibake_fields(
+    session: Session,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "vendors.csv"
+    csv_path.write_text(
+        "id,name,location,category,opening_hours,price_range,halal,vegetarian\n"
+        "V001,Gel��re,NS3-01-19,Desserts / caf��,Daily,$1-10,TRUE,TRUE\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(seed, "NTU_VENDOR_CSV", csv_path)
+    existing = Vendor(
+        directory_id="V001",
+        name="Geláre",
+        category="Dessert",
+    )
+    session.add(existing)
+    session.commit()
+
+    seed.seed_ntu_vendors(session)
+
+    assert existing.name == "Geláre"
+    assert existing.category == "Dessert"
+    assert existing.unit_code == "NS3-01-19"
+
+
 def test_seed_ntu_vendors_refreshes_directory_metadata(
     session: Session,
     monkeypatch,
@@ -132,7 +159,7 @@ def test_seed_ntu_vendors_refreshes_directory_metadata(
         directory_id="V001",
         name="Stale Vendor",
         location="Existing Building",
-        level_unit="Old Unit",
+        unit_code="Old Unit",
         category="Old Category",
         opening_hours="Old Hours",
         price_range="$20-30",
@@ -146,7 +173,7 @@ def test_seed_ntu_vendors_refreshes_directory_metadata(
 
     assert existing.name == "Existing Vendor"
     assert existing.location == "Existing Building"
-    assert existing.level_unit == "North Spine"
+    assert existing.unit_code == "North Spine"
     assert existing.category == "Cafe"
     assert existing.opening_hours == "Daily"
     assert existing.price_range == "$1-10"
@@ -205,7 +232,7 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
     safe_vendor = Vendor(
         directory_id="V001",
         name="Directory Vendor",
-        level_unit="Directory Unit",
+        unit_code="Directory Unit",
         category="Directory Category",
         opening_hours="Directory Hours",
         price_range="$20-30",
@@ -227,41 +254,24 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
     assert result[0] == 2
     assert result[1] == 0
     assert result[2] > 0
-    assert result[3] == 4
+    assert result[3] == 1
     assert result[4] == 0
 
-    assert safe_vendor.name == "Directory Vendor"
-    assert safe_vendor.location == "North Spine Plaza"
-    assert safe_vendor.level_unit == "Directory Unit"
-    assert safe_vendor.category == "Directory Category"
-    assert safe_vendor.opening_hours == "Directory Hours"
-    assert safe_vendor.price_range == "$20-30"
-    assert safe_vendor.halal is True
-    assert safe_vendor.vegetarian is False
-    safe_profile = safe_vendor.google_profile
-    assert safe_profile is not None
-    assert safe_profile.place_id == "place-1"
-    assert safe_profile.display_name == "Updated Vendor on Google"
-    assert safe_profile.price_range == "$1-10"
-    assert float(safe_profile.rating) == 4.8
-    assert safe_profile.review_count == 123
-    assert safe_profile.address == "1 Test Street, Singapore"
-    assert safe_profile.categories == ["Restaurant", "Cafe"]
-    assert safe_profile.website_url == "https://example.com/vendor"
-    assert safe_profile.phone_number == "6123 4567"
-    assert safe_profile.hours == [
-        {"day": "Monday", "times": ["9 am-6 pm"]}
-    ]
-    assert safe_profile.status == "Open"
-    assert safe_profile.maps_url == "https://maps.example.com/vendor"
-    assert safe_profile.search_query == "updated vendor ntu"
+    assert safe_vendor.name == "Updated Vendor on Google"
+    assert safe_vendor.location == "1 Test Street, Singapore"
+    assert safe_vendor.unit_code == "NS3-01-01"
+    assert safe_vendor.category == "Restaurant"
+    assert safe_vendor.opening_hours == "Daily: 9am to 6pm"
+    assert safe_vendor.price_range == "$1-10"
+    assert safe_vendor.halal is False
+    assert safe_vendor.vegetarian is True
+    assert float(safe_vendor.average_google_rating) == 4.8
 
-    assert mojibake_vendor.name == "Geláre"
+    assert mojibake_vendor.name == "Gelare @ NTU"
     assert mojibake_vendor.location == "NS3-01-19"
     assert mojibake_vendor.category == "Desserts / café"
     assert mojibake_vendor.halal is True
-    assert mojibake_vendor.google_profile is not None
-    assert mojibake_vendor.google_profile.display_name == "Gelare @ NTU"
+    assert mojibake_vendor.average_google_rating is None
 
     second_result = seed.seed_vendor_google_metadata(session)
     assert second_result[2] == 0
