@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     seed_test_password: SecretStr = SecretStr("test")
     dev_auth_enabled: bool = False
 
+    storage_backend: str = "local"
+    # future migration to Cloudflare R2 object storage for images
+    r2_account_id: str | None = None
+    r2_bucket: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: SecretStr | None = None
+    r2_public_base_url: str | None = None
+
     gemini_api_key: SecretStr | None = None
     embedding_model: str = "text-embedding-004"
     embedding_dimensions: int = 768
