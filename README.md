@@ -301,21 +301,45 @@ the first image for frontend compatibility. Items also contain `updated_at`,
 `review_count`, and `average_rating`. The average is calculated from current
 reviews and is `null` when a food stall has no reviews.
 
+The vendor schema uses `unit_code` for the stall unit. Google-enriched data is
+merged into the standard vendor fields; `average_google_rating` is the only
+Google-specific vendor field returned by the API.
+
 Vendor image metadata can be managed through these endpoints:
 
 ```text
 GET    /vendors/{vendor_id}/images
+GET    /vendors/{vendor_id}/images/{image_id}
 POST   /vendors/{vendor_id}/images
 PATCH  /vendors/{vendor_id}/images/{image_id}
 DELETE /vendors/{vendor_id}/images/{image_id}
+POST   /reviews/{review_id}/images
+GET    /reviews/{review_id}/images/{image_id}
+PATCH  /reviews/{review_id}/images/{image_id}
+DELETE /reviews/{review_id}/images/{image_id}
 ```
 
-Reading is public. Creating, editing, reordering, and deleting images require an
+The two item-level `GET` endpoints are public. They load the image record from
+the database, resolve its root-relative `/media/...` URL inside the matching
+integer vendor/review upload directory, and return the JPEG or PNG file.
+Creating, editing, reordering, and deleting vendor image metadata require an
 administrator through the temporary development authentication dependency.
-`POST` accepts `image_url` and an optional positive `display_order`; when the
-order is omitted, the API appends the image. The first ordered image is the
-vendor thumbnail. This API stores image URLs and metadata only—it does not
-upload binary image files.
+`POST` accepts a root-relative `image_url` under the matching
+`/media/vendor_images/{vendor_id}/` directory and an optional positive
+`display_order`; when the order is omitted, the API appends the image. The first
+ordered image is the vendor thumbnail. This API stores image URLs and metadata
+only—it does not upload binary image files.
+
+`POST /reviews/{review_id}/images` accepts one multipart form-data field named
+`file`. The authenticated review author may upload JPEG or PNG content up to
+5 MB; each review supports at most five images. The API detects the actual file
+type, creates the database metadata, and saves the file under the matching
+`uploads/review_images/{review_id}/` directory.
+
+`PATCH /reviews/{review_id}/images/{image_id}` lets the review author replace
+the multipart `file`, change the form field `display_order`, or do both.
+`DELETE /reviews/{review_id}/images/{image_id}` removes the database record and
+its local file; the review author or an administrator may delete it.
 
 ### Chatbot prompt storage
 

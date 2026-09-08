@@ -1,6 +1,8 @@
 import csv
-from pathlib import Path
 from datetime import datetime, timezone
+from decimal import Decimal
+from pathlib import Path
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -8,7 +10,12 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.db.chatbot_question_data import CHATBOT_QUESTION_ROWS
 from app.db.session import SessionLocal
-from app.models import ChatbotPrompt, GoogleReview, User, Vendor
+from app.models import (
+    ChatbotPrompt,
+    GoogleReview,
+    User,
+    Vendor,
+)
 
 
 DEMO_VENDORS = (
@@ -44,6 +51,77 @@ GOOGLE_RATINGS_CSV = (
     / "google_reviews"
     / "ntu_food_places_final.csv"
 )
+
+MOJIBAKE_MARKERS = (
+    "\ufffd",
+    "\u00c3",
+    "\u00c2",
+    "\u00e2",
+    "\u00f0\u0178",
+)
+GOOGLE_VENDOR_CORE_FIELD_MAP = (
+    ("name", "name"),
+    ("address", "location"),
+    ("Level / unit", "unit_code"),
+    ("main_category", "category"),
+    ("Opening hours", "opening_hours"),
+    ("price_range", "price_range"),
+)
+GOOGLE_VENDOR_DIETARY_FIELD_MAP = (
+    ("Halal", "halal"),
+    ("Vegetarian", "vegetarian"),
+)
+
+
+def _parse_nullable_bool(
+    raw_value: str,
+    *,
+    column_name: str,
+    directory_id: str,
+) -> bool | None:
+    normalized = raw_value.strip().lower()
+    if normalized in {"", "null"}:
+        return None
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise ValueError(
+        f"Invalid {column_name} value for vendor {directory_id}: "
+        f"{raw_value!r}"
+    )
+
+
+def _safe_csv_text(raw_value: str) -> tuple[str | None, bool]:
+    """Return normalized text and whether it was rejected as mojibake."""
+    normalized = raw_value.strip()
+    if not normalized:
+        return None, False
+    if any(marker in normalized for marker in MOJIBAKE_MARKERS):
+        return None, True
+    return normalized, False
+
+
+def _set_if_changed(entity: object, field: str, value: object) -> bool:
+    current_value = getattr(entity, field)
+    if isinstance(current_value, datetime) and isinstance(value, datetime):
+        normalized_current = (
+            current_value.replace(tzinfo=timezone.utc)
+            if current_value.tzinfo is None
+            else current_value.astimezone(timezone.utc)
+        )
+        normalized_value = (
+            value.replace(tzinfo=timezone.utc)
+            if value.tzinfo is None
+            else value.astimezone(timezone.utc)
+        )
+        if normalized_current == normalized_value:
+            return False
+    elif current_value == value:
+        return False
+    setattr(entity, field, value)
+    return True
+
 
 def _seed_user(
     session: Session,
@@ -134,23 +212,74 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
 
         for row in reader:
             directory_id = row["id"].strip()
-
             vendor = session.scalar(
                 select(Vendor).where(
                     Vendor.directory_id == directory_id
                 )
             )
 
+            vendor_directory_data: dict[str, object] = {}
+            skip_new_vendor = False
+            for source_column, target_field in (
+                ("name", "name"),
+                ("location", "unit_code"),
+                ("category", "category"),
+                ("opening_hours", "opening_hours"),
+                ("price_range", "price_range"),
+            ):
+                value, is_mojibake = _safe_csv_text(
+                    row.get(source_column) or ""
+                )
+                if is_mojibake:
+                    print(
+                        "Skipping mojibake directory field: "
+                        f"vendor={directory_id}, column={source_column}"
+                    )
+                    if vendor is None and target_field == "name":
+                        skip_new_vendor = True
+                    continue
+                if target_field == "name" and value is None:
+                    if vendor is None:
+                        skip_new_vendor = True
+                    continue
+                vendor_directory_data[target_field] = value
+
+            if skip_new_vendor:
+                print(
+                    f"Skipping vendor {directory_id}: safe name not available"
+                )
+                continue
+
+            vendor_directory_data.update(
+                halal=_parse_nullable_bool(
+                    row["halal"],
+                    column_name="halal",
+                    directory_id=directory_id,
+                ),
+                vegetarian=_parse_nullable_bool(
+                    row["vegetarian"],
+                    column_name="vegetarian",
+                    directory_id=directory_id,
+                ),
+            )
+
             if vendor is not None:
+                for field, value in vendor_directory_data.items():
+                    _set_if_changed(vendor, field, value)
+                if (
+                    vendor.location is None
+                    and "unit_code" in vendor_directory_data
+                ):
+                    vendor.location = vendor_directory_data["unit_code"]
+                session.commit()
+                session.refresh(vendor)
                 results.append((vendor, False))
                 continue
 
             vendor = Vendor(
                 directory_id=directory_id,
-                name=row["name"].strip(),
-                location=row["location"].strip() or None,
-                category=row["category"].strip() or None,
-                opening_hours=row["opening_hours"].strip() or None,
+                location=vendor_directory_data.get("unit_code"),
+                **vendor_directory_data,
             )
             session.add(vendor)
             session.commit()
@@ -160,9 +289,20 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
     return results
 
 
-def seed_vendor_google_ratings(session: Session) -> tuple[int, int]:
-    updated_count = 0
+def seed_vendor_google_metadata(
+    session: Session,
+) -> tuple[int, int, int, int, int]:
+    """Merge safe vendor fields from ntu_food_places_final.csv.
+
+    Blank and mojibake values do not overwrite existing data.
+    The return value contains matched vendors, missing vendors, changed fields,
+    rejected mojibake fields, and skipped ambiguous dietary fields.
+    """
+    matched_vendor_count = 0
     missing_vendor_count = 0
+    changed_field_count = 0
+    skipped_mojibake_count = 0
+    skipped_ambiguous_count = 0
 
     vendors_by_directory_id = {
         vendor.directory_id: vendor
@@ -182,18 +322,84 @@ def seed_vendor_google_ratings(session: Session) -> tuple[int, int]:
                 missing_vendor_count += 1
                 continue
 
+            matched_vendor_count += 1
+
+            for source_column, target_field in GOOGLE_VENDOR_CORE_FIELD_MAP:
+                value, is_mojibake = _safe_csv_text(
+                    row.get(source_column) or ""
+                )
+                if is_mojibake:
+                    skipped_mojibake_count += 1
+                    print(
+                        "Skipping mojibake vendor field: "
+                        f"vendor={directory_id}, column={source_column}"
+                    )
+                    continue
+                if value is not None and _set_if_changed(
+                    vendor,
+                    target_field,
+                    value,
+                ):
+                    changed_field_count += 1
+
+            for source_column, target_field in GOOGLE_VENDOR_DIETARY_FIELD_MAP:
+                value, is_mojibake = _safe_csv_text(
+                    row.get(source_column) or ""
+                )
+                if is_mojibake:
+                    skipped_mojibake_count += 1
+                    print(
+                        "Skipping mojibake vendor field: "
+                        f"vendor={directory_id}, column={source_column}"
+                    )
+                    continue
+                if value is None or value.casefold() in {
+                    "not stated",
+                    "unknown",
+                    "n/a",
+                }:
+                    continue
+
+                normalized_value = value.casefold()
+                if normalized_value in {"yes", "true"}:
+                    parsed_value = True
+                elif normalized_value in {"no", "false"}:
+                    parsed_value = False
+                elif target_field == "halal" and "halal" in normalized_value:
+                    parsed_value = True
+                elif target_field == "vegetarian" and (
+                    "vegetarian" in normalized_value
+                    or "meat-free" in normalized_value
+                ):
+                    parsed_value = True
+                else:
+                    skipped_ambiguous_count += 1
+                    continue
+
+                if _set_if_changed(vendor, target_field, parsed_value):
+                    changed_field_count += 1
+
             rating_raw = (row.get("rating") or "").strip()
-            if not rating_raw:
-                vendor.average_google_rating = None
-            else:
-                rating_value = float(rating_raw)
-                vendor.average_google_rating = (
+            if rating_raw:
+                rating_value = Decimal(rating_raw)
+                normalized_rating = (
                     None if rating_value == 0 else rating_value
                 )
-            updated_count += 1
+                if _set_if_changed(
+                    vendor,
+                    "average_google_rating",
+                    normalized_rating,
+                ):
+                    changed_field_count += 1
 
     session.commit()
-    return updated_count, missing_vendor_count
+    return (
+        matched_vendor_count,
+        missing_vendor_count,
+        changed_field_count,
+        skipped_mojibake_count,
+        skipped_ambiguous_count,
+    )
 
 
 def seed_google_reviews(session: Session) -> tuple[int, int, int]:
@@ -254,7 +460,6 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
                 comment=(row["review_text"] or "").strip() or None,
                 published_at=published_at,
             )
-
             session.add(google_review)
             existing_review_ids.add(external_review_id)
             created_count += 1
@@ -321,12 +526,18 @@ def main() -> None:
         test_user, test_user_created = seed_development_user(session)
         vendors = seed_demo_vendors(session)
         ntu_vendors = seed_ntu_vendors(session)
-        google_ratings_updated, google_ratings_missing = (
-            seed_vendor_google_ratings(session)
-        )
-        google_reviews_created, google_reviews_skipped, google_reviews_missing = (
-            seed_google_reviews(session)
-        )
+        (
+            google_metadata_matched,
+            google_metadata_missing,
+            google_metadata_changed_fields,
+            google_metadata_mojibake_skipped,
+            google_metadata_ambiguous_skipped,
+        ) = seed_vendor_google_metadata(session)
+        (
+            google_reviews_created,
+            google_reviews_skipped,
+            google_reviews_missing,
+        ) = seed_google_reviews(session)
         chatbot_created, chatbot_updated = seed_chatbot_questions(session)
 
     admin_action = "Created" if admin_created else "Confirmed"
@@ -356,9 +567,12 @@ def main() -> None:
         f"missing_vendor={google_reviews_missing}"
     )
     print(
-        "Vendor Google ratings: "
-        f"updated={google_ratings_updated}, "
-        f"missing_vendor={google_ratings_missing}"
+        "Vendor Google metadata: "
+        f"matched={google_metadata_matched}, "
+        f"missing_vendor={google_metadata_missing}, "
+        f"changed_fields={google_metadata_changed_fields}, "
+        f"mojibake_skipped={google_metadata_mojibake_skipped}, "
+        f"ambiguous_skipped={google_metadata_ambiguous_skipped}"
     )
     print(
         "Chatbot workbook questions: "

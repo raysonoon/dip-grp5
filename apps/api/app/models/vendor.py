@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -46,8 +47,12 @@ class Vendor(Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    unit_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     opening_hours: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    price_range: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    halal: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    vegetarian: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     average_google_rating: Mapped[float | None] = mapped_column(
         Numeric(2, 1),
         nullable=True,
@@ -97,6 +102,8 @@ class VendorImage(Base):
         nullable=False,
     )
     image_url: Mapped[str] = mapped_column(Text, nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     display_order: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
