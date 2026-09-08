@@ -379,16 +379,8 @@ def seed_vendor_google_metadata(
                 if _set_if_changed(vendor, target_field, parsed_value):
                     changed_field_count += 1
 
-            rating_raw, rating_is_mojibake = _safe_csv_text(
-                row.get("rating") or ""
-            )
-            if rating_is_mojibake:
-                skipped_mojibake_count += 1
-                print(
-                    "Skipping mojibake vendor field: "
-                    f"vendor={directory_id}, column=rating"
-                )
-            elif rating_raw is not None:
+            rating_raw = (row.get("rating") or "").strip()
+            if rating_raw:
                 rating_value = Decimal(rating_raw)
                 normalized_rating = (
                     None if rating_value == 0 else rating_value
