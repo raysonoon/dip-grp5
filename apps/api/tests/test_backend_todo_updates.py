@@ -42,10 +42,14 @@ def _seed_records(session: Session) -> tuple[User, User, Vendor, Review]:
         images=[
             VendorImage(
                 image_url="/media/vendor_images/1/second.jpg",
+                mime_type="image/jpeg",
+                file_size_bytes=1024,
                 display_order=2,
             ),
             VendorImage(
                 image_url="/media/vendor_images/1/thumbnail.jpg",
+                mime_type="image/jpeg",
+                file_size_bytes=1024,
                 display_order=1,
             ),
         ],

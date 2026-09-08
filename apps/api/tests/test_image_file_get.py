@@ -42,6 +42,8 @@ def test_vendor_and_review_image_gets_resolve_database_paths(
     vendor_image = VendorImage(
         vendor_id=vendor.id,
         image_url=f"/media/vendor_images/{vendor.id}/sample.jpg",
+        mime_type="image/jpeg",
+        file_size_bytes=len(JPEG_BYTES),
         display_order=1,
     )
     review_image = ReviewImage(
@@ -86,6 +88,8 @@ def test_image_get_rejects_missing_or_wrong_owner_files(
     image = VendorImage(
         vendor_id=vendor.id,
         image_url=f"/media/vendor_images/{vendor.id}/missing.jpg",
+        mime_type="image/jpeg",
+        file_size_bytes=1,
         display_order=1,
     )
     session.add(image)

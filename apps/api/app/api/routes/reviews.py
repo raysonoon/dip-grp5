@@ -18,7 +18,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import CurrentUser, DbSession
-from app.core.image_storage import resolve_image_path
+from app.core.image_storage import get_storage
+from app.core.image_upload import read_image_upload
 from app.models import Review, ReviewImage, Vendor
 from app.schemas import (
     ReviewCreate,
@@ -35,7 +36,6 @@ from app.schemas import (
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 
 MAX_REVIEW_IMAGES = 5
-MAX_REVIEW_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 
 
 def _review_image_read(image: ReviewImage) -> ReviewImageRead:
@@ -46,48 +46,6 @@ def _review_image_read(image: ReviewImage) -> ReviewImageRead:
         file_size_bytes=image.file_size_bytes,
         display_order=image.display_order,
     )
-
-
-def _detect_image_type(contents: bytes) -> tuple[str, str] | None:
-    if contents.startswith(b"\xff\xd8\xff"):
-        return "image/jpeg", ".jpg"
-    if contents.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png", ".png"
-    return None
-
-
-async def _read_review_image_file(
-    file: UploadFile,
-) -> tuple[bytes, str, str]:
-    try:
-        contents = await file.read(MAX_REVIEW_IMAGE_SIZE_BYTES + 1)
-    finally:
-        await file.close()
-
-    if not contents:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Image file cannot be empty",
-        )
-    if len(contents) > MAX_REVIEW_IMAGE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail="Image file must not exceed 5 MB",
-        )
-
-    detected_type = _detect_image_type(contents)
-    if detected_type is None:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only JPEG and PNG images are supported",
-        )
-    mime_type, extension = detected_type
-    if file.content_type not in {mime_type, "application/octet-stream"}:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Uploaded content does not match its media type",
-        )
-    return contents, mime_type, extension
 
 
 def _review_detail(review: Review) -> ReviewDetailRead:
@@ -192,7 +150,7 @@ def get_review_image_file(
         )
 
     try:
-        image_path, media_type = resolve_image_path(
+        image_path, media_type = get_storage().resolve(
             image.image_url,
             collection="review_images",
             owner_id=review_id,
@@ -260,7 +218,7 @@ async def upload_review_image(
             detail="A review may have at most 5 images",
         )
 
-    contents, mime_type, extension = await _read_review_image_file(file)
+    contents, mime_type, extension = await read_image_upload(file)
 
     image = ReviewImage(
         review_id=review_id,
@@ -282,26 +240,33 @@ async def upload_review_image(
     image.image_url = (
         f"/media/review_images/{review_id}/{image.id}{extension}"
     )
-    image_path, _ = resolve_image_path(
-        image.image_url,
-        collection="review_images",
-        owner_id=review_id,
-    )
-
+    storage = get_storage()
     try:
-        image_path.parent.mkdir(parents=True, exist_ok=True)
-        image_path.write_bytes(contents)
+        storage.save(
+            collection="review_images",
+            owner_id=review_id,
+            reference=image.image_url,
+            data=contents,
+        )
         session.commit()
     except OSError as error:
         session.rollback()
-        image_path.unlink(missing_ok=True)
+        storage.delete(
+            collection="review_images",
+            owner_id=review_id,
+            reference=image.image_url,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not store review image",
         ) from error
     except IntegrityError as error:
         session.rollback()
-        image_path.unlink(missing_ok=True)
+        storage.delete(
+            collection="review_images",
+            owner_id=review_id,
+            reference=image.image_url,
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The review image order changed; retry the upload",
@@ -356,9 +321,9 @@ async def update_review_image(
     new_path = None
     old_contents = None
     if file is not None:
-        contents, mime_type, extension = await _read_review_image_file(file)
+        contents, mime_type, extension = await read_image_upload(file)
         try:
-            old_path, _ = resolve_image_path(
+            old_path, _ = get_storage().resolve(
                 image.image_url,
                 collection="review_images",
                 owner_id=review_id,
@@ -371,7 +336,7 @@ async def update_review_image(
         )
         image.mime_type = mime_type
         image.file_size_bytes = len(contents)
-        new_path, _ = resolve_image_path(
+        new_path, _ = get_storage().resolve(
             image.image_url,
             collection="review_images",
             owner_id=review_id,
@@ -452,23 +417,16 @@ def delete_review_image(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Review image not found",
         )
-    try:
-        image_path, _ = resolve_image_path(
-            image.image_url,
-            collection="review_images",
-            owner_id=review_id,
-        )
-    except ValueError:
-        image_path = None
-
     session.delete(image)
     session.commit()
-    if image_path is not None:
-        try:
-            image_path.unlink(missing_ok=True)
-            image_path.parent.rmdir()
-        except OSError:
-            pass
+    try:
+        get_storage().delete(
+            collection="review_images",
+            owner_id=review_id,
+            reference=image.image_url,
+        )
+    except (OSError, ValueError):
+        pass
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -557,26 +515,17 @@ def delete_review(
             detail="You may delete only your own reviews",
         )
 
-    image_paths = []
-    for image in review.images:
-        try:
-            image_path, _ = resolve_image_path(
-                image.image_url,
-                collection="review_images",
-                owner_id=review_id,
-            )
-        except ValueError:
-            continue
-        image_paths.append(image_path)
-
     session.delete(review)
     session.commit()
 
-    for image_path in image_paths:
+    for image in review.images:
         try:
-            image_path.unlink(missing_ok=True)
-            image_path.parent.rmdir()
-        except OSError:
+            get_storage().delete(
+                collection="review_images",
+                owner_id=review_id,
+                reference=image.image_url,
+            )
+        except (OSError, ValueError):
             # The database deletion has succeeded; leave unrelated or locked
             # directory contents untouched.
             pass

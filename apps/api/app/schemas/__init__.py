@@ -9,7 +9,6 @@ from app.schemas.review import (
     ReviewVendorRead,
 )
 from app.schemas.vendor import (
-    VendorImageCreate,
     VendorImageRead,
     VendorImageUpdate,
     VendorListItem,
@@ -25,7 +24,6 @@ __all__ = [
     "ReviewUpdate",
     "ReviewUserRead",
     "ReviewVendorRead",
-    "VendorImageCreate",
     "VendorImageRead",
     "VendorImageUpdate",
     "VendorListItem",
