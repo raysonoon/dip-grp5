@@ -1,3 +1,4 @@
 /.local-backups/
 ~$*.xlsx
 .DS_Store
+.opencode
