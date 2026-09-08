@@ -1,15 +1,28 @@
 from datetime import datetime, timezone
+from itertools import count
+from pathlib import Path as FilePath
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Path, Query, Response, status
+from fastapi import (
+    APIRouter,
+    File,
+    HTTPException,
+    Path,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
+from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import AdminUser, DbSession
+from app.core.image_storage import get_storage
+from app.core.image_upload import read_image_upload
 from app.models import Review, Vendor, VendorImage
 from app.schemas import (
-    VendorImageCreate,
     VendorImageRead,
     VendorImageUpdate,
     VendorListItem,
@@ -25,6 +38,8 @@ def _vendor_image_read(image: VendorImage) -> VendorImageRead:
         id=image.id,
         vendor_id=image.vendor_id,
         image_url=image.image_url,
+        mime_type=image.mime_type,
+        file_size_bytes=image.file_size_bytes,
         display_order=image.display_order,
         created_at=image.created_at,
     )
@@ -38,6 +53,18 @@ def _get_vendor(vendor_id: int, session: DbSession) -> Vendor:
             detail="Vendor not found",
         )
     return vendor
+
+
+def _resolve_vendor_image(
+    image_url: str,
+    *,
+    vendor_id: int,
+) -> tuple[FilePath, str]:
+    return get_storage().resolve(
+        image_url,
+        collection="vendor_images",
+        owner_id=vendor_id,
+    )
 
 
 @router.get("", response_model=VendorListRead)
@@ -67,7 +94,9 @@ def list_vendors(
             func.count(Review.id).label("review_count"),
             func.avg(Review.rating_half_steps).label("average_half_steps"),
         )
-        .options(selectinload(Vendor.images))
+        .options(
+            selectinload(Vendor.images),
+        )
         .outerjoin(Review, Review.vendor_id == Vendor.id)
         .where(*filters)
         .group_by(Vendor.id)
@@ -88,9 +117,18 @@ def list_vendors(
                 id=vendor.id,
                 name=vendor.name,
                 location=vendor.location,
+                unit_code=vendor.unit_code,
                 image_url=(vendor.images[0].image_url if vendor.images else None),
                 category=vendor.category,
                 opening_hours=vendor.opening_hours,
+                price_range=vendor.price_range,
+                halal=vendor.halal,
+                vegetarian=vendor.vegetarian,
+                average_google_rating=(
+                    None
+                    if vendor.average_google_rating is None
+                    else float(vendor.average_google_rating)
+                ),
                 created_at=vendor.created_at,
                 updated_at=vendor.updated_at,
                 average_rating=average_rating,
@@ -100,6 +138,8 @@ def list_vendors(
                         id=image.id,
                         vendor_id=image.vendor_id,
                         image_url=image.image_url,
+                        mime_type=image.mime_type,
+                        file_size_bytes=image.file_size_bytes,
                         display_order=image.display_order,
                         created_at=image.created_at,
                     )
@@ -130,42 +170,126 @@ def list_vendor_images(
     return [_vendor_image_read(image) for image in images]
 
 
+@router.get(
+    "/{vendor_id}/images/{image_id}",
+    response_class=FileResponse,
+)
+def get_vendor_image_file(
+    vendor_id: Annotated[int, Path(gt=0)],
+    image_id: Annotated[int, Path(gt=0)],
+    session: DbSession,
+) -> FileResponse:
+    image = session.scalar(
+        select(VendorImage).where(
+            VendorImage.id == image_id,
+            VendorImage.vendor_id == vendor_id,
+        )
+    )
+    if image is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vendor image not found",
+        )
+
+    try:
+        image_path, media_type = _resolve_vendor_image(
+            image.image_url,
+            vendor_id=vendor_id,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Stored vendor image path is invalid",
+        ) from error
+    if not image_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vendor image file not found",
+        )
+
+    return FileResponse(image_path, media_type=media_type)
+
+
 @router.post(
     "/{vendor_id}/images",
     response_model=VendorImageRead,
     status_code=status.HTTP_201_CREATED,
 )
-def create_vendor_image(
+async def create_vendor_image(
     vendor_id: Annotated[int, Path(gt=0)],
-    image_data: VendorImageCreate,
     session: DbSession,
     _current_admin: AdminUser,
+    file: Annotated[UploadFile, File(description="JPEG or PNG image")],
 ) -> VendorImageRead:
     vendor = _get_vendor(vendor_id, session)
-    display_order = image_data.display_order
-    if display_order is None:
-        highest_order = session.scalar(
-            select(func.max(VendorImage.display_order)).where(
+    contents, mime_type, extension = await read_image_upload(file)
+
+    used_orders = set(
+        session.scalars(
+            select(VendorImage.display_order).where(
                 VendorImage.vendor_id == vendor_id
             )
-        )
-        display_order = (highest_order or 0) + 1
+        ).all()
+    )
+    display_order = next(
+        order
+        for order in count(1)
+        if order not in used_orders
+    )
 
     image = VendorImage(
         vendor_id=vendor_id,
-        image_url=image_data.image_url,
+        image_url="pending",
+        mime_type=mime_type,
+        file_size_bytes=len(contents),
         display_order=display_order,
     )
     vendor.updated_at = datetime.now(timezone.utc)
     session.add(image)
     try:
-        session.commit()
+        session.flush()
     except IntegrityError as error:
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="display_order is already used for this vendor",
         ) from error
+
+    image.image_url = (
+        f"/media/vendor_images/{vendor_id}/{image.id}{extension}"
+    )
+    storage = get_storage()
+    try:
+        storage.save(
+            collection="vendor_images",
+            owner_id=vendor_id,
+            reference=image.image_url,
+            data=contents,
+        )
+        session.commit()
+    except OSError as error:
+        session.rollback()
+        storage.delete(
+            collection="vendor_images",
+            owner_id=vendor_id,
+            reference=image.image_url,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not store vendor image",
+        ) from error
+    except IntegrityError as error:
+        session.rollback()
+        storage.delete(
+            collection="vendor_images",
+            owner_id=vendor_id,
+            reference=image.image_url,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="display_order is already used for this vendor",
+        ) from error
+
     session.refresh(image)
     return _vendor_image_read(image)
 
@@ -201,6 +325,13 @@ def update_vendor_image(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="image_url cannot be null",
             )
+        try:
+            _resolve_vendor_image(image_url, vendor_id=vendor_id)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(error),
+            ) from error
         image.image_url = image_url
     if "display_order" in image_data.model_fields_set:
         display_order = image_data.display_order

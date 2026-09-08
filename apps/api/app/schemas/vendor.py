@@ -3,21 +3,6 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-class VendorImageCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    image_url: str = Field(min_length=1, max_length=2048)
-    display_order: int | None = Field(default=None, ge=1, le=32767)
-
-    @field_validator("image_url")
-    @classmethod
-    def normalize_image_url(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("image_url cannot be empty")
-        return normalized
-
-
 class VendorImageUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -50,6 +35,8 @@ class VendorImageRead(BaseModel):
     id: int
     vendor_id: int
     image_url: str
+    mime_type: str
+    file_size_bytes: int
     display_order: int
     created_at: datetime
 
@@ -58,9 +45,14 @@ class VendorListItem(BaseModel):
     id: int
     name: str
     location: str | None
+    unit_code: str | None
     image_url: str | None
     category: str | None
     opening_hours: str | None
+    price_range: str | None
+    halal: bool | None
+    vegetarian: bool | None
+    average_google_rating: float | None
     created_at: datetime
     updated_at: datetime
     average_rating: float | None
