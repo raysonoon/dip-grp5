@@ -120,7 +120,7 @@ const REVIEWS = [
 
 const BOT_RESPONSES: Record<string, string> = {
   "What's cheap near North Spine?":
-    "At North Spine Food Court, Uncle Lim's Chicken Rice starts at just $3.50 — hard to beat for a full meal! The economy rice stall lets you mix-and-match dishes for around $3–4. Both are perennial student favourites. 🍱",
+    "At North Spine Food Court, Uncle Lim's Chicken Rice starts at just $5.50 — hard to beat for a full meal! The economy rice stall lets you mix-and-match dishes for around $3–4. Both are perennial student favourites. 🍱",
   "Best mala on campus?":
     "The mala xiang guo at Foodgle Hub (Level 1) consistently tops student polls — rated 4.6★ with 280+ reviews. Go before 12:30pm or expect a 15-min queue. Set your spice level to medium if it's your first time! 🌶️",
   "What's open after 8pm?":
