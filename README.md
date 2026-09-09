@@ -298,12 +298,19 @@ It supports:
 Vendor images are stored in the separate `vendor_images` table. Each item
 contains an ordered `images` list and retains a derived `image_url` containing
 the first image for frontend compatibility. Items also contain `updated_at`,
-`review_count`, and `average_rating`. The average is calculated from current
-reviews and is `null` when a food stall has no reviews.
+`review_count`, and `average_rating`. The stored average is calculated from
+internal reviews and is `null` when a food stall has no internal reviews. A
+database trigger keeps it synchronized when internal reviews change.
 
 The vendor schema uses `unit_code` for the stall unit. Google-enriched data is
 merged into the standard vendor fields; `average_google_rating` is the only
 Google-specific vendor field returned by the API.
+
+The stored internal average can also be read independently from Google ratings:
+
+```text
+GET /vendors/{vendor_id}/average-rating
+```
 
 Vendor image metadata can be managed through these endpoints:
 

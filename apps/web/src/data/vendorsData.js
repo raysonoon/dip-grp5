@@ -1,6 +1,6 @@
-export const stallsData = [
+export const vendorsData = [
   {
-    id: "canteen-1-chicken-rice",
+    id: 1,
     name: "Hainanese Chicken Rice",
     canteen: "Canteen 1",
     rating: 4.6,
@@ -9,15 +9,11 @@ export const stallsData = [
     menu: [
       { name: "Steamed Chicken Rice", price: "$4.00" },
       { name: "Roasted Chicken Rice", price: "$4.00" },
-      { name: "Lemon Chicken Rice", price: "$4.50" }
+      { name: "Lemon Chicken Rice", price: "$4.50" },
     ],
-    reviews: [
-      { user: "Alex T.", rating: 5, comment: "Best chili on campus! Portions are very generous for $4." },
-      { user: "Sarah L.", rating: 4, comment: "Short queue during peak hours. Chicken is tender." }
-    ]
   },
   {
-    id: "tamarind-western",
+    id: 2,
     name: "Western Co.",
     canteen: "Tamarind Hall Canteen",
     rating: 4.2,
@@ -26,14 +22,11 @@ export const stallsData = [
     menu: [
       { name: "Chicken Chop with Black Pepper", price: "$6.50" },
       { name: "Fish & Chips", price: "$6.00" },
-      { name: "Carbonara Pasta", price: "$5.50" }
+      { name: "Carbonara Pasta", price: "$5.50" },
     ],
-    reviews: [
-      { user: "Marcus K.", rating: 4, comment: "Great pasta options, but wait time can be ~15 mins at lunch." }
-    ]
   },
   {
-    id: "north-spine-ramen",
+    id: 12,
     name: "Japanese Don & Ramen",
     canteen: "North Spine Food Court",
     rating: 4.8,
@@ -42,10 +35,7 @@ export const stallsData = [
     menu: [
       { name: "Tonkotsu Ramen", price: "$5.80" },
       { name: "Chicken Katsu Don", price: "$5.20" },
-      { name: "Salmon Teriyaki Bento", price: "$6.80" }
+      { name: "Salmon Teriyaki Bento", price: "$6.80" },
     ],
-    reviews: [
-      { user: "Wei Jie", rating: 5, comment: "Rich broth and perfectly soft-boiled egg." }
-    ]
-  }
+  },
 ];

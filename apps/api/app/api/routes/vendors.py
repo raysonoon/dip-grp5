@@ -23,6 +23,7 @@ from app.core.image_storage import get_storage
 from app.core.image_upload import read_image_upload
 from app.models import Review, Vendor, VendorImage
 from app.schemas import (
+    VendorAverageRatingRead,
     VendorImageRead,
     VendorImageUpdate,
     VendorListItem,
@@ -92,7 +93,6 @@ def list_vendors(
         select(
             Vendor,
             func.count(Review.id).label("review_count"),
-            func.avg(Review.rating_half_steps).label("average_half_steps"),
         )
         .options(
             selectinload(Vendor.images),
@@ -106,12 +106,7 @@ def list_vendors(
     ).all()
 
     items = []
-    for vendor, review_count, average_half_steps in rows:
-        average_rating = (
-            None
-            if average_half_steps is None
-            else round(float(average_half_steps) / 2, 2)
-        )
+    for vendor, review_count in rows:
         items.append(
             VendorListItem(
                 id=vendor.id,
@@ -131,7 +126,11 @@ def list_vendors(
                 ),
                 created_at=vendor.created_at,
                 updated_at=vendor.updated_at,
-                average_rating=average_rating,
+                average_rating=(
+                    None
+                    if vendor.average_rating is None
+                    else float(vendor.average_rating)
+                ),
                 review_count=review_count,
                 images=[
                     VendorImageRead(
@@ -153,6 +152,26 @@ def list_vendors(
         total=total or 0,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/{vendor_id}/average-rating",
+    response_model=VendorAverageRatingRead,
+)
+def get_vendor_average_rating(
+    vendor_id: Annotated[int, Path(gt=0)],
+    session: DbSession,
+) -> VendorAverageRatingRead:
+    """Return the stored average of this vendor's internal reviews."""
+    vendor = _get_vendor(vendor_id, session)
+    return VendorAverageRatingRead(
+        vendor_id=vendor.id,
+        average_rating=(
+            None
+            if vendor.average_rating is None
+            else float(vendor.average_rating)
+        ),
     )
 
 

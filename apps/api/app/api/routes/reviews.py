@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
-from app.api.dependencies import CurrentUser, DbSession
+from app.api.dependencies import CurrentUser, DbSession, ReviewKnowledgeSyncDep
 from app.core.image_storage import get_storage
 from app.core.image_upload import read_image_upload
 from app.models import Review, ReviewImage, Vendor
@@ -31,6 +31,7 @@ from app.schemas import (
     ReviewUserRead,
     ReviewVendorRead,
 )
+from app.services.review_knowledge import KnowledgeSyncError
 
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
@@ -459,6 +460,7 @@ def update_review(
     review_data: ReviewUpdate,
     session: DbSession,
     current_user: CurrentUser,
+    knowledge_sync: ReviewKnowledgeSyncDep,
 ) -> ReviewRead:
     review = session.get(Review, review_id)
     if review is None:
@@ -485,7 +487,15 @@ def update_review(
         review.comment = review_data.comment
     review.updated_at = datetime.now(timezone.utc)
 
-    session.commit()
+    try:
+        knowledge_sync.sync(review)
+        session.commit()
+    except KnowledgeSyncError as error:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Review search indexing is temporarily unavailable; please try again",
+        ) from error
     session.refresh(review)
     return _review_read(review)
 
@@ -495,6 +505,7 @@ def delete_review(
     review_id: Annotated[int, Path(gt=0)],
     session: DbSession,
     current_user: CurrentUser,
+    knowledge_sync: ReviewKnowledgeSyncDep,
 ) -> Response:
     review = session.scalar(
         select(Review)
@@ -515,6 +526,7 @@ def delete_review(
             detail="You may delete only your own reviews",
         )
 
+    knowledge_sync.delete(review.id)
     session.delete(review)
     session.commit()
 
@@ -537,6 +549,7 @@ def create_review(
     review_data: ReviewCreate,
     session: DbSession,
     current_user: CurrentUser,
+    knowledge_sync: ReviewKnowledgeSyncDep,
 ) -> ReviewRead:
     vendor = session.get(Vendor, review_data.vendor_id)
     if vendor is None:
@@ -552,7 +565,16 @@ def create_review(
         comment=review_data.comment,
     )
     session.add(review)
-    session.commit()
+    session.flush()
+    try:
+        knowledge_sync.sync(review)
+        session.commit()
+    except KnowledgeSyncError as error:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Review search indexing is temporarily unavailable; please try again",
+        ) from error
     session.refresh(review)
 
     return _review_read(review)
