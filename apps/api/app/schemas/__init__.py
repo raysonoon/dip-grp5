@@ -8,6 +8,7 @@ from app.schemas.review import (
     ReviewUserRead,
     ReviewVendorRead,
 )
+from app.schemas.chat import ChatRequest, ChatResponse, ChatSource
 from app.schemas.vendor import (
     VendorImageRead,
     VendorImageUpdate,
@@ -16,6 +17,9 @@ from app.schemas.vendor import (
 )
 
 __all__ = [
+    "ChatRequest",
+    "ChatResponse",
+    "ChatSource",
     "ReviewCreate",
     "ReviewDetailRead",
     "ReviewImageRead",

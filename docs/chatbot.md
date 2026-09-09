@@ -10,7 +10,7 @@ retrieving relevant chunks from a vector knowledge base and passing them to an
 LLM along with the user's question.
 
 ```
-user question ─▶ embed (text-embedding-004, 768-dim)
+user question ─▶ embed (gemini-embedding-001, 768-dim)
                     │
                     ▼
         pgvector cosine search over knowledge_chunks
@@ -20,7 +20,7 @@ user question ─▶ embed (text-embedding-004, 768-dim)
         retrieved chunks ─▶ prompt_template + {context}
                     │
                     ▼
-        Gemini 2.5 Flash Lite ─▶ answer + sources
+        Gemini 3.5 Flash Lite ─▶ answer + sources
 ```
 
 The knowledge base is **unified**: internal reviews and external data
@@ -29,15 +29,15 @@ The knowledge base is **unified**: internal reviews and external data
 
 ## Architecture
 
-![RAG Chatbot](diagrams/rag_chabot.jpg)
+![RAG Chatbot](../diagrams/chatbot_rag.jpg)
 
 ## Technology choices
 
 | Concern | Choice |
 |---|---|
 | Vector store | PostgreSQL 17 + `pgvector` (HNSW index, cosine distance) |
-| Embedding model | Google `text-embedding-004` (768-dim) |
-| Answer generation | Gemini 2.5 Flash Lite |
+| Embedding model | Google `gemini-embedding-001` (768-dim) |
+| Answer generation | Gemini 3.5 Flash Lite |
 | LLM SDK | `google-genai` (single SDK for embeddings + chat) |
 | Metadata column | generic `JSON` (works on SQLite and Postgres) |
 | Test isolation | vector tables kept off the shared `Base` so SQLite tests stay green |
@@ -50,20 +50,20 @@ New settings in `app/core/config.py` (all overridable via environment, see
 | Setting | Default | Purpose |
 |---|---|---|
 | `gemini_api_key` | `None` | Gemini API key (Google AI Studio) |
-| `embedding_model` | `text-embedding-004` | Embedding model id |
+| `embedding_model` | `gemini-embedding-001` | Embedding model id |
 | `embedding_dimensions` | `768` | Vector dimensionality (fixed per model) |
 | `embedding_batch_size` | `100` | Chunks embedded per API call |
-| `chat_model` | `gemini-2.5-flash-lite` | Chat model id (exact id configurable) |
+| `chat_model` | `gemini-3.5-flash-lite` | Chat model id (exact id configurable) |
 | `vector_top_k` | `8` | Chunks retrieved per query |
 
 Environment additions in `apps/api/.env.example`:
 
 ```
 GEMINI_API_KEY=
-EMBEDDING_MODEL=text-embedding-004
+EMBEDDING_MODEL=gemini-embedding-001
 EMBEDDING_DIMENSIONS=768
 EMBEDDING_BATCH_SIZE=100
-CHAT_MODEL=gemini-2.5-flash-lite
+CHAT_MODEL=gemini-3.5-flash-lite
 VECTOR_TOP_K=8
 ```
 
@@ -135,25 +135,10 @@ target_metadata = [Base.metadata, VectorBase.metadata]
 - `knowledge_chunks` is the **retrieval corpus** that the vector paths read from
   - connect only at runtime through search_type`
 
-```mermaid
-flowchart TB
-    Q[User question] --> C[Classify intent<br/>match chatbot_prompts.question_text]
+> **Status:** only the **Vector** path is implemented. SQL and Hybrid routing
+> are planned but not yet wired.
 
-    C -- search_type = SQL --> SQL[SQL path]
-    C -- search_type = Vector --> VEC[Vector path]
-    C -- search_type = SQL + Vector --> HYB[Hybrid path]
-
-    SQL --> STRUCT[(vendors / reviews<br/>structured filter)]
-    VEC --> QE[Embed query<br/>text-embedding-004]
-    QE --> SEARCH[Cosine search over<br/>knowledge_chunks<br/>embedding <=> query]
-    HYB --> FILTER[Structured filter<br/>then cosine-rank within<br/>knowledge_chunks]
-
-    STRUCT --> CTX[Assemble prompt<br/>prompt_template + context]
-    SEARCH --> CTX
-    FILTER --> CTX
-    CTX --> LLM[Gemini 2.5 Flash Lite]
-    LLM --> OUT[answer + sources]
-```
+![Chatbot Intent Routing](../diagrams/chatbot_routing.jpg)
 
 The three paths differ in what they retrieve and where the context comes from:
 
@@ -215,32 +200,94 @@ App reviews map analogously with `source_type = internal_review` and
 Google average as distinct numbers — the chatbot reports them side by side and
 never averages across the two sources.
 
-## Services (next steps)
+## Implemented services
 
-Planned modules under `app/services/`:
+Vector-only RAG pipeline, wired into a public `POST /chat` route.
 
 - `embedding.py` — `Embedder` protocol + `GoogleEmbedder.embed(texts)` (batched
-  `embed_content`).
-- `retrieval.py` — `KnowledgeStore` protocol (`upsert`, `delete`, `search`);
-  `PgvectorKnowledgeStore` (real, `<=>` cosine) + `FakeKnowledgeStore`
-  (in-memory, brute-force cosine for tests).
-- `chat.py` — `ChatService.generate(system_prompt, question, context)` via Gemini.
-- `chunking.py` — `TextChunker` (short text whole; long text sentence-split
-  with overlap).
-- `ingest.py` — `Ingestor` protocol with `CsvIngestor`, `GoogleReviewsJsonIngestor`,
-  `RedditJsonIngestor`, normalized via a `KnowledgeDocument` dataclass.
-- `app/db/reindex.py` — CLI (mirrors `seed.py`): internal backfill from
-  `reviews`, external import from files → chunk → embed → upsert.
+  `embed_content` via `gemini-embedding-001`).
+- `retrieval.py` — `KnowledgeStore` protocol (`search`, `resolve_vendor_names`);
+  `PgvectorKnowledgeStore` (cosine `<=>`) + `FakeKnowledgeStore` (in-memory
+  cosine, for tests).
+- `chat.py` — `ChatService(embedder, store)` + `build_prompt`:
+  - embeds the question, retrieves top-k chunks, resolves vendor names, builds
+    the final prompt, and calls Gemini `generate_content`.
+  - `build_prompt(question, context, template=None)` fills `{user_question}` /
+    `{context}`; falls back to a generic `DEFAULT_SYSTEM_PROMPT` when
+    `prompt_template` is NULL (as all seeded rows are today).
+- `chunking.py` — `TextChunker.chunk(text)` keeps short review text as a single
+  chunk; Reddit splitting is a future extension.
+- `ingest.py` — `KnowledgeDocument` dataclass + `build_chunks(session)` /
+  `reindex(session, embedder)`.
+- `app/db/reindex.py` — CLI (`python -m app.db.reindex`) that backfills
+  `knowledge_chunks` from `reviews` + `google_reviews`.
 
-A new `POST /chat` route will return `{ answer, sources: [...] }`, with the
-final prompt built from `ChatbotPrompt.prompt_template` extended to use
-`{user_question}` and `{context}` (a default system prompt when the template is
-NULL, as all seeded rows are today).
+### API
+
+```text
+POST /chat   # public; body: { "question": "..." }
+             # response: { "answer": "...", "sources": [...] }
+```
+
+Each source carries `source_type`, `source_id`, `vendor_id`, `vendor_name`
+(resolved by a batch `Vendor` lookup on `vendor_id` — no FK), and an `excerpt`.
+
+### Ingestion
+
+`reindex` reads directly from the relational tables:
+
+- **internal_review** — from `reviews` (skips NULL/blank comments),
+  `metadata.rating = rating_half_steps / 2`.
+- **google_review** — from `google_reviews` (skips NULL/blank comments), with
+  `metadata.rating`, `metadata.published_at`, and
+  `metadata.vendor_average_google_rating` stamped from the vendor.
+
+`reindex` skips already-indexed chunks (keyed by `source_type` + `source_id`)
+by default, so re-runs embed ~0 documents and consume ~0 requests; pass
+`--force` to re-embed everything. It commits per batch, so a quota failure
+preserves progress made so far. Reddit and CSV/JSON adapter ingestion are
+future work.
+
+The repeatable seed (`python -m app.db.seed`) now also seeds a few demo app
+reviews (`seed_demo_reviews`) so `internal_review` chunks have content to embed.
+
+> `POST /chat` and `python -m app.db.reindex` both require `GEMINI_API_KEY`
+> to be set; without it they raise a clear error. `knowledge_chunks` stays
+> empty until reindex is run after seeding.
 
 ## Testing strategy
 
-- **Unit tests (SQLite, no vector DB):** chunking, adapter normalization,
-  prompt assembly, route behavior — via `FakeEmbedder` / `FakeKnowledgeStore`.
-- **Vector integration tests (Postgres):** a `@pytest.mark.vector` marker gated
-  on `TEST_DATABASE_URL`, exercising `PgvectorKnowledgeStore` + HNSW search.
-  Excluded by default so `pytest -q` stays green.
+- **Unit tests (SQLite, no vector DB):** prompt assembly
+  (`test_chat_prompt_build.py`), `/chat` route behavior with
+  `FakeEmbedder`/`FakeKnowledgeStore` + an overridden chat service
+  (`test_chat_api.py`), and chunk mapping (`test_ingest.py`).
+- **Vector integration tests (Postgres):** `@pytest.mark.vector`
+  (`test_vector_search.py`), gated on the `TEST_DATABASE_URL` environment
+  variable and skipped by default. Register the marker in `pytest.ini`; run
+  with:
+  ```powershell
+  $env:TEST_DATABASE_URL="postgresql+psycopg://postgres:CHANGE_ME@127.0.0.1:5433/dip_grp5"
+  pytest -m vector
+  ```
+  `pytest -q` stays green without the env var.
+
+
+### Sample questions
+
+#### Quality / opinion (best retrieval signal — these mirror the "Vector" intents):
+- "Which place has the best noodles?"
+- "Which place has the best mala?"
+
+
+- "What do students think about the chicken rice?"
+- "Which stall has the best reviews?"
+- "Is there anywhere with really good halal food?"
+- "What food is worth trying on campus?"
+
+#### Value / portion:
+- "Where can I get a cheap but filling meal?"
+- "Which place gives good value for money?"
+
+##### Open-ended recommendation:
+- "I'm hungry, what should I eat?"
+- "What's the best food on campus?"
