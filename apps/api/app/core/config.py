@@ -23,10 +23,11 @@ class Settings(BaseSettings):
     r2_public_base_url: str | None = None
 
     gemini_api_key: SecretStr | None = None
-    embedding_model: str = "text-embedding-004"
+    embedding_model: str = "gemini-embedding-001"
     embedding_dimensions: int = 768
     embedding_batch_size: int = 100
-    chat_model: str = "gemini-2.5-flash-lite"
+    embedding_requests_per_minute: int = 90
+    chat_model: str = "gemini-3.5-flash-lite"
     vector_top_k: int = 8
 
     model_config = SettingsConfigDict(

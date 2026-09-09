@@ -13,6 +13,7 @@ from app.db.session import SessionLocal
 from app.models import (
     ChatbotPrompt,
     GoogleReview,
+    Review,
     User,
     Vendor,
 )
@@ -469,6 +470,64 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
     return created_count, skipped_count, missing_vendor_count
 
 
+DEMO_REVIEWS = (
+    ("Demo Vendor 1", 4.0, "Great chicken rice, generous portion and fast service."),
+    ("Demo Vendor 1", 3.5, "Decent halal options but a bit pricey."),
+    ("Demo Vendor 2", 5.0, "Best noodles on campus, definitely worth trying."),
+    ("Demo Vendor 2", 2.5, "Food was average and the queue was long."),
+)
+
+
+def seed_demo_reviews(session: Session) -> tuple[int, int]:
+    """Seed a few app reviews with comments so internal chunks have content."""
+    test_user = session.scalar(
+        select(User).where(
+            User.email_canonical == settings.seed_test_email_address.strip().lower()
+        )
+    )
+    if test_user is None:
+        return 0, 0
+
+    vendors = {
+        vendor.name: vendor
+        for vendor in session.scalars(
+            select(Vendor).where(
+                Vendor.name.in_([name for name, _, _ in DEMO_REVIEWS])
+            )
+        ).all()
+    }
+
+    created_count = 0
+    skipped_count = 0
+    for name, rating, comment in DEMO_REVIEWS:
+        vendor = vendors.get(name)
+        if vendor is None:
+            skipped_count += 1
+            continue
+        existing = session.scalar(
+            select(Review).where(
+                Review.user_id == test_user.id,
+                Review.vendor_id == vendor.id,
+                Review.comment == comment,
+            )
+        )
+        if existing is not None:
+            skipped_count += 1
+            continue
+        session.add(
+            Review(
+                user_id=test_user.id,
+                vendor_id=vendor.id,
+                rating_half_steps=int(rating * 2),
+                comment=comment,
+            )
+        )
+        created_count += 1
+
+    session.commit()
+    return created_count, skipped_count
+
+
 def seed_chatbot_questions(session: Session) -> tuple[int, int]:
     """Insert or refresh the curated workbook questions without prompts."""
     created_count = 0
@@ -539,6 +598,7 @@ def main() -> None:
             google_reviews_missing,
         ) = seed_google_reviews(session)
         chatbot_created, chatbot_updated = seed_chatbot_questions(session)
+        reviews_created, reviews_skipped = seed_demo_reviews(session)
 
     admin_action = "Created" if admin_created else "Confirmed"
     user_action = "Created" if test_user_created else "Confirmed"
@@ -578,6 +638,10 @@ def main() -> None:
         "Chatbot workbook questions: "
         f"created={chatbot_created}, updated={chatbot_updated}, "
         f"total={len(CHATBOT_QUESTION_ROWS)}"
+    )
+    print(
+        "Demo app reviews: "
+        f"created={reviews_created}, skipped={reviews_skipped}"
     )
 
 
