@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import insert
+from sqlalchemy import Numeric, insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -92,7 +92,12 @@ def test_user_and_vendor_storage_follow_the_new_schema(session: Session) -> None
     assert "unit_code" in vendor_columns
     assert "level_unit" not in vendor_columns
     assert "average_google_rating" in vendor_columns
-    assert len(vendor_columns) == 13
+    assert "average_rating" in vendor_columns
+    assert len(vendor_columns) == 14
+    assert isinstance(vendor_columns.average_rating.type, Numeric)
+    assert vendor_columns.average_rating.type.precision == 2
+    assert vendor_columns.average_rating.type.scale == 1
+    assert vendor_columns.average_rating.nullable is True
     google_columns = {
         column.name
         for column in vendor_columns
@@ -169,10 +174,30 @@ def test_vendor_api_returns_ordered_images_and_compatibility_thumbnail(
     assert item["vegetarian"] is False
     assert item["unit_code"] == "N2.1-01-01"
     assert item["average_google_rating"] == 4.6
+    assert item["average_rating"] == 4.0
     assert {
         key for key in item if "google" in key
     } == {"average_google_rating"}
     assert item["updated_at"] is not None
+
+
+def test_internal_average_rating_has_a_separate_endpoint(
+    client: TestClient,
+    session: Session,
+) -> None:
+    _, _, vendor, _ = _seed_records(session)
+
+    response = client.get(f"/vendors/{vendor.id}/average-rating")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "vendor_id": vendor.id,
+        "average_rating": 4.0,
+    }
+    assert "average_google_rating" not in response.json()
+
+    missing = client.get("/vendors/999999/average-rating")
+    assert missing.status_code == 404
 
 
 def test_review_api_uses_display_name_and_reports_edit_state(

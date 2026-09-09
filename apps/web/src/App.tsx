@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Routes, Route, Link } from "react-router-dom";
+import { askChat, chatErrorMessage } from "./api/chat";
 import FoodPage from "./pages/FoodPage";
-import StallPage from "./pages/StallPage";
+import VendorsPage from "./pages/VendorsPage";
 import {
   Search,
   Star,
@@ -118,15 +119,6 @@ const REVIEWS = [
   },
 ];
 
-const BOT_RESPONSES: Record<string, string> = {
-  "What's cheap near North Spine?":
-    "At North Spine Food Court, Uncle Lim's Chicken Rice starts at just $3.50 — hard to beat for a full meal! The economy rice stall lets you mix-and-match dishes for around $3–4. Both are perennial student favourites. 🍱",
-  "Best mala on campus?":
-    "The mala xiang guo at Foodgle Hub (Level 1) consistently tops student polls — rated 4.6★ with 280+ reviews. Go before 12:30pm or expect a 15-min queue. Set your spice level to medium if it's your first time! 🌶️",
-  "What's open after 8pm?":
-    "Late-night options are slim, but The Quad's convenience store and Pioneer Canteen's Western stall usually stay open until 9pm on weekdays. The North Hill minimart is your best bet after that. 🌙",
-};
-
 const SUGGESTED_QUESTIONS = [
   "What's cheap near North Spine?",
   "Best mala on campus?",
@@ -164,19 +156,30 @@ function HomePage() {
   const [chatInput, setChatInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const chatRequestPending = useRef(false);
 
-  function sendMessage(text: string) {
-    if (!text.trim()) return;
-    setChatMessages((prev) => [...prev, { role: "user", text }]);
+  async function sendMessage(text: string) {
+    const question = text.trim();
+    if (!question || chatRequestPending.current) return;
+
+    chatRequestPending.current = true;
+    setChatMessages((prev) => [...prev, { role: "user", text: question }]);
     setChatInput("");
     setIsTyping(true);
-    setTimeout(() => {
-      const response =
-        BOT_RESPONSES[text] ??
-        "Great question! I'm still learning about all the stalls on campus. Try browsing the map or check community reviews for the latest info! 😊";
-      setChatMessages((prev) => [...prev, { role: "bot", text: response }]);
+
+    try {
+      const response = await askChat(question);
+      setChatMessages((prev) => [...prev, { role: "bot", text: response.answer }]);
+    } catch (error) {
+      console.error("Chat request failed", error);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "bot", text: chatErrorMessage(error) },
+      ]);
+    } finally {
+      chatRequestPending.current = false;
       setIsTyping(false);
-    }, 1100);
+    }
   }
 
   return (
@@ -856,7 +859,8 @@ function HomePage() {
                   <button
                     key={q}
                     onClick={() => sendMessage(q)}
-                    className="text-xs px-2.5 py-1.5 rounded-full border border-border text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all duration-200"
+                    disabled={isTyping}
+                    className="text-xs px-2.5 py-1.5 rounded-full border border-border text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {q}
                   </button>
@@ -873,7 +877,9 @@ function HomePage() {
                 />
                 <button
                   onClick={() => sendMessage(chatInput)}
-                  className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center hover:opacity-90 transition-opacity flex-shrink-0"
+                  disabled={isTyping || !chatInput.trim()}
+                  aria-label="Send message"
+                  className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center hover:opacity-90 transition-opacity flex-shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Send className="w-4 h-4 text-primary-foreground" />
                 </button>
@@ -937,7 +943,7 @@ function App() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/food" element={<FoodPage />} />
-      <Route path="/stall/:id" element={<StallPage />} />
+      <Route path="/food/vendors/:vendorId" element={<VendorsPage />} />
     </Routes>
   );
 }

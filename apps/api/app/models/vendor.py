@@ -38,6 +38,10 @@ class Vendor(Base):
             "OR average_google_rating BETWEEN 0 AND 5",
             name="average_google_rating_range",
         ),
+        CheckConstraint(
+            "average_rating IS NULL OR average_rating BETWEEN 0 AND 5",
+            name="average_rating_range",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
@@ -54,6 +58,10 @@ class Vendor(Base):
     halal: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     vegetarian: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     average_google_rating: Mapped[float | None] = mapped_column(
+        Numeric(2, 1),
+        nullable=True,
+    )
+    average_rating: Mapped[float | None] = mapped_column(
         Numeric(2, 1),
         nullable=True,
     )

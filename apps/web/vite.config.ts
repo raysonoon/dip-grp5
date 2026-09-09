@@ -16,6 +16,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/chat': {
+        target: `http://localhost:${API_PORT}`,
+        changeOrigin: true,
+      },
       '/reviews': {
         target: `http://localhost:${API_PORT}`,
         changeOrigin: true,

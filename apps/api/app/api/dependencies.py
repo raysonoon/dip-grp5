@@ -9,6 +9,7 @@ from app.models import User
 from app.services.chat import ChatService
 from app.services.embedding import Embedder, GoogleEmbedder
 from app.services.retrieval import KnowledgeStore, PgvectorKnowledgeStore
+from app.services.review_knowledge import InternalReviewKnowledgeSync
 
 
 DbSession = Annotated[Session, Depends(get_db)]
@@ -37,6 +38,19 @@ def get_chat_service(
 EmbedderDep = Annotated[Embedder, Depends(get_embedder)]
 KnowledgeStoreDep = Annotated[KnowledgeStore, Depends(get_knowledge_store)]
 ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]
+
+
+def get_review_knowledge_sync(
+    session: DbSession,
+    embedder: EmbedderDep,
+) -> InternalReviewKnowledgeSync:
+    return InternalReviewKnowledgeSync(session, embedder)
+
+
+ReviewKnowledgeSyncDep = Annotated[
+    InternalReviewKnowledgeSync,
+    Depends(get_review_knowledge_sync),
+]
 
 
 def get_current_user(

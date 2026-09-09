@@ -31,6 +31,14 @@ def test_build_prompt_uses_default_template() -> None:
     ) == prompt
 
 
+def test_default_prompt_allows_identity_and_small_talk_without_context() -> None:
+    prompt = build_prompt("Are you Gemini?", EMPTY_CONTEXT)
+    assert "powered by Google's Gemini model" in prompt
+    assert "identity or capabilities" in prompt
+    assert "answer normally without requiring supporting context" in prompt
+    assert "rather than inventing an answer" in prompt
+
+
 def test_build_prompt_uses_custom_template() -> None:
     template = "Question: {user_question}\n\nEvidence:\n{context}"
     prompt = build_prompt("q", "c", template=template)
