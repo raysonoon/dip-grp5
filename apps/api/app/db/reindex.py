@@ -8,7 +8,7 @@ from app.services.ingest import reindex
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Reindex internal and Google reviews into knowledge_chunks"
+        description="Reindex internal, Google, and Reddit chunks into knowledge_chunks"
     )
     parser.add_argument(
         "--limit",
@@ -24,6 +24,12 @@ def main() -> None:
         action="store_true",
         help="Re-embed already-indexed chunks (default is to skip them).",
     )
+    parser.add_argument(
+        "--source-type",
+        type=str,
+        default=None,
+        help="Only reindex one source type, e.g. reddit.",
+    )   
     args = parser.parse_args()
 
     api_key = (
@@ -39,6 +45,7 @@ def main() -> None:
             embedder,
             force=args.force,
             limit=args.limit,
+            source_type=args.source_type,
         )
 
     print(
