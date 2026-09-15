@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     File,
     Form,
     HTTPException,
@@ -481,6 +482,7 @@ def update_review(
     session: DbSession,
     current_user: CurrentUser,
     knowledge_sync: ReviewKnowledgeSyncDep,
+    background_tasks: BackgroundTasks,
 ) -> ReviewRead:
     review = session.get(Review, review_id)
     if review is None:
@@ -510,7 +512,12 @@ def update_review(
     session.commit()
     session.refresh(review)
     response = _review_read(review)
-    _sync_review_knowledge_best_effort(session, knowledge_sync, review)
+    background_tasks.add_task(
+        _sync_review_knowledge_best_effort,
+        session,
+        knowledge_sync,
+        review,
+    )
     return response
 
 
@@ -564,6 +571,7 @@ def create_review(
     session: DbSession,
     current_user: CurrentUser,
     knowledge_sync: ReviewKnowledgeSyncDep,
+    background_tasks: BackgroundTasks,
 ) -> ReviewRead:
     vendor = session.get(Vendor, review_data.vendor_id)
     if vendor is None:
@@ -583,5 +591,10 @@ def create_review(
     session.commit()
     session.refresh(review)
     response = _review_read(review)
-    _sync_review_knowledge_best_effort(session, knowledge_sync, review)
+    background_tasks.add_task(
+        _sync_review_knowledge_best_effort,
+        session,
+        knowledge_sync,
+        review,
+    )
     return response
