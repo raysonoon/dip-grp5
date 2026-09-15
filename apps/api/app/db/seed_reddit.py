@@ -189,7 +189,7 @@ def seed_reddit_comments(
     ignored_count = 0
 
     with REDDIT_DATA_PATH.open(
-        encoding="utf-8",
+        encoding="utf-8-sig",
     ) as file:
         records = json.load(file)
 

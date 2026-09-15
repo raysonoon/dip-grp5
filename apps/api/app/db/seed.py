@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import hash_password
 from app.db.chatbot_question_data import CHATBOT_QUESTION_ROWS
+from app.db.seed_reddit import seed_reddit_comments
 from app.db.session import SessionLocal
 from app.models import (
     ChatbotPrompt,
@@ -599,6 +600,11 @@ def main() -> None:
         ) = seed_google_reviews(session)
         chatbot_created, chatbot_updated = seed_chatbot_questions(session)
         reviews_created, reviews_skipped = seed_demo_reviews(session)
+        (
+            reddit_created,
+            reddit_skipped,
+            reddit_ignored,
+        ) = seed_reddit_comments(session)
 
     admin_action = "Created" if admin_created else "Confirmed"
     user_action = "Created" if test_user_created else "Confirmed"
@@ -642,6 +648,11 @@ def main() -> None:
     print(
         "Demo app reviews: "
         f"created={reviews_created}, skipped={reviews_skipped}"
+    )
+    print(
+        "Reddit comments: "
+        f"created={reddit_created}, skipped={reddit_skipped}, "
+        f"ignored={reddit_ignored}"
     )
 
 
