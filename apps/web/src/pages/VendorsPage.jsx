@@ -4,14 +4,19 @@ import { TEST_USER_ID } from "../api/client";
 import {
   createReview,
   deleteReview,
+  deleteReviewImage,
   fetchVendorReviews,
+  reorderReviewImage,
   reviewImageUrl,
   updateReview,
+  uploadReviewImage,
 } from "../api/reviews";
 import { fetchVendorById } from "../api/vendors";
 import { vendorsData } from "../data/vendorsData";
 
-const RATING_OPTIONS = [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1];
+const MAX_IMAGES = 5;
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png"];
 
 function displayError(error) {
   return error instanceof Error ? error.message : "Something went wrong";
@@ -20,6 +25,71 @@ function displayError(error) {
 function displayDate(value) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function validateFiles(files, existingCount) {
+  if (existingCount + files.length > MAX_IMAGES) {
+    return `You can attach at most ${MAX_IMAGES} images per review.`;
+  }
+  for (const file of files) {
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      return "Only JPEG or PNG images are allowed.";
+    }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return `${file.name} is too large. Max file size is 5 MB.`;
+    }
+  }
+  return null;
+}
+
+function StarPicker({ value, onChange, disabled }) {
+  const [hoverValue, setHoverValue] = useState(null);
+  const displayValue = hoverValue ?? value;
+
+  const handlePick = (event, starIndex) => {
+    if (disabled) return;
+    const { left, width } = event.currentTarget.getBoundingClientRect();
+    const isHalf = event.clientX - left < width / 2;
+    onChange(isHalf ? starIndex - 0.5 : starIndex);
+  };
+
+  const handleHover = (event, starIndex) => {
+    if (disabled) return;
+    const { left, width } = event.currentTarget.getBoundingClientRect();
+    const isHalf = event.clientX - left < width / 2;
+    setHoverValue(isHalf ? starIndex - 0.5 : starIndex);
+  };
+
+  return (
+    <div
+      style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+      onMouseLeave={() => setHoverValue(null)}
+      role="radiogroup"
+      aria-label="Rating"
+    >
+      {[1, 2, 3, 4, 5].map((starIndex) => {
+        const fillPercent = Math.max(0, Math.min(1, displayValue - (starIndex - 1))) * 100;
+        return (
+          <div
+            key={starIndex}
+            style={{ position: "relative", width: "28px", height: "28px", cursor: disabled ? "default" : "pointer" }}
+            onMouseMove={(event) => handleHover(event, starIndex)}
+            onClick={(event) => handlePick(event, starIndex)}
+          >
+            <svg viewBox="0 0 24 24" width="28" height="28" style={{ position: "absolute", inset: 0, color: "var(--border)" }} fill="currentColor">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z" />
+            </svg>
+            <div style={{ position: "absolute", inset: 0, overflow: "hidden", width: `${fillPercent}%` }}>
+              <svg viewBox="0 0 24 24" width="28" height="28" style={{ color: "#b7791f" }} fill="currentColor">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z" />
+              </svg>
+            </div>
+          </div>
+        );
+      })}
+      <span style={{ marginLeft: "8px", color: "var(--text)", fontSize: "0.9rem" }}>{displayValue.toFixed(1)}</span>
+    </div>
+  );
 }
 
 export default function VendorsPage() {
@@ -40,8 +110,11 @@ export default function VendorsPage() {
   const [editingReviewId, setEditingReviewId] = useState(null);
   const [editRating, setEditRating] = useState(5);
   const [editComment, setEditComment] = useState("");
+  const [editNewFiles, setEditNewFiles] = useState([]);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+  const [newFiles, setNewFiles] = useState([]);
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
 
   const refreshReviews = async () => {
     const page = await fetchVendorReviews(numericVendorId);
@@ -98,12 +171,33 @@ export default function VendorsPage() {
 
   const handleAddReview = async (event) => {
     event.preventDefault();
-    setIsCreating(true);
     setActionError("");
+
+    const validationError = validateFiles(newFiles, 0);
+    if (validationError) {
+      setActionError(validationError);
+      return;
+    }
+
+    setIsCreating(true);
     try {
-      await createReview({ vendor_id: numericVendorId, rating: Number(rating), comment: comment.trim() || null });
+      const created = await createReview({
+        vendor_id: numericVendorId,
+        rating: Number(rating),
+        comment: comment.trim() || null,
+      });
+
+      for (const file of newFiles) {
+        try {
+          await uploadReviewImage(created.id, file);
+        } catch (uploadError) {
+          setActionError(`Review submitted, but an image failed to upload: ${displayError(uploadError)}`);
+        }
+      }
+
       setComment("");
       setRating(5);
+      setNewFiles([]);
       await refreshReviews();
     } catch (error) {
       setActionError(displayError(error));
@@ -116,16 +210,34 @@ export default function VendorsPage() {
     setEditingReviewId(review.id);
     setEditRating(review.rating);
     setEditComment(review.comment ?? "");
+    setEditNewFiles([]);
     setActionError("");
   };
 
-  const handleUpdateReview = async (event, reviewId) => {
+  const handleUpdateReview = async (event, review) => {
     event.preventDefault();
-    setBusyReviewId(reviewId);
     setActionError("");
+
+    const validationError = validateFiles(editNewFiles, review.images.length);
+    if (validationError) {
+      setActionError(validationError);
+      return;
+    }
+
+    setBusyReviewId(review.id);
     try {
-      await updateReview(reviewId, { rating: Number(editRating), comment: editComment.trim() || null });
+      await updateReview(review.id, { rating: Number(editRating), comment: editComment.trim() || null });
+
+      for (const file of editNewFiles) {
+        try {
+          await uploadReviewImage(review.id, file);
+        } catch (uploadError) {
+          setActionError(`Saved, but an image failed to upload: ${displayError(uploadError)}`);
+        }
+      }
+
       setEditingReviewId(null);
+      setEditNewFiles([]);
       await refreshReviews();
     } catch (error) {
       setActionError(displayError(error));
@@ -134,15 +246,59 @@ export default function VendorsPage() {
     }
   };
 
-  const handleDeleteReview = async (reviewId) => {
+  const handleDeleteReviewImage = async (reviewId, imageId) => {
+    setActionError("");
+    try {
+      await deleteReviewImage(reviewId, imageId);
+      await refreshReviews();
+    } catch (error) {
+      setActionError(displayError(error));
+    }
+  };
+
+  const handleReorderReviewImage = async (review, imageId, direction) => {
+    setActionError("");
+    const sorted = [...review.images].sort((a, b) => a.display_order - b.display_order);
+    const index = sorted.findIndex((image) => image.id === imageId);
+    const swapIndex = direction === "up" ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= sorted.length) return;
+
+    const current = sorted[index];
+    const swapWith = sorted[swapIndex];
+
+    try {
+      // Move current out of the way first to avoid a display_order conflict.
+      await reorderReviewImage(review.id, current.id, 99);
+      await reorderReviewImage(review.id, swapWith.id, current.display_order);
+      await reorderReviewImage(review.id, current.id, swapWith.display_order);
+      await refreshReviews();
+    } catch (error) {
+      setActionError(displayError(error));
+      await refreshReviews();
+    }
+  };
+
+  const requestDeleteReview = (reviewId) => {
+    setDeleteTargetId(reviewId);
+  };
+
+  const cancelDeleteReview = () => {
+    setDeleteTargetId(null);
+  };
+
+  const confirmDeleteReview = async () => {
+    if (deleteTargetId === null) return;
+    const reviewId = deleteTargetId;
     setBusyReviewId(reviewId);
     setActionError("");
     try {
       await deleteReview(reviewId);
       if (editingReviewId === reviewId) setEditingReviewId(null);
+      setDeleteTargetId(null);
       await refreshReviews();
     } catch (error) {
       setActionError(displayError(error));
+      setDeleteTargetId(null);
     } finally {
       setBusyReviewId(null);
     }
@@ -157,8 +313,14 @@ export default function VendorsPage() {
       <div style={{ padding: "40px", textAlign: "center", fontFamily: "var(--sans)" }}>
         <h2>Vendor not found</h2>
         {vendorError && <p role="alert">{vendorError}</p>}
-        {isValidVendorId && <button type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</button>}
-        <div style={{ marginTop: "12px" }}><Link to="/food">Back to All Vendors</Link></div>
+        {isValidVendorId && (
+          <button type="button" style={{ cursor: "pointer" }} onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
+            Try again
+          </button>
+        )}
+        <div style={{ marginTop: "12px" }}>
+          <Link to="/food">Back to All Vendors</Link>
+        </div>
       </div>
     );
   }
@@ -190,17 +352,56 @@ export default function VendorsPage() {
               </li>
             ))}
           </ul>
-        ) : <p style={{ color: "var(--text)" }}>Menu information is not available yet.</p>}
+        ) : (
+          <p style={{ color: "var(--text)" }}>Menu information is not available yet.</p>
+        )}
       </section>
 
       <section style={{ marginBottom: "30px" }}>
         <h2 style={{ fontFamily: "var(--heading)", color: "var(--text-h)" }}>Leave a Review</h2>
         <form onSubmit={handleAddReview} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <select value={rating} onChange={(event) => setRating(event.target.value)} style={{ padding: "10px", borderRadius: "6px", border: "1px solid var(--border)" }}>
-            {RATING_OPTIONS.map((option) => <option key={option} value={option}>{option} Stars</option>)}
-          </select>
-          <textarea placeholder="Write your review here..." value={comment} onChange={(event) => setComment(event.target.value)} rows={3} style={{ padding: "10px", borderRadius: "6px", border: "1px solid var(--border)" }} required />
-          <button type="submit" disabled={isCreating} style={{ background: "var(--accent)", color: "#fff", padding: "10px", borderRadius: "6px", border: "none", cursor: isCreating ? "wait" : "pointer", fontFamily: "var(--sans)", opacity: isCreating ? 0.7 : 1 }}>
+          <div>
+            <StarPicker value={rating} onChange={setRating} disabled={isCreating} />
+          </div>
+          <textarea
+            placeholder="Write your review here..."
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            rows={3}
+            style={{ padding: "10px", borderRadius: "6px", border: "1px solid var(--border)" }}
+            required
+          />
+          <div>
+            <label style={{ display: "block", marginBottom: "6px", color: "var(--text)", fontSize: "0.9rem" }}>
+              Photos (optional, up to {MAX_IMAGES}, JPEG/PNG, max 5MB each)
+            </label>
+            <input
+              type="file"
+              accept="image/jpeg,image/png"
+              multiple
+              style={{ cursor: "pointer" }}
+              onChange={(event) => setNewFiles(Array.from(event.target.files))}
+            />
+            {newFiles.length > 0 && (
+              <p style={{ fontSize: "0.85rem", color: "var(--text)", marginTop: "4px" }}>
+                {newFiles.length} file(s) selected
+              </p>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={isCreating}
+            style={{
+              background: "var(--accent)",
+              color: "#fff",
+              padding: "10px",
+              borderRadius: "6px",
+              border: "none",
+              cursor: isCreating ? "wait" : "pointer",
+              fontFamily: "var(--sans)",
+              opacity: isCreating ? 0.7 : 1,
+            }}
+          >
             {isCreating ? "Submitting..." : "Submit Review"}
           </button>
         </form>
@@ -213,56 +414,177 @@ export default function VendorsPage() {
         {!isLoading && loadError && (
           <div role="alert" style={{ color: "#b91c1c" }}>
             <p>Could not load reviews: {loadError}</p>
-            <button type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</button>
+            <button type="button" style={{ cursor: "pointer" }} onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
+              Try again
+            </button>
           </div>
         )}
-        {!isLoading && !loadError && reviews.length === 0 && <p style={{ color: "var(--text)" }}>No reviews yet. Be the first to leave one.</p>}
+        {!isLoading && !loadError && reviews.length === 0 && (
+          <p style={{ color: "var(--text)" }}>No reviews yet. Be the first to leave one.</p>
+        )}
         {!isLoading && !loadError && reviews.map((review) => {
           const isOwnReview = review.user.id === TEST_USER_ID;
           const isEditing = editingReviewId === review.id;
           const isBusy = busyReviewId === review.id;
+          const sortedImages = [...review.images].sort((a, b) => a.display_order - b.display_order);
+
           return (
             <article key={review.id} style={{ borderBottom: "1px solid var(--border)", padding: "16px 0" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
                 <div>
                   <strong>{review.user.display_name}</strong>
                   {review.user.affiliation && <span style={{ color: "var(--text)", marginLeft: "8px" }}>{review.user.affiliation}</span>}
-                  <div style={{ color: "#b7791f", marginTop: "4px" }}>{review.rating} ★</div>
+                  <div style={{ marginTop: "4px" }}>
+                    <StarPicker value={review.rating} onChange={() => {}} disabled />
+                  </div>
                 </div>
-                <small style={{ color: "var(--text)" }}>{displayDate(review.created_at)}{review.is_edited ? " (edited)" : ""}</small>
+                <small style={{ color: "var(--text)" }}>
+                  {displayDate(review.created_at)}
+                  {review.is_edited ? " (edited)" : ""}
+                </small>
               </div>
 
               {isEditing ? (
-                <form onSubmit={(event) => handleUpdateReview(event, review.id)} style={{ display: "grid", gap: "8px", marginTop: "12px" }}>
-                  <select value={editRating} onChange={(event) => setEditRating(event.target.value)}>
-                    {RATING_OPTIONS.map((option) => <option key={option} value={option}>{option} Stars</option>)}
-                  </select>
+                <form onSubmit={(event) => handleUpdateReview(event, review)} style={{ display: "grid", gap: "8px", marginTop: "12px" }}>
+                  <StarPicker value={editRating} onChange={setEditRating} disabled={isBusy} />
                   <textarea value={editComment} onChange={(event) => setEditComment(event.target.value)} rows={3} />
+
+                  {sortedImages.length > 0 && (
+                    <div>
+                      <label style={{ display: "block", marginBottom: "6px", color: "var(--text)", fontSize: "0.9rem" }}>
+                        Existing photos
+                      </label>
+                      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                        {sortedImages.map((image, index) => (
+                          <div key={image.id}>
+                            <img
+                              src={reviewImageUrl(review.id, image.id)}
+                              alt={`Review by ${review.user.display_name}`}
+                              loading="lazy"
+                              style={{ width: "90px", height: "68px", objectFit: "cover", borderRadius: "6px", border: "1px solid var(--border)" }}
+                            />
+                            <div style={{ display: "flex", justifyContent: "center", gap: "6px", marginTop: "4px" }}>
+                              <button
+                                type="button"
+                                disabled={index === 0 || isBusy}
+                                style={{ cursor: index === 0 || isBusy ? "default" : "pointer", fontSize: "0.75rem" }}
+                                onClick={() => handleReorderReviewImage(review, image.id, "up")}
+                              >
+                                ←
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                style={{ cursor: isBusy ? "default" : "pointer", fontSize: "0.75rem", color: "#b91c1c" }}
+                                onClick={() => handleDeleteReviewImage(review.id, image.id)}
+                              >
+                                ✕
+                              </button>
+                              <button
+                                type="button"
+                                disabled={index === sortedImages.length - 1 || isBusy}
+                                style={{ cursor: index === sortedImages.length - 1 || isBusy ? "default" : "pointer", fontSize: "0.75rem" }}
+                                onClick={() => handleReorderReviewImage(review, image.id, "down")}
+                              >
+                                →
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label style={{ display: "block", marginBottom: "6px", color: "var(--text)", fontSize: "0.9rem" }}>
+                      Add more photos
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png"
+                      multiple
+                      style={{ cursor: "pointer" }}
+                      onChange={(event) => setEditNewFiles(Array.from(event.target.files))}
+                    />
+                    {editNewFiles.length > 0 && (
+                      <p style={{ fontSize: "0.85rem", color: "var(--text)", marginTop: "4px" }}>
+                        {editNewFiles.length} file(s) selected
+                      </p>
+                    )}
+                  </div>
+
                   <div style={{ display: "flex", gap: "8px" }}>
-                    <button type="submit" disabled={isBusy}>{isBusy ? "Saving..." : "Save"}</button>
-                    <button type="button" disabled={isBusy} onClick={() => setEditingReviewId(null)}>Cancel</button>
+                    <button type="submit" disabled={isBusy} style={{ cursor: isBusy ? "wait" : "pointer" }}>
+                      {isBusy ? "Saving..." : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      style={{ cursor: isBusy ? "default" : "pointer" }}
+                      onClick={() => {
+                        setEditingReviewId(null);
+                        setEditNewFiles([]);
+                      }}
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </form>
-              ) : <p style={{ margin: "8px 0 0", color: "var(--text)" }}>{review.comment || "No written comment."}</p>}
+              ) : (
+                <p style={{ margin: "8px 0 0", color: "var(--text)" }}>{review.comment || "No written comment."}</p>
+              )}
 
-              {review.images.length > 0 && (
+              {!isEditing && sortedImages.length > 0 && (
                 <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "12px" }}>
-                  {review.images.map((image) => (
-                    <img key={image.id} src={reviewImageUrl(review.id, image.id)} alt={`Review by ${review.user.display_name}`} loading="lazy" style={{ width: "120px", height: "90px", objectFit: "cover", borderRadius: "8px" }} />
+                  {sortedImages.map((image) => (
+                    <img
+                      key={image.id}
+                      src={reviewImageUrl(review.id, image.id)}
+                      alt={`Review by ${review.user.display_name}`}
+                      loading="lazy"
+                      style={{ width: "120px", height: "90px", objectFit: "cover", borderRadius: "8px" }}
+                    />
                   ))}
                 </div>
               )}
 
               {isOwnReview && !isEditing && (
                 <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
-                  <button type="button" disabled={isBusy} onClick={() => beginEditing(review)}>Edit</button>
-                  <button type="button" disabled={isBusy} onClick={() => handleDeleteReview(review.id)}>{isBusy ? "Deleting..." : "Delete"}</button>
+                  <button type="button" disabled={isBusy} style={{ cursor: isBusy ? "default" : "pointer" }} onClick={() => beginEditing(review)}>
+                    Edit
+                  </button>
+                  <button type="button" disabled={isBusy} style={{ cursor: isBusy ? "default" : "pointer" }} onClick={() => requestDeleteReview(review.id)}>
+                    {isBusy && deleteTargetId === null ? "Deleting..." : "Delete"}
+                  </button>
                 </div>
               )}
             </article>
           );
         })}
       </section>
+
+      {deleteTargetId !== null && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
+          <div style={{ background: "var(--bg)", borderRadius: "10px", padding: "24px", maxWidth: "360px", width: "90%", border: "1px solid var(--border)" }}>
+            <h3 style={{ marginTop: 0, fontFamily: "var(--heading)", color: "var(--text-h)" }}>Delete this review?</h3>
+            <p style={{ color: "var(--text)", fontSize: "0.9rem" }}>
+              This action cannot be undone. The review and its photos will be permanently removed.
+            </p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "16px" }}>
+              <button type="button" style={{ cursor: "pointer" }} onClick={cancelDeleteReview}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={{ cursor: "pointer", background: "#b91c1c", color: "#fff", border: "none", padding: "8px 14px", borderRadius: "6px" }}
+                onClick={confirmDeleteReview}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

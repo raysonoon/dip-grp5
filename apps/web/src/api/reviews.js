@@ -1,4 +1,4 @@
-import { apiClient } from "./client.js";
+import { apiClient, API_BASE_URL, TEST_USER_ID, ApiError, ApiNetworkError, ApiResponseError, ApiTimeoutError } from "./client.js";
 
 function objectValue(value, label) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -113,5 +113,91 @@ export function deleteReview(reviewId) {
 }
 
 export function reviewImageUrl(reviewId, imageId) {
-  return `/reviews/${reviewId}/images/${imageId}`;
+  return `${API_BASE_URL}/reviews/${reviewId}/images/${imageId}`;
+}
+
+const DEFAULT_TIMEOUT_MS = 15_000;
+
+async function multipartRequest(path, { method, formData, signal, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+  const headers = { "X-Dev-User-Id": String(TEST_USER_ID) };
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abortFromCaller();
+  else signal?.addEventListener("abort", abortFromCaller, { once: true });
+
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers,
+      body: formData,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (timedOut) throw new ApiTimeoutError(timeoutMs);
+    if (signal?.aborted) throw error;
+    throw new ApiNetworkError("Could not connect to the API", error);
+  } finally {
+    clearTimeout(timeoutId);
+    signal?.removeEventListener("abort", abortFromCaller);
+  }
+
+  let payload = null;
+  if (response.status !== 204) {
+    const contentType = response.headers.get("content-type") ?? "";
+    try {
+      payload = contentType.includes("application/json")
+        ? await response.json()
+        : await response.text();
+    } catch (error) {
+      throw new ApiResponseError("API response body is malformed", response.status, error);
+    }
+  }
+
+  if (!response.ok) {
+    const message =
+      typeof payload?.detail === "string"
+        ? payload.detail
+        : Array.isArray(payload?.detail)
+          ? payload.detail.map((issue) => issue?.msg).filter(Boolean).join(", ")
+          : `Request failed with status ${response.status}`;
+    throw new ApiError(message, response.status, payload);
+  }
+  return payload;
+}
+
+export async function uploadReviewImage(reviewId, file, signal) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const payload = await multipartRequest(`/reviews/${reviewId}/images`, {
+    method: "POST",
+    formData,
+    signal,
+  });
+  return parseReviewImage(payload);
+}
+
+export async function deleteReviewImage(reviewId, imageId, signal) {
+  return multipartRequest(`/reviews/${reviewId}/images/${imageId}`, {
+    method: "DELETE",
+    formData: undefined,
+    signal,
+  });
+}
+
+export async function reorderReviewImage(reviewId, imageId, displayOrder, signal) {
+  const formData = new FormData();
+  formData.append("display_order", String(displayOrder));
+  const payload = await multipartRequest(`/reviews/${reviewId}/images/${imageId}`, {
+    method: "PATCH",
+    formData,
+    signal,
+  });
+  return parseReviewImage(payload);
 }
