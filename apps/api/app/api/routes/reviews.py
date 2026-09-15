@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -14,7 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import CurrentUser, DbSession, ReviewKnowledgeSyncDep
@@ -35,6 +36,7 @@ from app.services.review_knowledge import KnowledgeSyncError
 
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
+logger = logging.getLogger(__name__)
 
 MAX_REVIEW_IMAGES = 5
 
@@ -92,6 +94,24 @@ def _review_read(review: Review) -> ReviewRead:
         updated_at=review.updated_at,
         is_edited=review.updated_at is not None,
     )
+
+
+def _sync_review_knowledge_best_effort(
+    session: DbSession,
+    knowledge_sync: ReviewKnowledgeSyncDep,
+    review: Review,
+) -> None:
+    """Index a persisted review without making the review write depend on Gemini."""
+    try:
+        knowledge_sync.sync(review)
+        session.commit()
+    except (KnowledgeSyncError, SQLAlchemyError):
+        session.rollback()
+        logger.warning(
+            "Review %s was persisted, but its knowledge chunk could not be synchronized",
+            review.id,
+            exc_info=True,
+        )
 
 
 @router.get("", response_model=ReviewListRead)
@@ -487,17 +507,11 @@ def update_review(
         review.comment = review_data.comment
     review.updated_at = datetime.now(timezone.utc)
 
-    try:
-        knowledge_sync.sync(review)
-        session.commit()
-    except KnowledgeSyncError as error:
-        session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Review search indexing is temporarily unavailable; please try again",
-        ) from error
+    session.commit()
     session.refresh(review)
-    return _review_read(review)
+    response = _review_read(review)
+    _sync_review_knowledge_best_effort(session, knowledge_sync, review)
+    return response
 
 
 @router.delete("/{review_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -566,15 +580,8 @@ def create_review(
     )
     session.add(review)
     session.flush()
-    try:
-        knowledge_sync.sync(review)
-        session.commit()
-    except KnowledgeSyncError as error:
-        session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Review search indexing is temporarily unavailable; please try again",
-        ) from error
+    session.commit()
     session.refresh(review)
-
-    return _review_read(review)
+    response = _review_read(review)
+    _sync_review_knowledge_best_effort(session, knowledge_sync, review)
+    return response

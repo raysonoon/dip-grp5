@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { TEST_USER_ID } from "../api/client";
+import { DEV_USER_ID } from "../api/client";
 import {
   createReview,
   deleteReview,
@@ -9,7 +9,6 @@ import {
   updateReview,
 } from "../api/reviews";
 import { fetchVendorById } from "../api/vendors";
-import { vendorsData } from "../data/vendorsData";
 
 const RATING_OPTIONS = [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1];
 
@@ -26,7 +25,6 @@ export default function VendorsPage() {
   const { vendorId } = useParams();
   const numericVendorId = Number(vendorId);
   const isValidVendorId = Number.isInteger(numericVendorId) && numericVendorId > 0;
-  const localVendor = vendorsData.find((item) => item.id === numericVendorId);
   const [vendor, setVendor] = useState(null);
   const [vendorError, setVendorError] = useState("");
   const [isVendorLoading, setIsVendorLoading] = useState(isValidVendorId);
@@ -42,11 +40,36 @@ export default function VendorsPage() {
   const [editComment, setEditComment] = useState("");
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+  const reviewRequestRef = useRef(null);
+  const reviewRequestIdRef = useRef(0);
 
-  const refreshReviews = async () => {
-    const page = await fetchVendorReviews(numericVendorId);
-    setReviews(page.items);
-  };
+  const refreshReviews = useCallback(async ({ reset = false } = {}) => {
+    if (!isValidVendorId) return;
+
+    const requestId = reviewRequestIdRef.current + 1;
+    reviewRequestIdRef.current = requestId;
+    reviewRequestRef.current?.abort();
+    const controller = new AbortController();
+    reviewRequestRef.current = controller;
+
+    setIsLoading(true);
+    setLoadError("");
+    if (reset) setReviews([]);
+
+    try {
+      const page = await fetchVendorReviews(numericVendorId, controller.signal);
+      if (requestId === reviewRequestIdRef.current) setReviews(page.items);
+    } catch (error) {
+      if (requestId === reviewRequestIdRef.current && error.name !== "AbortError") {
+        setLoadError(displayError(error));
+      }
+    } finally {
+      if (requestId === reviewRequestIdRef.current) {
+        setIsLoading(false);
+        if (reviewRequestRef.current === controller) reviewRequestRef.current = null;
+      }
+    }
+  }, [isValidVendorId, numericVendorId]);
 
   useEffect(() => {
     if (!isValidVendorId) {
@@ -74,27 +97,23 @@ export default function VendorsPage() {
 
   useEffect(() => {
     if (!isValidVendorId) {
+      reviewRequestIdRef.current += 1;
+      reviewRequestRef.current?.abort();
+      reviewRequestRef.current = null;
       setReviews([]);
       setIsLoading(false);
       return undefined;
     }
 
-    const controller = new AbortController();
-    setIsLoading(true);
-    setLoadError("");
     setActionError("");
-    setReviews([]);
-    fetchVendorReviews(numericVendorId, controller.signal)
-      .then((page) => setReviews(page.items))
-      .catch((error) => {
-        if (error.name !== "AbortError") setLoadError(displayError(error));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false);
-      });
+    void refreshReviews({ reset: true });
 
-    return () => controller.abort();
-  }, [isValidVendorId, numericVendorId, loadAttempt]);
+    return () => {
+      reviewRequestIdRef.current += 1;
+      reviewRequestRef.current?.abort();
+      reviewRequestRef.current = null;
+    };
+  }, [isValidVendorId, loadAttempt, refreshReviews]);
 
   const handleAddReview = async (event) => {
     event.preventDefault();
@@ -163,9 +182,9 @@ export default function VendorsPage() {
     );
   }
 
-  const location = vendor.location || localVendor?.canteen;
-  const category = vendor.category || localVendor?.cuisine;
-  const displayedRating = vendor.average_rating ?? vendor.average_google_rating ?? localVendor?.rating;
+  const location = vendor.location;
+  const category = vendor.category;
+  const displayedRating = vendor.average_rating ?? vendor.average_google_rating;
 
   return (
     <div style={{ maxWidth: "800px", margin: "0 auto", padding: "20px", fontFamily: "var(--sans)" }}>
@@ -181,16 +200,7 @@ export default function VendorsPage() {
 
       <section style={{ marginBottom: "30px", background: "var(--code-bg)", padding: "20px", borderRadius: "10px" }}>
         <h2 style={{ marginTop: 0, fontFamily: "var(--heading)", color: "var(--text-h)" }}>Menu</h2>
-        {localVendor?.menu?.length ? (
-          <ul style={{ listStyle: "none", padding: 0 }}>
-            {localVendor.menu.map((item) => (
-              <li key={item.name} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-                <span>{item.name}</span>
-                <strong>{item.price}</strong>
-              </li>
-            ))}
-          </ul>
-        ) : <p style={{ color: "var(--text)" }}>Menu information is not available yet.</p>}
+        <p style={{ color: "var(--text)" }}>Menu information is not available yet.</p>
       </section>
 
       <section style={{ marginBottom: "30px" }}>
@@ -199,7 +209,7 @@ export default function VendorsPage() {
           <select value={rating} onChange={(event) => setRating(event.target.value)} style={{ padding: "10px", borderRadius: "6px", border: "1px solid var(--border)" }}>
             {RATING_OPTIONS.map((option) => <option key={option} value={option}>{option} Stars</option>)}
           </select>
-          <textarea placeholder="Write your review here..." value={comment} onChange={(event) => setComment(event.target.value)} rows={3} style={{ padding: "10px", borderRadius: "6px", border: "1px solid var(--border)" }} required />
+          <textarea placeholder="Write an optional review..." value={comment} onChange={(event) => setComment(event.target.value)} rows={3} style={{ padding: "10px", borderRadius: "6px", border: "1px solid var(--border)" }} />
           <button type="submit" disabled={isCreating} style={{ background: "var(--accent)", color: "#fff", padding: "10px", borderRadius: "6px", border: "none", cursor: isCreating ? "wait" : "pointer", fontFamily: "var(--sans)", opacity: isCreating ? 0.7 : 1 }}>
             {isCreating ? "Submitting..." : "Submit Review"}
           </button>
@@ -218,7 +228,7 @@ export default function VendorsPage() {
         )}
         {!isLoading && !loadError && reviews.length === 0 && <p style={{ color: "var(--text)" }}>No reviews yet. Be the first to leave one.</p>}
         {!isLoading && !loadError && reviews.map((review) => {
-          const isOwnReview = review.user.id === TEST_USER_ID;
+          const isOwnReview = DEV_USER_ID !== null && review.user.id === DEV_USER_ID;
           const isEditing = editingReviewId === review.id;
           const isBusy = busyReviewId === review.id;
           return (

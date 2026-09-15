@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { TEST_USER_TOKEN } from "./client.js";
-import { fetchVendorById } from "./vendors.js";
+import { fetchVendorById, fetchVendors } from "./vendors.js";
 
 const VENDOR = {
   id: 12,
@@ -38,7 +37,7 @@ test("fetchVendorById finds a backend vendor by its integer id", async (context)
   globalThis.fetch = async (path, options) => {
     assert.equal(path, "/vendors?limit=100&offset=0");
     assert.equal(options.method, "GET");
-    assert.equal(options.headers["X-Dev-User-Id"], TEST_USER_TOKEN);
+    assert.equal(options.headers["X-Dev-User-Id"], undefined);
     return jsonResponse({ items: [VENDOR], total: 1, limit: 100, offset: 0 });
   };
 
@@ -57,4 +56,28 @@ test("fetchVendorById reports a missing vendor without crashing", async (context
   globalThis.fetch = async () => jsonResponse({ items: [], total: 0, limit: 100, offset: 0 });
 
   await assert.rejects(fetchVendorById(999), /Vendor not found/);
+});
+
+test("fetchVendors returns backend vendors across pages", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  let call = 0;
+  globalThis.fetch = async () => {
+    call += 1;
+    if (call === 1) {
+      return jsonResponse({ items: [VENDOR], total: 2, limit: 100, offset: 0 });
+    }
+    return jsonResponse({
+      items: [{ ...VENDOR, id: 13, name: "Second Backend Vendor" }],
+      total: 2,
+      limit: 100,
+      offset: 1,
+    });
+  };
+
+  const vendors = await fetchVendors();
+
+  assert.deepEqual(vendors.map((vendor) => vendor.id), [12, 13]);
 });

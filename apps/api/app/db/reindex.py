@@ -31,6 +31,12 @@ def main() -> None:
         if settings.gemini_api_key is not None
         else None
     )
+    if not api_key:
+        print(
+            "Knowledge base reindex skipped: GEMINI_API_KEY is not configured"
+        )
+        return
+
     embedder = GoogleEmbedder(api_key=api_key)
 
     with SessionLocal() as session:

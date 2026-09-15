@@ -176,6 +176,14 @@ environment keeps it disabled. Replace it with the team's real session or token
 authentication and keep `DEV_AUTH_ENABLED=false` in every shared or deployed
 environment.
 
+The frontend reads the temporary development user from configuration instead
+of assuming a database ID. Copy `apps/web/.env.example` to
+`apps/web/.env.local`, then set `VITE_DEV_USER_ID` to the normal-user ID printed
+by `python -m app.db.seed`. Leave `VITE_API_BASE_URL` blank when using the Vite
+development proxy, or set it to the deployed API origin. Public vendor, review,
+and chatbot reads do not require this user ID; creating, editing, or deleting a
+review does.
+
 ## Run the API
 
 Start FastAPI from `apps/api`:

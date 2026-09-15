@@ -1,4 +1,4 @@
-import { apiClient } from "./client.js";
+import { apiClient, apiUrl } from "./client.js";
 
 function objectValue(value, label) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -96,7 +96,10 @@ export function parseReviewList(value) {
 }
 
 export async function fetchVendorReviews(vendorId, signal) {
-  const payload = await apiClient.get(`/reviews?vendor_id=${vendorId}`, { signal });
+  const payload = await apiClient.get(`/reviews?vendor_id=${vendorId}`, {
+    auth: false,
+    signal,
+  });
   return parseReviewList(payload);
 }
 
@@ -113,5 +116,5 @@ export function deleteReview(reviewId) {
 }
 
 export function reviewImageUrl(reviewId, imageId) {
-  return `/reviews/${reviewId}/images/${imageId}`;
+  return apiUrl(`/reviews/${reviewId}/images/${imageId}`);
 }

@@ -95,6 +95,29 @@ test("the API client distinguishes network, HTTP, malformed-body, and timeout er
   );
 });
 
+test("the API timeout remains active while the response body is read", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  globalThis.fetch = async (_path, options) => ({
+    status: 200,
+    ok: true,
+    headers: new Headers({ "Content-Type": "application/json" }),
+    json: () => new Promise((_resolve, reject) => {
+      options.signal.addEventListener("abort", () => {
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    }),
+  });
+
+  await assert.rejects(
+    apiClient.get("/slow-body", { auth: false, timeoutMs: 1 }),
+    ApiTimeoutError,
+  );
+});
+
 test("chat errors map to non-blocking retry messages", () => {
   assert.match(chatErrorMessage(new ApiNetworkError("offline")), /connection|reach/i);
   assert.match(chatErrorMessage(new ApiTimeoutError(1)), /too long/i);

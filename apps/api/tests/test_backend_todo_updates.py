@@ -107,6 +107,29 @@ def test_user_and_vendor_storage_follow_the_new_schema(session: Session) -> None
     assert VendorImage.__tablename__ == "vendor_images"
 
 
+def test_vendor_image_metadata_migration_backfills_legacy_rows() -> None:
+    migration_path = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "9f2e4c6a8b0d_add_vendor_image_mime_and_size.py"
+    )
+    source = migration_path.read_text(encoding="utf-8")
+
+    update_position = source.index("UPDATE vendor_images")
+    assert source.index('sa.Column("mime_type"', 0, update_position) >= 0
+    assert source.index(
+        'sa.Column("file_size_bytes"', 0, update_position
+    ) >= 0
+    assert source.index(
+        'op.alter_column("vendor_images", "mime_type", nullable=False)'
+    ) > update_position
+    assert source.index(
+        'op.alter_column("vendor_images", "file_size_bytes", nullable=False)'
+    ) > update_position
+    assert "file_size_bytes = 0" in source
+
+
 def test_display_names_can_repeat_and_email_is_normalized(session: Session) -> None:
     first = User(
         display_name="Same Name",
