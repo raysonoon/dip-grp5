@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
+    DDL,
     DateTime,
     ForeignKey,
     Identity,
@@ -12,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -106,4 +108,74 @@ class ReviewImage(Base):
     )
 
     review: Mapped[Review] = relationship(back_populates="images")
+
+
+# Production PostgreSQL databases receive the canonical trigger through
+# Alembic. These SQLite equivalents keep metadata-created local/test databases
+# faithful to the same database-level synchronization contract.
+event.listen(
+    Review.__table__,
+    "after_create",
+    DDL(
+        """
+        CREATE TRIGGER reviews_sync_vendor_average_rating_after_insert
+        AFTER INSERT ON reviews
+        BEGIN
+            UPDATE vendors
+            SET average_rating = (
+                SELECT ROUND(AVG(rating_half_steps) / 2.0, 1)
+                FROM reviews
+                WHERE vendor_id = NEW.vendor_id
+            )
+            WHERE id = NEW.vendor_id;
+        END
+        """
+    ).execute_if(dialect="sqlite"),
+)
+event.listen(
+    Review.__table__,
+    "after_create",
+    DDL(
+        """
+        CREATE TRIGGER reviews_sync_vendor_average_rating_after_update
+        AFTER UPDATE ON reviews
+        BEGIN
+            UPDATE vendors
+            SET average_rating = (
+                SELECT ROUND(AVG(rating_half_steps) / 2.0, 1)
+                FROM reviews
+                WHERE vendor_id = OLD.vendor_id
+            )
+            WHERE id = OLD.vendor_id;
+
+            UPDATE vendors
+            SET average_rating = (
+                SELECT ROUND(AVG(rating_half_steps) / 2.0, 1)
+                FROM reviews
+                WHERE vendor_id = NEW.vendor_id
+            )
+            WHERE id = NEW.vendor_id;
+        END
+        """
+    ).execute_if(dialect="sqlite"),
+)
+event.listen(
+    Review.__table__,
+    "after_create",
+    DDL(
+        """
+        CREATE TRIGGER reviews_sync_vendor_average_rating_after_delete
+        AFTER DELETE ON reviews
+        BEGIN
+            UPDATE vendors
+            SET average_rating = (
+                SELECT ROUND(AVG(rating_half_steps) / 2.0, 1)
+                FROM reviews
+                WHERE vendor_id = OLD.vendor_id
+            )
+            WHERE id = OLD.vendor_id;
+        END
+        """
+    ).execute_if(dialect="sqlite"),
+)
 

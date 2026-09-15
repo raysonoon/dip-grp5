@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import insert
+from sqlalchemy import Numeric, insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -92,7 +92,12 @@ def test_user_and_vendor_storage_follow_the_new_schema(session: Session) -> None
     assert "unit_code" in vendor_columns
     assert "level_unit" not in vendor_columns
     assert "average_google_rating" in vendor_columns
-    assert len(vendor_columns) == 13
+    assert "average_rating" in vendor_columns
+    assert len(vendor_columns) == 14
+    assert isinstance(vendor_columns.average_rating.type, Numeric)
+    assert vendor_columns.average_rating.type.precision == 2
+    assert vendor_columns.average_rating.type.scale == 1
+    assert vendor_columns.average_rating.nullable is True
     google_columns = {
         column.name
         for column in vendor_columns
@@ -100,6 +105,29 @@ def test_user_and_vendor_storage_follow_the_new_schema(session: Session) -> None
     }
     assert google_columns == {"average_google_rating"}
     assert VendorImage.__tablename__ == "vendor_images"
+
+
+def test_vendor_image_metadata_migration_backfills_legacy_rows() -> None:
+    migration_path = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "9f2e4c6a8b0d_add_vendor_image_mime_and_size.py"
+    )
+    source = migration_path.read_text(encoding="utf-8")
+
+    update_position = source.index("UPDATE vendor_images")
+    assert source.index('sa.Column("mime_type"', 0, update_position) >= 0
+    assert source.index(
+        'sa.Column("file_size_bytes"', 0, update_position
+    ) >= 0
+    assert source.index(
+        'op.alter_column("vendor_images", "mime_type", nullable=False)'
+    ) > update_position
+    assert source.index(
+        'op.alter_column("vendor_images", "file_size_bytes", nullable=False)'
+    ) > update_position
+    assert "file_size_bytes = 0" in source
 
 
 def test_display_names_can_repeat_and_email_is_normalized(session: Session) -> None:
@@ -169,10 +197,30 @@ def test_vendor_api_returns_ordered_images_and_compatibility_thumbnail(
     assert item["vegetarian"] is False
     assert item["unit_code"] == "N2.1-01-01"
     assert item["average_google_rating"] == 4.6
+    assert item["average_rating"] == 4.0
     assert {
         key for key in item if "google" in key
     } == {"average_google_rating"}
     assert item["updated_at"] is not None
+
+
+def test_internal_average_rating_has_a_separate_endpoint(
+    client: TestClient,
+    session: Session,
+) -> None:
+    _, _, vendor, _ = _seed_records(session)
+
+    response = client.get(f"/vendors/{vendor.id}/average-rating")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "vendor_id": vendor.id,
+        "average_rating": 4.0,
+    }
+    assert "average_google_rating" not in response.json()
+
+    missing = client.get("/vendors/999999/average-rating")
+    assert missing.status_code == 404
 
 
 def test_review_api_uses_display_name_and_reports_edit_state(
