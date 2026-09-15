@@ -1,8 +1,10 @@
+import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     File,
     Form,
     HTTPException,
@@ -14,10 +16,10 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
-from app.api.dependencies import CurrentUser, DbSession
+from app.api.dependencies import CurrentUser, DbSession, ReviewKnowledgeSyncDep
 from app.core.image_storage import get_storage
 from app.core.image_upload import read_image_upload
 from app.models import Review, ReviewImage, Vendor
@@ -31,9 +33,11 @@ from app.schemas import (
     ReviewUserRead,
     ReviewVendorRead,
 )
+from app.services.review_knowledge import KnowledgeSyncError
 
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
+logger = logging.getLogger(__name__)
 
 MAX_REVIEW_IMAGES = 5
 
@@ -91,6 +95,24 @@ def _review_read(review: Review) -> ReviewRead:
         updated_at=review.updated_at,
         is_edited=review.updated_at is not None,
     )
+
+
+def _sync_review_knowledge_best_effort(
+    session: DbSession,
+    knowledge_sync: ReviewKnowledgeSyncDep,
+    review: Review,
+) -> None:
+    """Index a persisted review without making the review write depend on Gemini."""
+    try:
+        knowledge_sync.sync(review)
+        session.commit()
+    except (KnowledgeSyncError, SQLAlchemyError):
+        session.rollback()
+        logger.warning(
+            "Review %s was persisted, but its knowledge chunk could not be synchronized",
+            review.id,
+            exc_info=True,
+        )
 
 
 @router.get("", response_model=ReviewListRead)
@@ -459,6 +481,8 @@ def update_review(
     review_data: ReviewUpdate,
     session: DbSession,
     current_user: CurrentUser,
+    knowledge_sync: ReviewKnowledgeSyncDep,
+    background_tasks: BackgroundTasks,
 ) -> ReviewRead:
     review = session.get(Review, review_id)
     if review is None:
@@ -487,7 +511,14 @@ def update_review(
 
     session.commit()
     session.refresh(review)
-    return _review_read(review)
+    response = _review_read(review)
+    background_tasks.add_task(
+        _sync_review_knowledge_best_effort,
+        session,
+        knowledge_sync,
+        review,
+    )
+    return response
 
 
 @router.delete("/{review_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -495,6 +526,7 @@ def delete_review(
     review_id: Annotated[int, Path(gt=0)],
     session: DbSession,
     current_user: CurrentUser,
+    knowledge_sync: ReviewKnowledgeSyncDep,
 ) -> Response:
     review = session.scalar(
         select(Review)
@@ -515,6 +547,7 @@ def delete_review(
             detail="You may delete only your own reviews",
         )
 
+    knowledge_sync.delete(review.id)
     session.delete(review)
     session.commit()
 
@@ -537,6 +570,8 @@ def create_review(
     review_data: ReviewCreate,
     session: DbSession,
     current_user: CurrentUser,
+    knowledge_sync: ReviewKnowledgeSyncDep,
+    background_tasks: BackgroundTasks,
 ) -> ReviewRead:
     vendor = session.get(Vendor, review_data.vendor_id)
     if vendor is None:
@@ -552,7 +587,14 @@ def create_review(
         comment=review_data.comment,
     )
     session.add(review)
+    session.flush()
     session.commit()
     session.refresh(review)
-
-    return _review_read(review)
+    response = _review_read(review)
+    background_tasks.add_task(
+        _sync_review_knowledge_best_effort,
+        session,
+        knowledge_sync,
+        review,
+    )
+    return response
