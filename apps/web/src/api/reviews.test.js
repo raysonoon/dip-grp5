@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { TEST_USER_TOKEN } from "./client.js";
-import {
+process.env.VITE_API_BASE_URL = "https://api.example.test/";
+process.env.VITE_DEV_USER_ID = "27";
+
+const { DEV_USER_TOKEN } = await import("./client.js");
+const {
   createReview,
   deleteReview,
   fetchVendorReviews,
   reviewImageUrl,
   updateReview,
-} from "./reviews.js";
+} = await import("./reviews.js");
 
 const REVIEW_DETAIL = {
   id: 42,
@@ -48,15 +51,15 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
-test("fetchVendorReviews authenticates, filters, and parses review details", async (context) => {
+test("fetchVendorReviews is public, filters, and parses review details", async (context) => {
   const originalFetch = globalThis.fetch;
   context.after(() => {
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (path, options) => {
-    assert.equal(path, "/reviews?vendor_id=7");
+    assert.equal(path, "https://api.example.test/reviews?vendor_id=7");
     assert.equal(options.method, "GET");
-    assert.equal(options.headers["X-Dev-User-Id"], TEST_USER_TOKEN);
+    assert.equal(options.headers["X-Dev-User-Id"], undefined);
     return jsonResponse({ items: [REVIEW_DETAIL], total: 1, limit: 20, offset: 0 });
   };
 
@@ -64,7 +67,10 @@ test("fetchVendorReviews authenticates, filters, and parses review details", asy
 
   assert.deepEqual(page.items[0].user, REVIEW_DETAIL.user);
   assert.deepEqual(page.items[0].images, REVIEW_DETAIL.images);
-  assert.equal(reviewImageUrl(42, 9), "/reviews/42/images/9");
+  assert.equal(
+    reviewImageUrl(42, 9),
+    "https://api.example.test/reviews/42/images/9",
+  );
 });
 
 test("review mutations use the test-user token and backend schemas", async (context) => {
@@ -93,21 +99,21 @@ test("review mutations use the test-user token and backend schemas", async (cont
     })),
     [
       {
-        path: "/reviews",
+        path: "https://api.example.test/reviews",
         method: "POST",
-        token: TEST_USER_TOKEN,
+        token: DEV_USER_TOKEN,
         body: JSON.stringify({ vendor_id: 7, rating: 4.5, comment: "New review" }),
       },
       {
-        path: "/reviews/42",
+        path: "https://api.example.test/reviews/42",
         method: "PATCH",
-        token: TEST_USER_TOKEN,
+        token: DEV_USER_TOKEN,
         body: JSON.stringify({ rating: 5, comment: "Updated review" }),
       },
       {
-        path: "/reviews/42",
+        path: "https://api.example.test/reviews/42",
         method: "DELETE",
-        token: TEST_USER_TOKEN,
+        token: DEV_USER_TOKEN,
         body: undefined,
       },
     ],

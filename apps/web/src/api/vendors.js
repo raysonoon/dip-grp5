@@ -96,16 +96,33 @@ export function parseVendorList(value) {
   };
 }
 
+async function fetchVendorPage(limit, offset, signal) {
+  const payload = await apiClient.get(
+    `/vendors?limit=${limit}&offset=${offset}`,
+    { auth: false, signal },
+  );
+  return parseVendorList(payload);
+}
+
+export async function fetchVendors(signal) {
+  const vendors = [];
+  const limit = 100;
+  let offset = 0;
+
+  while (true) {
+    const page = await fetchVendorPage(limit, offset, signal);
+    vendors.push(...page.items);
+    offset += page.items.length;
+    if (page.items.length === 0 || offset >= page.total) return vendors;
+  }
+}
+
 export async function fetchVendorById(vendorId, signal) {
   let offset = 0;
   const limit = 100;
 
   while (true) {
-    const payload = await apiClient.get(
-      `/vendors?limit=${limit}&offset=${offset}`,
-      { signal },
-    );
-    const page = parseVendorList(payload);
+    const page = await fetchVendorPage(limit, offset, signal);
     const vendor = page.items.find((item) => item.id === vendorId);
     if (vendor) return vendor;
 

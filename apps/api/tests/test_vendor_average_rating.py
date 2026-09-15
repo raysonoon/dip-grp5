@@ -1,8 +1,26 @@
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.models import GoogleReview, Review, User, Vendor
+
+
+MIGRATION_PATH = (
+    Path(__file__).parents[1]
+    / "alembic"
+    / "versions"
+    / "a4c6e8f0b2d4_store_internal_vendor_average_rating.py"
+)
+
+
+def test_migration_installs_trigger_before_average_backfill() -> None:
+    """Protect review writes that commit while the migration backfills vendors."""
+    source = MIGRATION_PATH.read_text(encoding="utf-8")
+
+    assert source.index(
+        "CREATE TRIGGER reviews_sync_vendor_average_rating"
+    ) < source.index("SET average_rating = review_average.average_rating")
 
 
 def _rating(vendor: Vendor, session: Session) -> float | None:

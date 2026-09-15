@@ -1,4 +1,13 @@
-import { apiClient, API_BASE_URL, TEST_USER_ID, ApiError, ApiNetworkError, ApiResponseError, ApiTimeoutError } from "./client.js";
+import {
+  API_BASE_URL,
+  ApiAuthConfigurationError,
+  ApiError,
+  ApiNetworkError,
+  ApiResponseError,
+  ApiTimeoutError,
+  DEV_USER_TOKEN,
+  apiClient,
+} from "./client.js";
 
 function objectValue(value, label) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -96,7 +105,10 @@ export function parseReviewList(value) {
 }
 
 export async function fetchVendorReviews(vendorId, signal) {
-  const payload = await apiClient.get(`/reviews?vendor_id=${vendorId}`, { signal });
+  const payload = await apiClient.get(`/reviews?vendor_id=${vendorId}`, {
+    auth: false,
+    signal,
+  });
   return parseReviewList(payload);
 }
 
@@ -119,7 +131,8 @@ export function reviewImageUrl(reviewId, imageId) {
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 async function multipartRequest(path, { method, formData, signal, timeoutMs = DEFAULT_TIMEOUT_MS }) {
-  const headers = { "X-Dev-User-Id": String(TEST_USER_ID) };
+  if (DEV_USER_TOKEN === null) throw new ApiAuthConfigurationError();
+  const headers = { "X-Dev-User-Id": DEV_USER_TOKEN };
 
   const controller = new AbortController();
   let timedOut = false;

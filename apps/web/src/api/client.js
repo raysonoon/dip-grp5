@@ -1,6 +1,13 @@
-export const TEST_USER_TOKEN = "2";
-export const TEST_USER_ID = Number(TEST_USER_TOKEN);
-export const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const ENVIRONMENT = import.meta.env ?? globalThis.process?.env ?? {};
+const configuredDevUserId = String(ENVIRONMENT.VITE_DEV_USER_ID ?? "").trim();
+
+export const DEV_USER_TOKEN = /^[1-9]\d*$/.test(configuredDevUserId)
+  ? configuredDevUserId
+  : null;
+export const DEV_USER_ID = DEV_USER_TOKEN === null ? null : Number(DEV_USER_TOKEN);
+export const API_BASE_URL = String(ENVIRONMENT.VITE_API_BASE_URL ?? "")
+  .trim()
+  .replace(/\/+$/, "");
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -36,6 +43,19 @@ export class ApiTimeoutError extends Error {
   }
 }
 
+export class ApiAuthConfigurationError extends Error {
+  constructor() {
+    super("Set VITE_DEV_USER_ID to a seeded user ID before changing reviews");
+    this.name = "ApiAuthConfigurationError";
+  }
+}
+
+export function apiUrl(path) {
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE_URL}${normalizedPath}`;
+}
+
 function errorMessage(payload, status) {
   if (typeof payload === "string" && payload.trim()) return payload;
   if (typeof payload?.detail === "string") return payload.detail;
@@ -59,7 +79,10 @@ async function request(
   } = {},
 ) {
   const headers = {};
-  if (auth) headers["X-Dev-User-Id"] = TEST_USER_TOKEN;
+  if (auth) {
+    if (DEV_USER_TOKEN === null) throw new ApiAuthConfigurationError();
+    headers["X-Dev-User-Id"] = DEV_USER_TOKEN;
+  }
   if (body !== undefined) headers["Content-Type"] = "application/json";
 
   const controller = new AbortController();
@@ -72,39 +95,43 @@ async function request(
   if (signal?.aborted) abortFromCaller();
   else signal?.addEventListener("abort", abortFromCaller, { once: true });
 
-  let response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (timedOut) throw new ApiTimeoutError(timeoutMs);
-    if (signal?.aborted) throw error;
-    throw new ApiNetworkError("Could not connect to the API", error);
+    let response;
+    try {
+      response = await fetch(apiUrl(path), {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (timedOut) throw new ApiTimeoutError(timeoutMs);
+      if (signal?.aborted) throw error;
+      throw new ApiNetworkError("Could not connect to the API", error);
+    }
+
+    let payload = null;
+    if (response.status !== 204) {
+      const contentType = response.headers.get("content-type") ?? "";
+      try {
+        payload = contentType.includes("application/json")
+          ? await response.json()
+          : await response.text();
+      } catch (error) {
+        if (timedOut) throw new ApiTimeoutError(timeoutMs);
+        if (signal?.aborted) throw error;
+        throw new ApiResponseError("API response body is malformed", response.status, error);
+      }
+    }
+
+    if (!response.ok) {
+      throw new ApiError(errorMessage(payload, response.status), response.status, payload);
+    }
+    return payload;
   } finally {
     clearTimeout(timeoutId);
     signal?.removeEventListener("abort", abortFromCaller);
   }
-
-  let payload = null;
-  if (response.status !== 204) {
-    const contentType = response.headers.get("content-type") ?? "";
-    try {
-      payload = contentType.includes("application/json")
-        ? await response.json()
-        : await response.text();
-    } catch (error) {
-      throw new ApiResponseError("API response body is malformed", response.status, error);
-    }
-  }
-
-  if (!response.ok) {
-    throw new ApiError(errorMessage(payload, response.status), response.status, payload);
-  }
-  return payload;
 }
 
 export const apiClient = {

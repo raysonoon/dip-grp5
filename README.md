@@ -1,100 +1,95 @@
 # dip-grp5
 
+NTU Foodie Hub — a campus food discovery app with community reviews and a
+RAG chatbot. The repo has a FastAPI backend (`apps/api`) and a React SPA
+frontend (`apps/web`).
+
 ## Folder structure
 
 ```text
 dip-grp5/
 ├── README.md
-├── .gitignore
-├── diagrams/
-│   ├── dip_architecture_220826.jpg     # Software architecture overview
-│   └── rag_chabot.jpg                  # Chatbot RAG flow
-├── docs/
-│   ├── DIP AI chatbot questions.xlsx   # Curated chatbot questions workbook
-│   ├── DIP Chatbot Schema.xlsx         # Chatbot schema workbook
-│   ├── Still NEED.txt
-│   ├── TODO.md
-│   ├── chatbot.md                      # Chatbot RAG vector-search design notes
-│   ├── db-schema.md                    # Database tables reference
+├── start-fastapi.bat              # One-click backend launcher (Docker, DB, migrations, API)
+├── data/                          # Source data used for seeding
+│   ├── fnb-directory-v2.csv
+│   └── google_reviews/
+├── diagrams/                      # Architecture and flow diagrams
+│   ├── dip_architecture_220826.jpg
+│   ├── chatbot_rag.jpg
+│   └── chatbot_routing.jpg
+├── docs/                          # Working documents and design notes
+│   ├── DIP AI chatbot questions.xlsx
+│   ├── DIP Chatbot Schema.xlsx
+│   ├── db-schema.md               # Database tables reference
+│   ├── chatbot.md                 # Chatbot RAG vector-search design notes
 │   ├── week-3.md
-│   └── What Baihao Did wk 3.md
-│
+│   ├── week-4.md
+│   ├── What Baihao Did wk 3.md
+│   ├── TODO.md
+│   └── Still NEED.txt
 └── apps/
-    ├── api/                            # FastAPI backend
-        ├── app/
-        │   ├── main.py                 # App entrypoint + router registration
-        │   ├── api/
-        │   │   ├── dependencies.py     # Dev auth + DB session dependencies
-        │   │   └── routes/
-        │   │       ├── reviews.py
-        │   │       └── vendors.py
-        │   ├── core/
-        │   │   ├── config.py           # Pydantic settings (env vars)
-        │   │   └── security.py         # Argon2 password hashing
-        │   ├── db/
-        │   │   ├── base.py             # Shared declarative Base + naming convention
-        │   │   ├── vector_base.py      # Separate Base for pgvector tables
-        │   │   ├── chatbot_question_data.py  # Curated 59 question rows
-        │   │   ├── seed.py             # Repeatable dev seed
-        │   │   └── session.py          # Engine + session factory
-        │   ├── models/                 # SQLAlchemy ORM (database tables)
-        │   │   ├── chatbot_prompt.py
-        │   │   ├── google_review.py
-        │   │   ├── knowledge.py        # knowledge_chunks (vector RAG)
-        │   │   ├── review.py
-        │   │   ├── user.py
-        │   │   └── vendor.py
-        │   └── schemas/                # Pydantic API request/response DTOs
-        │       ├── review.py
-        │       └── vendor.py
-        ├── alembic/                    # Database migrations
-        │   ├── env.py
-        │   ├── script.py.mako
-        │   └── versions/
-        │       ├── 66ba667f797c_create_community_review_schema.py
-        │       ├── a8f1c2d3e4b5_add_user_vendor_and_review_updates.py
-        │       ├── d9e7f6a5b4c3_make_email_case_insensitively_unique.py
-        │       ├── e2c4b6a8d0f1_preserve_email_and_add_canonical_identity.py
-        │       ├── f4a6b8c0d2e3_create_chatbot_prompts.py
-        │       ├── g5b7c9d1e3f4_store_chatbot_questions.py
-        │       └── 176565c7b04e_create_knowledge_chunks.py
-        ├── docker/
-        │   └── init/
-        │       └── 01-enable-vector.sql # Enables the pgvector extension
-        ├── tests/
-        │   ├── conftest.py
-        │   ├── test_backend_todo_updates.py
-        │   ├── test_chatbot_prompt_model.py
-        │   └── test_vendor_image_api.py
-        ├── alembic.ini
-        ├── compose.yaml                # Local Postgres (pgvector) container
-        ├── manual_wk3.md
-        ├── requirements.txt
-        ├── .env.example
-        └── .venv/                      # Gitignored local virtual environment
-    │
-    └── web/                            # Vite + React (TS) SPA frontend (sample)
+    ├── api/                       # FastAPI backend
+    │   ├── app/
+    │   │   ├── main.py            # App entrypoint + router registration
+    │   │   ├── api/
+    │   │   │   ├── dependencies.py # Dev auth + DB session dependencies
+    │   │   │   └── routes/
+    │   │   │       ├── chat.py    # POST /chat (RAG chatbot)
+    │   │   │       ├── reviews.py
+    │   │   │       └── vendors.py
+    │   │   ├── core/
+    │   │   │   ├── config.py      # Pydantic settings (env vars)
+    │   │   │   ├── image_storage.py
+    │   │   │   ├── image_upload.py
+    │   │   │   └── security.py    # Argon2 password hashing
+    │   │   ├── db/
+    │   │   │   ├── base.py        # Shared declarative Base + naming convention
+    │   │   │   ├── vector_base.py # Separate Base for pgvector tables
+    │   │   │   ├── chatbot_question_data.py  # Curated question rows
+    │   │   │   ├── reindex.py     # (Re)build the pgvector index
+    │   │   │   ├── seed.py        # Repeatable dev seed
+    │   │   │   └── session.py     # Engine + session factory
+    │   │   ├── models/            # SQLAlchemy ORM (database tables)
+    │   │   ├── schemas/           # Pydantic API request/response DTOs
+    │   │   └── services/          # Chatbot / RAG pipeline
+    │   │       ├── chat.py
+    │   │       ├── chunking.py
+    │   │       ├── embedding.py
+    │   │       ├── ingest.py
+    │   │       ├── retrieval.py
+    │   │       └── review_knowledge.py
+    │   ├── alembic/               # Database migrations
+    │   │   └── versions/
+    │   ├── docker/
+    │   │   └── init/
+    │   │       └── 01-enable-vector.sql  # Enables the pgvector extension
+    │   ├── tests/                 # Pytest suite (incl. vector integration tests)
+    │   ├── uploads/               # Local image files (vendor/review images)
+    │   ├── alembic.ini
+    │   ├── compose.yaml           # Local Postgres (pgvector) container
+    │   ├── pytest.ini
+    │   ├── requirements.txt
+    │   └── .env.example
+    └── web/                       # Vite + React (TS) SPA frontend
         ├── index.html
-        ├── package.json                # App dependencies + ESLint/Prettier callers
-        ├── eslint.config.js            # App-specific ESLint config
+        ├── package.json           # App dependencies + scripts
+        ├── eslint.config.js
         ├── tsconfig.json
         ├── tsconfig.node.json
-        ├── vite.config.ts              # Dev proxy settings
+        ├── vite.config.ts         # Dev proxy to the FastAPI backend
         ├── public/
         │   └── favicon.svg
         └── src/
             ├── main.tsx
-            ├── App.tsx
-            ├── App.css
-            ├── index.css
-            ├── vite-env.d.ts
-            ├── components/             # Shared / atomic UI elements (Buttons, Modals)
-            ├── features/               # Domain-driven feature modules
-            │   ├── reviews/            # Review UI, hooks, and sub-components
-            │   └── vendors/            # Vendor UI, hooks, and sub-components
-            ├── lib/                    # Axios/Fetch API client instances
-            ├── pages/                  # Router page view components
-            └── types/                  # Frontend TypeScript interfaces
+            ├── App.tsx            # Routes + home page + chat widget
+            ├── index.css          # Imports the styles/ files
+            ├── api/               # Fetch API clients + tests
+            ├── data/              # Local fallback vendor data
+            ├── features/          # Domain feature modules
+            ├── lib/               # Shared helpers
+            ├── pages/             # FoodPage, VendorsPage
+            ├── styles/            # fonts, tailwind, theme
+            └── types/             # Frontend TypeScript interfaces
 ```
 
 ## Architecture
@@ -105,9 +100,13 @@ dip-grp5/
 
 - [Database schema reference](docs/db-schema.md)
 
-## Local backend environment
+## Prerequisites
 
-Python 3.12 and Docker Desktop are used for local backend development.
+- **Python 3.12** for the backend
+- **Docker Desktop** for the local PostgreSQL (pgvector) database
+- **Node.js 18+** and **npm** for the frontend
+
+## Local backend environment
 
 ### First-time setup
 
@@ -115,7 +114,7 @@ Python 3.12 and Docker Desktop are used for local backend development.
 Set-Location apps\api
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
@@ -127,11 +126,11 @@ docker compose up -d
 docker compose ps
 ```
 
-Create or update the database tables, then seed the local placeholder data:
+Create or update the database tables, then seed with local placeholder data:
 
 ```powershell
-.\.venv\Scripts\python.exe -m alembic upgrade head
-.\.venv\Scripts\python.exe -m app.db.seed
+python -m alembic upgrade head
+python -m app.db.seed
 ```
 
 The repeatable seed command creates or confirms these local placeholders:
@@ -150,6 +149,24 @@ lowercase canonical value enforces uniqueness without regard to case. Display
 names are not unique and may be shared by multiple users.
 The optional `affiliation` field is retained as part of the user profile and is
 included with the public review-author summary.
+
+Alternatively, run the one-click launcher at the repo root, which checks Docker,
+starts PostgreSQL, applies migrations, seeds development data, and opens the API
+documentation:
+
+```powershell
+.\start-fastapi.bat
+```
+
+### Run the API
+
+Start FastAPI from `apps/api` (venv active):
+
+```powershell
+python -m fastapi dev app/main.py
+```
+
+Open <http://127.0.0.1:8000/docs> to use the interactive API page.
 
 ### Temporary local authentication
 
@@ -176,15 +193,54 @@ environment keeps it disabled. Replace it with the team's real session or token
 authentication and keep `DEV_AUTH_ENABLED=false` in every shared or deployed
 environment.
 
-## Run the API
+## Local frontend environment
 
-Start FastAPI from `apps/api`:
+### First-time setup
 
 ```powershell
-.\.venv\Scripts\python.exe -m fastapi dev app\main.py
+Set-Location apps\web
+npm install
+Copy-Item .env.example .env
 ```
 
-Open <http://127.0.0.1:8000/docs> to use the interactive API page.
+Set `VITE_DEV_USER_ID` in `apps/web/.env` to a seeded user ID from the backend
+seed output (see [Local backend environment](#local-backend-environment)). The
+frontend sends it as the `X-Dev-User-Id` header for authenticated actions such
+as creating, editing, or deleting reviews. Leave it empty to browse only.
+
+On a fresh database seed, the user IDs are assigned in creation order:
+
+| `VITE_DEV_USER_ID` | User |
+| --- | --- |
+| `1` | Administrator |
+| `2` | Test User |
+
+These are auto-generated `Identity` IDs, so they may differ if rows were added
+or removed previously. Always confirm against the IDs printed by
+`python -m app.db.seed`. The Test User (`2`) authors the seeded demo reviews, so
+it is the usual choice for exercising review add/edit/delete in the UI.
+
+### Run the frontend
+
+Start the Vite dev server:
+
+```powershell
+npm run dev
+```
+
+Open <http://127.0.0.1:5173> in a browser. The Vite server proxies `/chat`,
+`/reviews`, `/vendors`, and `/media` to the FastAPI backend on port `8000`, so
+start the API first (see above).
+
+### Frontend checks
+
+```powershell
+npm test        # Node test runner for the API clients
+npm run lint    # ESLint
+npm run build   # Production build
+```
+
+## API reference
 
 ### Create a review
 
@@ -361,13 +417,32 @@ The repeatable development seed imports 59 unique questions from
 appears in both files and is stored once with both sources. Prompt lookup APIs
 and the LLM connection are intentionally left for the next chatbot step.
 
-Run the schema and database integration tests:
+## Tests
+
+Run the backend schema and database integration tests from `apps/api` (venv
+active):
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+python -m pytest -q
 ```
 
-Stop the local services without deleting database data:
+The pgvector integration tests (`test_vector_search.py`) are skipped unless
+`TEST_DATABASE_URL` is set. Example:
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql+psycopg://postgres:change_me@127.0.0.1:5433/dip_grp5"
+python -m pytest -q -m vector
+```
+
+Run the frontend tests from `apps/web`:
+
+```powershell
+npm test
+```
+
+## Stop the local services
+
+Stopping the containers without deleting database data:
 
 ```powershell
 docker compose stop
