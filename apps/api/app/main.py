@@ -1,9 +1,13 @@
+import logging
+
 from fastapi import FastAPI
 
 from app.api.routes.chat import router as chat_router
 from app.api.routes.reviews import router as reviews_router
 from app.api.routes.vendors import router as vendors_router
 
+
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(
     title="NTU Foodie Hub API",
