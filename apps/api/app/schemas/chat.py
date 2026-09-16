@@ -20,9 +20,18 @@ class ChatSource(BaseModel):
     source_id: str | None = None
     vendor_id: int | None = None
     vendor_name: str | None = None
-    excerpt: str
+    excerpt: str | None = None
+    location: str | None = None
+    unit_code: str | None = None
+    category: str | None = None
+    price_range: str | None = None
+    opening_hours: str | None = None
+    rating: float | None = None
+    count: int | None = None
 
 
 class ChatResponse(BaseModel):
     answer: str
     sources: list[ChatSource]
+    search_type: str | None = None
+    intent: str | None = None
