@@ -1,28 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Bot, Send, X } from "lucide-react";
 
 import { apiUrl } from "../api/client";
 import { fetchVendors } from "../api/vendors";
 
+// TODO: Update these imports to point to your actual chat API functions
+import { askChat, chatErrorMessage } from "../api/chat";
+
 function displayError(error) {
   return error instanceof Error ? error.message : "Something went wrong";
 }
-
-const BOT_RESPONSES = {
-  "What's cheap near North Spine?":
-    "At North Spine Food Court, Uncle Lim's Chicken Rice starts at just $3.50 — hard to beat for a full meal! The economy rice stall lets you mix-and-match dishes for around $3–4. Both are perennial student favourites. 🍱",
-  "Best mala on campus?":
-    "The mala xiang guo at Foodgle Hub (Level 1) consistently tops student polls — rated 4.6★ with 280+ reviews. Go before 12:30pm or expect a 15-min queue. Set your spice level to medium if it's your first time! 🌶️",
-  "What's open after 8pm?":
-    "Late-night options are slim, but The Quad's convenience store and Pioneer Canteen's Western stall usually stay open until 9pm on weekdays. The North Hill minimart is your best bet after that. 🌙",
-};
-
-const SUGGESTED_QUESTIONS = [
-  "What's cheap near North Spine?",
-  "Best mala on campus?",
-  "What's open after 8pm?",
-];
 
 export default function FoodPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -32,7 +20,7 @@ export default function FoodPage() {
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
 
-  // Chatbot state
+  // --- CHATBOT STATE ---
   const [chatMessages, setChatMessages] = useState([
     {
       role: "bot",
@@ -42,20 +30,32 @@ export default function FoodPage() {
   const [chatInput, setChatInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const chatRequestPending = useRef(false);
 
-  function sendMessage(text) {
-    if (!text.trim()) return;
-    setChatMessages((prev) => [...prev, { role: "user", text }]);
+  async function sendMessage(text) {
+    const question = text.trim();
+    if (!question || chatRequestPending.current) return;
+
+    chatRequestPending.current = true;
+    setChatMessages((prev) => [...prev, { role: "user", text: question }]);
     setChatInput("");
     setIsTyping(true);
-    setTimeout(() => {
-      const response =
-        BOT_RESPONSES[text] ??
-        "Great question! I'm still learning about all the stalls on campus. Try browsing the map or check community reviews for the latest info! 😊";
-      setChatMessages((prev) => [...prev, { role: "bot", text: response }]);
+
+    try {
+      const response = await askChat(question);
+      setChatMessages((prev) => [...prev, { role: "bot", text: response.answer }]);
+    } catch (error) {
+      console.error("Chat request failed", error);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "bot", text: chatErrorMessage(error) },
+      ]);
+    } finally {
+      chatRequestPending.current = false;
       setIsTyping(false);
-    }, 1100);
+    }
   }
+  // ---------------------
 
   useEffect(() => {
     const controller = new AbortController();
@@ -87,7 +87,7 @@ export default function FoodPage() {
       vendor.location,
       vendor.unit_code,
     ];
-    // FIX: Safely convert to string before lowercasing to prevent React crashes on numbers
+    
     const matchesSearch = searchableValues.some((value) =>
       value != null && String(value).toLowerCase().includes(normalizedSearch)
     );
@@ -236,20 +236,8 @@ export default function FoodPage() {
               )}
             </div>
 
-            {/* Suggested + input */}
-            <div className="px-4 pt-2 pb-4 border-t border-border bg-card">
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {SUGGESTED_QUESTIONS.map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => sendMessage(q)}
-                    className="text-xs px-2.5 py-1.5 rounded-full border border-border text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all duration-200"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
+            {/* Input area */}
+            <div className="px-4 pt-4 pb-4 border-t border-border bg-card">
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -263,6 +251,7 @@ export default function FoodPage() {
                   type="button"
                   onClick={() => sendMessage(chatInput)}
                   className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center hover:opacity-90 transition-opacity flex-shrink-0"
+                  disabled={isTyping}
                 >
                   <Send className="w-4 h-4 text-primary-foreground" />
                 </button>
