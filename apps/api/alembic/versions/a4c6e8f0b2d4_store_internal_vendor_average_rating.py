@@ -30,25 +30,6 @@ def upgrade() -> None:
         "average_rating IS NULL OR average_rating BETWEEN 0 AND 5",
     )
 
-    # Populate the stored value for vendors that already have internal reviews.
-    op.execute(
-        sa.text(
-            """
-            UPDATE vendors AS vendor
-            SET average_rating = review_average.average_rating
-            FROM (
-                SELECT
-                    vendor_id,
-                    ROUND(AVG(rating_half_steps::numeric) / 2, 1)
-                        AS average_rating
-                FROM reviews
-                GROUP BY vendor_id
-            ) AS review_average
-            WHERE vendor.id = review_average.vendor_id
-            """
-        )
-    )
-
     # Lock affected vendor rows before aggregating. This serializes concurrent
     # review writes for the same vendor so the last trigger sees all committed
     # reviews and cannot overwrite the value with a stale concurrent average.
@@ -93,6 +74,7 @@ def upgrade() -> None:
             """
         )
     )
+
     op.execute(
         sa.text(
             """
@@ -100,6 +82,26 @@ def upgrade() -> None:
             AFTER INSERT OR UPDATE OR DELETE ON reviews
             FOR EACH ROW
             EXECUTE FUNCTION sync_vendor_average_rating()
+            """
+        )
+    )
+
+    # Install synchronization before the backfill so reviews committed while
+    # the migration is running cannot leave a stale stored average behind.
+    op.execute(
+        sa.text(
+            """
+            UPDATE vendors AS vendor
+            SET average_rating = review_average.average_rating
+            FROM (
+                SELECT
+                    vendor_id,
+                    ROUND(AVG(rating_half_steps::numeric) / 2, 1)
+                        AS average_rating
+                FROM reviews
+                GROUP BY vendor_id
+            ) AS review_average
+            WHERE vendor.id = review_average.vendor_id
             """
         )
     )

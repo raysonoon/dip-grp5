@@ -6,10 +6,11 @@ set "PROJECT_DIR=%~dp0"
 set "API_DIR=%PROJECT_DIR%apps\api"
 set "PYTHON_EXE=%API_DIR%\.venv\Scripts\python.exe"
 set "DOCS_URL=http://127.0.0.1:8000/docs"
+set "OPENAPI_URL=http://127.0.0.1:8000/openapi.json"
 set "DOCKER_EXE="
 set "DOCKER_DESKTOP="
 
-echo [1/6] Checking the project environment...
+echo [1/7] Checking the project environment...
 if not exist "%API_DIR%\compose.yaml" goto missing_project
 if not exist "%PYTHON_EXE%" goto missing_python
 
@@ -21,7 +22,7 @@ if not defined DOCKER_EXE goto missing_docker
 if exist "%LOCALAPPDATA%\Programs\DockerDesktop\Docker Desktop.exe" set "DOCKER_DESKTOP=%LOCALAPPDATA%\Programs\DockerDesktop\Docker Desktop.exe"
 if not defined DOCKER_DESKTOP if exist "%ProgramFiles%\Docker\Docker\Docker Desktop.exe" set "DOCKER_DESKTOP=%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
 
-echo [2/6] Checking Docker Desktop...
+echo [2/7] Checking Docker Desktop...
 "%DOCKER_EXE%" info >nul 2>&1 && goto docker_ready
 if not defined DOCKER_DESKTOP goto docker_not_running
 
@@ -34,12 +35,12 @@ for /l %%I in (1,1,180) do (
 goto docker_timeout
 
 :docker_ready
-echo [3/6] Starting PostgreSQL and pgvector...
+echo [3/7] Starting PostgreSQL and pgvector...
 pushd "%API_DIR%"
 "%DOCKER_EXE%" compose up -d
 if errorlevel 1 goto compose_failed
 
-echo [4/6] Waiting for PostgreSQL...
+echo [4/7] Waiting for PostgreSQL...
 for /l %%I in (1,1,90) do (
     "%DOCKER_EXE%" compose exec -T db pg_isready >nul 2>&1 && goto database_ready
     ping 127.0.0.1 -n 2 >nul
@@ -47,19 +48,24 @@ for /l %%I in (1,1,90) do (
 goto database_timeout
 
 :database_ready
-echo [5/6] Applying migrations and confirming development data...
+echo [5/7] Applying migrations and confirming development data...
 "%PYTHON_EXE%" -m alembic upgrade head
 if errorlevel 1 goto migration_failed
 "%PYTHON_EXE%" -m app.db.seed
 if errorlevel 1 goto seed_failed
 
-echo [6/6] Starting FastAPI...
-curl.exe --silent --fail --output NUL "%DOCS_URL%" >nul 2>&1
+echo [6/7] Synchronizing chatbot knowledge...
+"%PYTHON_EXE%" -m app.db.reindex
+if errorlevel 1 echo       [WARNING] Chatbot knowledge sync failed; the API will still start.
+
+echo [7/7] Starting FastAPI...
+call :api_is_ready
 if not errorlevel 1 goto open_docs
 
 start "DIP FastAPI Server" /D "%API_DIR%" "%PYTHON_EXE%" -m fastapi dev app\main.py
 for /l %%I in (1,1,60) do (
-    curl.exe --silent --fail --output NUL "%DOCS_URL%" >nul 2>&1 && goto open_docs
+    call :api_is_ready
+    if not errorlevel 1 goto open_docs
     ping 127.0.0.1 -n 2 >nul
 )
 goto api_timeout
@@ -70,6 +76,10 @@ start "" "%DOCS_URL%"
 popd
 ping 127.0.0.1 -n 3 >nul
 exit /b 0
+
+:api_is_ready
+"%PYTHON_EXE%" -c "import json, sys, urllib.request; document = json.load(urllib.request.urlopen('%OPENAPI_URL%', timeout=2)); sys.exit(0 if document.get('info', {}).get('title') == 'NTU Foodie Hub API' else 1)" >nul 2>&1
+exit /b %errorlevel%
 
 :missing_project
 echo.

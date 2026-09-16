@@ -173,7 +173,7 @@ def test_review_endpoints_sync_create_update_and_delete(
     ]
 
 
-def test_create_rolls_back_when_embedding_sync_fails(
+def test_review_writes_persist_when_embedding_sync_fails(
     client: TestClient,
     session: Session,
 ) -> None:
@@ -182,11 +182,30 @@ def test_create_rolls_back_when_embedding_sync_fails(
         lambda: RecordingSync(fail=True)
     )
 
-    response = client.post(
+    created = client.post(
         "/reviews",
         headers={"X-Dev-User-Id": str(user.id)},
-        json={"vendor_id": vendor.id, "rating": 4, "comment": "Do not persist"},
+        json={"vendor_id": vendor.id, "rating": 4, "comment": "Persist review"},
     )
 
-    assert response.status_code == 503
-    assert session.scalar(select(Review).where(Review.vendor_id == vendor.id)) is None
+    assert created.status_code == 201
+    review_id = created.json()["id"]
+    persisted = session.get(Review, review_id)
+    assert persisted is not None
+    assert persisted.comment == "Persist review"
+
+    updated = client.patch(
+        f"/reviews/{review_id}",
+        headers={"X-Dev-User-Id": str(user.id)},
+        json={"rating": 5, "comment": "Persist update"},
+    )
+
+    assert updated.status_code == 200
+    session.expire_all()
+    persisted = session.get(Review, review_id)
+    assert persisted is not None
+    assert persisted.comment == "Persist update"
+    assert persisted.rating_half_steps == 10
+    assert session.scalar(
+        select(Review).where(Review.vendor_id == vendor.id)
+    ) is persisted
