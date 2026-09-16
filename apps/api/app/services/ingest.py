@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import GoogleReview, Review, Vendor
+from app.models import GoogleReview, RedditComment, Review, Vendor
 from app.models.knowledge import KnowledgeChunk
 from app.services.embedding import Embedder
 
@@ -71,10 +71,47 @@ def _google_review_documents(session: Session) -> list[KnowledgeDocument]:
         )
     return documents
 
+def _reddit_comment_documents(session: Session) -> list[KnowledgeDocument]:
+    documents: list[KnowledgeDocument] = []
+
+    comments = session.scalars(
+        select(RedditComment)
+    ).all()
+
+    for comment in comments:
+        content = (comment.comment_text or "").strip()
+
+        if not content:
+            continue
+
+        documents.append(
+            KnowledgeDocument(
+                source_type="reddit",
+                source_id=comment.reddit_comment_id,
+                vendor_id=comment.vendor_id,
+                content=content,
+                metadata={
+                    "author": comment.author,
+                    "subreddit": comment.subreddit,
+                    "thread_id": comment.thread_id,
+                    "thread_title": comment.thread_title,
+                    "created_at": comment.created_at.isoformat(),
+                    "mentioned_vendors": comment.mentioned_vendors or [],
+                    "permalink": comment.permalink,
+                },
+            )
+        )
+
+    return documents
+
 
 def build_chunks(session: Session) -> list[KnowledgeDocument]:
-    """Collect the internal and Google review chunks to embed."""
-    return _review_documents(session) + _google_review_documents(session)
+    """Collect internal, Google, and Reddit chunks to embed."""
+    return (
+        _review_documents(session)
+        + _google_review_documents(session)
+        + _reddit_comment_documents(session)
+    )
 
 
 def reindex(
@@ -83,9 +120,10 @@ def reindex(
     *,
     force: bool = False,
     limit: int | None = None,
+    source_type: str | None = None,
     batch_size: int = settings.embedding_batch_size,
 ) -> tuple[int, int]:
-    """Index internal and Google review chunks into ``knowledge_chunks``.
+    """Index internal, Google, and Reddit chunks into ``knowledge_chunks``.
 
     Chunks are keyed by ``(source_type, source_id)``. By default already-indexed
     chunks are skipped so re-runs embed ~0 documents and consume ~0 requests;
@@ -95,6 +133,14 @@ def reindex(
     Returns ``(embedded, already_indexed)``.
     """
     documents = build_chunks(session)
+
+    if source_type is not None:
+        documents = [
+            document
+            for document in documents
+            if document.source_type == source_type
+    ]
+
     if limit is not None:
         documents = documents[:limit]
 

@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 768
     embedding_batch_size: int = 100
     embedding_requests_per_minute: int = 90
+    embedding_max_retries: int = 5
     chat_model: str = "gemini-3.5-flash-lite"
     vector_top_k: int = 8
 

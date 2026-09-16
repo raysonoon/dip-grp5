@@ -65,3 +65,8 @@ class VendorListRead(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class VendorAverageRatingRead(BaseModel):
+    vendor_id: int
+    average_rating: float | None

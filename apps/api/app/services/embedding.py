@@ -33,7 +33,7 @@ class GoogleEmbedder:
         dimensions: int = settings.embedding_dimensions,
         batch_size: int = settings.embedding_batch_size,
         requests_per_minute: int = settings.embedding_requests_per_minute,
-        max_retries: int = 5,
+        max_retries: int = settings.embedding_max_retries,
     ) -> None:
         self._model = model
         self._dimensions = dimensions

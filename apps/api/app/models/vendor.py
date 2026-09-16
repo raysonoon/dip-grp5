@@ -22,6 +22,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.google_review import GoogleReview
+    from app.models.reddit_comment import RedditComment
     from app.models.review import Review
 
 
@@ -37,6 +38,10 @@ class Vendor(Base):
             "average_google_rating IS NULL "
             "OR average_google_rating BETWEEN 0 AND 5",
             name="average_google_rating_range",
+        ),
+        CheckConstraint(
+            "average_rating IS NULL OR average_rating BETWEEN 0 AND 5",
+            name="average_rating_range",
         ),
     )
 
@@ -57,6 +62,10 @@ class Vendor(Base):
         Numeric(2, 1),
         nullable=True,
     )
+    average_rating: Mapped[float | None] = mapped_column(
+        Numeric(2, 1),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -73,6 +82,11 @@ class Vendor(Base):
     google_reviews: Mapped[list["GoogleReview"]] = relationship(
         back_populates="vendor"
     )
+
+    reddit_comments: Mapped[list["RedditComment"]] = relationship(
+        back_populates="vendor"
+    )
+    
     images: Mapped[list["VendorImage"]] = relationship(
         back_populates="vendor",
         cascade="all, delete-orphan",

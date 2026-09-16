@@ -1,5 +1,7 @@
 node_modules
+.npm-cache
 dist
 *.local
 .env
 .env.*
+!.env.example

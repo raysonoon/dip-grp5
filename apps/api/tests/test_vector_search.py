@@ -70,3 +70,44 @@ def test_pgvector_store_orders_results_by_cosine_distance() -> None:
             session.commit()
     finally:
         engine.dispose()
+
+
+def test_pgvector_store_hybrid_filters_by_vendor_ids() -> None:
+    engine = create_engine(TEST_DATABASE_URL)
+    VectorBase.metadata.create_all(engine)
+    try:
+        with Session(engine) as session:
+            session.execute(KnowledgeChunk.__table__.delete())
+            session.add(
+                KnowledgeChunk(
+                    source_type="internal_review",
+                    source_id="1",
+                    vendor_id=1,
+                    content="great chicken rice",
+                    embedding=_vector(0.1),
+                )
+            )
+            session.add(
+                KnowledgeChunk(
+                    source_type="internal_review",
+                    source_id="2",
+                    vendor_id=2,
+                    content="best noodles on campus",
+                    embedding=_vector(0.9),
+                )
+            )
+            session.commit()
+
+            store = PgvectorKnowledgeStore(session)
+            results = store.search(
+                _vector(0.1),
+                limit=5,
+                filters={"vendor_ids": [2]},
+            )
+
+            assert [result.source_id for result in results] == ["2"]
+
+            session.execute(KnowledgeChunk.__table__.delete())
+            session.commit()
+    finally:
+        engine.dispose()
