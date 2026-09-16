@@ -55,6 +55,9 @@ class PgvectorKnowledgeStore:
             .order_by(KnowledgeChunk.embedding.cosine_distance(query_vector))
             .limit(limit)
         )
+        conditions = _filters_to_sql_conditions(filters or {})
+        if conditions:
+            statement = statement.where(*conditions)
         chunks = self._session.scalars(statement).all()
         return [self._to_result(chunk) for chunk in chunks]
 
@@ -92,6 +95,26 @@ def cosine_distance(a: list[float], b: list[float]) -> float:
     return 1.0 - (dot / (norm_a * norm_b))
 
 
+def _as_set(value: object) -> set:
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return set(value)
+    return {value}
+
+
+def _filters_to_sql_conditions(filters: dict) -> list:
+    """Translate a retrieval ``filters`` dict into SQLAlchemy conditions."""
+    conditions = []
+    vendor_ids = filters.get("vendor_ids")
+    if vendor_ids:
+        conditions.append(KnowledgeChunk.vendor_id.in_(_as_set(vendor_ids)))
+    source_type = filters.get("source_type")
+    if source_type:
+        conditions.append(
+            KnowledgeChunk.source_type.in_(_as_set(source_type))
+        )
+    return conditions
+
+
 class FakeKnowledgeStore:
     """In-memory store for tests; ranks by cosine distance."""
 
@@ -114,7 +137,23 @@ class FakeKnowledgeStore:
             self._items,
             key=lambda item: cosine_distance(query_vector, item[0]),
         )
-        return [result for _, result in ranked[:limit]]
+        items = ranked
+        filters = filters or {}
+        if filters.get("vendor_ids"):
+            allowed = set(filters["vendor_ids"])
+            items = [
+                item
+                for item in items
+                if item[1].vendor_id is None or item[1].vendor_id in allowed
+            ]
+        if filters.get("source_type"):
+            allowed_source = _as_set(filters["source_type"])
+            items = [
+                item
+                for item in items
+                if item[1].source_type in allowed_source
+            ]
+        return [result for _, result in items[:limit]]
 
     def resolve_vendor_names(
         self,

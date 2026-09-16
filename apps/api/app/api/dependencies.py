@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
@@ -8,8 +9,15 @@ from app.db.session import get_db
 from app.models import User
 from app.services.chat import ChatService
 from app.services.embedding import Embedder, GoogleEmbedder
+from app.services.intent_router import IntentRouter
+from app.services.llm_routing import (
+    build_classifier,
+    build_filter_extractor,
+)
 from app.services.retrieval import KnowledgeStore, PgvectorKnowledgeStore
 from app.services.review_knowledge import InternalReviewKnowledgeSync
+from app.services.sql_search import PgSqlStore
+from app.services.structured_filters import StructuredFilter
 
 
 DbSession = Annotated[Session, Depends(get_db)]
@@ -28,11 +36,58 @@ def get_knowledge_store(session: DbSession) -> KnowledgeStore:
     return PgvectorKnowledgeStore(session)
 
 
+def _get_genai_client() -> object | None:
+    if settings.gemini_api_key is None:
+        return None
+    from google import genai
+
+    return genai.Client(api_key=settings.gemini_api_key.get_secret_value())
+
+
+def get_intent_router(
+    session: DbSession,
+    embedder: Annotated[Embedder, Depends(get_embedder)],
+) -> IntentRouter:
+    client = _get_genai_client()
+    classify_llm = (
+        build_classifier(client) if client is not None else None
+    )
+    return IntentRouter(
+        session,
+        embedder=embedder,
+        classify_llm=classify_llm,
+    )
+
+
+def get_sql_store(session: DbSession) -> PgSqlStore:
+    return PgSqlStore(session)
+
+
+def get_filter_extractor_llm() -> Callable[[str], StructuredFilter] | None:
+    client = _get_genai_client()
+    if client is None:
+        return None
+    return build_filter_extractor(client)
+
+
 def get_chat_service(
+    session: DbSession,
     embedder: Annotated[Embedder, Depends(get_embedder)],
     store: Annotated[KnowledgeStore, Depends(get_knowledge_store)],
+    router: Annotated[IntentRouter, Depends(get_intent_router)],
+    sql_store: Annotated[PgSqlStore, Depends(get_sql_store)],
+    filter_extractor_llm: Annotated[
+        Callable[[str], StructuredFilter] | None,
+        Depends(get_filter_extractor_llm),
+    ],
 ) -> ChatService:
-    return ChatService(embedder, store)
+    return ChatService(
+        embedder,
+        store,
+        router=router,
+        sql_store=sql_store,
+        filter_extractor_llm=filter_extractor_llm,
+    )
 
 
 EmbedderDep = Annotated[Embedder, Depends(get_embedder)]
