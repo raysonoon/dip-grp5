@@ -135,8 +135,8 @@ target_metadata = [Base.metadata, VectorBase.metadata]
 - `knowledge_chunks` is the **retrieval corpus** that the vector paths read from
   - connect only at runtime through search_type`
 
-> **Status:** only the **Vector** path is implemented. SQL and Hybrid routing
-> are planned but not yet wired.
+> **Status:** all three paths (SQL, Vector, SQL + Vector) are implemented and
+> routed via `chatbot_prompts.search_type`.
 
 ![Chatbot Intent Routing](../diagrams/chatbot_routing.jpg)
 
@@ -202,19 +202,39 @@ never averages across the two sources.
 
 ## Implemented services
 
-Vector-only RAG pipeline, wired into a public `POST /chat` route.
+All three routing paths, wired into a public `POST /chat` route.
 
 - `embedding.py` — `Embedder` protocol + `GoogleEmbedder.embed(texts)` (batched
   `embed_content` via `gemini-embedding-001`).
 - `retrieval.py` — `KnowledgeStore` protocol (`search`, `resolve_vendor_names`);
   `PgvectorKnowledgeStore` (cosine `<=>`) + `FakeKnowledgeStore` (in-memory
-  cosine, for tests).
-- `chat.py` — `ChatService(embedder, store)` + `build_prompt`:
-  - embeds the question, retrieves top-k chunks, resolves vendor names, builds
-    the final prompt, and calls Gemini `generate_content`.
-  - `build_prompt(question, context, template=None)` fills `{user_question}` /
-    `{context}`; falls back to a generic `DEFAULT_SYSTEM_PROMPT` when
-    `prompt_template` is NULL (as all seeded rows are today).
+  cosine, for tests). `search` now honours a `filters` dict
+  (`{"vendor_ids": [...]}`, `{"source_type": [...]}`) so the Hybrid path can
+  restrict ranking to a structured subset.
+- `intent_router.py` — `IntentRouter` multi-tier classifier:
+  1. **Deterministic**: exact match against `chatbot_prompts.question_text`
+     plus structural rules (`how many`/`how much` → SQL count, `top N` /
+     `cheapest` / `best rated` → SQL rank) that force the SQL path.
+  2. **Embedding similarity**: cosine match above `SIMILARITY_THRESHOLD`
+     (0.88) against pre-embedded `question_text` (cached in memory, one batched
+     call).
+  3. **LLM fallback**: an injected Gemini classifier returns the `search_type`.
+- `structured_filters.py` — `StructuredFilter` + deterministic
+  `extract_structured_filters(question)` (dietary, cuisine, location, budget,
+  opening hours, sort, query_kind) with an optional LLM filter extractor.
+- `sql_search.py` — `SqlStore` protocol + `PgSqlStore` applying a
+  `StructuredFilter` to `vendors`/`reviews`; supports `list`, `count`, and
+  `rank` query kinds and `resolve_vendor_ids` for the Hybrid path.
+- `llm_routing.py` — Gemini-backed `build_classifier` / `build_filter_extractor`
+  injected from the dependency layer (substituted by fakes in tests).
+- `chat.py` — `ChatService(embedder, store, router, sql_store)` branches on the
+  matched intent's `search_type`:
+  - **SQL**: `sql_store.search(filters)` → `format_sql_context` → generate.
+  - **Vector**: embed → `store.search(query_vector)` → `format_context` → generate.
+  - **SQL + Vector**: resolve `vendor_ids` via SQL filter, embed → cosine-rank
+    `store.search(query_vector, filters={"vendor_ids": [...]})` → generate.
+  - `format_sql_context` renders structured rows; `build_prompt` falls back to
+    `DEFAULT_SYSTEM_PROMPT` while `prompt_template` is NULL.
 - `chunking.py` — `TextChunker.chunk(text)` keeps short review text as a single
   chunk; Reddit splitting is a future extension.
 - `ingest.py` — `KnowledgeDocument` dataclass + `build_chunks(session)` /
@@ -226,11 +246,15 @@ Vector-only RAG pipeline, wired into a public `POST /chat` route.
 
 ```text
 POST /chat   # public; body: { "question": "..." }
-             # response: { "answer": "...", "sources": [...] }
+             # response: { "answer": "...", "sources": [...],
+             #             "search_type": "SQL"|"Vector"|"SQL + Vector",
+             #             "intent": "<intent_key>" }
 ```
 
 Each source carries `source_type`, `source_id`, `vendor_id`, `vendor_name`
 (resolved by a batch `Vendor` lookup on `vendor_id` — no FK), and an `excerpt`.
+SQL-path sources use `source_type="vendor"` (structured attributes) or
+`source_type="count"`.
 
 ### Ingestion
 
