@@ -87,8 +87,99 @@ function StarPicker({ value, onChange, disabled }) {
           </div>
         );
       })}
-      <span style={{ marginLeft: "8px", color: "var(--text)", fontSize: "0.9rem" }}>{displayValue.toFixed(1)}</span>
+      {!disabled && (
+        <span style={{ marginLeft: "8px", color: "var(--text)", fontSize: "0.9rem" }}>{displayValue.toFixed(1)}</span>
+      )}
     </div>
+  );
+}
+
+// Renders selected-but-not-yet-uploaded files as image previews with a remove (×) button
+function FilePreviewGrid({ files, onRemove }) {
+  const [previewUrls, setPreviewUrls] = useState([]);
+
+  useEffect(() => {
+    const urls = files.map((file) => URL.createObjectURL(file));
+    setPreviewUrls(urls);
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [files]);
+
+  if (files.length === 0) return null;
+
+  return (
+    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "10px" }}>
+      {files.map((file, index) => (
+        <div key={`${file.name}-${index}`} style={{ position: "relative" }}>
+          <img
+            src={previewUrls[index]}
+            alt={file.name}
+            style={{ width: "80px", height: "80px", objectFit: "cover", borderRadius: "8px", border: "1px solid var(--border)" }}
+          />
+          <button
+            type="button"
+            onClick={() => onRemove(index)}
+            aria-label={`Remove ${file.name}`}
+            style={{
+              position: "absolute",
+              top: "-8px",
+              right: "-8px",
+              width: "22px",
+              height: "22px",
+              borderRadius: "50%",
+              background: "#b91c1c",
+              color: "#fff",
+              border: "2px solid var(--bg)",
+              cursor: "pointer",
+              fontSize: "0.75rem",
+              lineHeight: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// A clearer, clickable upload region with drag-and-drop styling
+function UploadDropzone({ onFilesSelected, label }) {
+  return (
+    <label
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "6px",
+        padding: "20px",
+        border: "2px dashed var(--border)",
+        borderRadius: "8px",
+        cursor: "pointer",
+        textAlign: "center",
+        color: "var(--text)",
+        background: "var(--code-bg)",
+      }}
+    >
+      <span style={{ fontSize: "1.4rem" }}>📷</span>
+      <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>{label}</span>
+      <span style={{ fontSize: "0.75rem", color: "var(--muted-foreground, var(--text))" }}>
+        Click to browse — JPEG or PNG, max 5MB each
+      </span>
+      <input
+        type="file"
+        accept="image/jpeg,image/png"
+        multiple
+        onChange={(event) => onFilesSelected(Array.from(event.target.files))}
+        style={{ display: "none", cursor: "pointer" }}
+      />
+    </label>
   );
 }
 
@@ -107,6 +198,7 @@ export default function VendorsPage() {
   const [actionError, setActionError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [busyReviewId, setBusyReviewId] = useState(null);
+  const [deletingReviewId, setDeletingReviewId] = useState(null);
   const [editingReviewId, setEditingReviewId] = useState(null);
   const [editRating, setEditRating] = useState(5);
   const [editComment, setEditComment] = useState("");
@@ -168,6 +260,22 @@ export default function VendorsPage() {
 
     return () => controller.abort();
   }, [isValidVendorId, numericVendorId, loadAttempt]);
+
+  const addNewFiles = (files) => {
+    setNewFiles((prev) => [...prev, ...files]);
+  };
+
+  const removeNewFile = (index) => {
+    setNewFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const addEditFiles = (files) => {
+    setEditNewFiles((prev) => [...prev, ...files]);
+  };
+
+  const removeEditFile = (index) => {
+    setEditNewFiles((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const handleAddReview = async (event) => {
     event.preventDefault();
@@ -267,7 +375,6 @@ export default function VendorsPage() {
     const swapWith = sorted[swapIndex];
 
     try {
-      // Move current out of the way first to avoid a display_order conflict.
       await reorderReviewImage(review.id, current.id, 99);
       await reorderReviewImage(review.id, swapWith.id, current.display_order);
       await reorderReviewImage(review.id, current.id, swapWith.display_order);
@@ -289,6 +396,7 @@ export default function VendorsPage() {
   const confirmDeleteReview = async () => {
     if (deleteTargetId === null) return;
     const reviewId = deleteTargetId;
+    setDeletingReviewId(reviewId);
     setBusyReviewId(reviewId);
     setActionError("");
     try {
@@ -301,6 +409,7 @@ export default function VendorsPage() {
       setDeleteTargetId(null);
     } finally {
       setBusyReviewId(null);
+      setDeletingReviewId(null);
     }
   };
 
@@ -372,21 +481,8 @@ export default function VendorsPage() {
             required
           />
           <div>
-            <label style={{ display: "block", marginBottom: "6px", color: "var(--text)", fontSize: "0.9rem" }}>
-              Photos (optional, up to {MAX_IMAGES}, JPEG/PNG, max 5MB each)
-            </label>
-            <input
-              type="file"
-              accept="image/jpeg,image/png"
-              multiple
-              style={{ cursor: "pointer" }}
-              onChange={(event) => setNewFiles(Array.from(event.target.files))}
-            />
-            {newFiles.length > 0 && (
-              <p style={{ fontSize: "0.85rem", color: "var(--text)", marginTop: "4px" }}>
-                {newFiles.length} file(s) selected
-              </p>
-            )}
+            <UploadDropzone onFilesSelected={addNewFiles} label="Add photos to your review" />
+            <FilePreviewGrid files={newFiles} onRemove={removeNewFile} />
           </div>
           <button
             type="submit"
@@ -434,9 +530,12 @@ export default function VendorsPage() {
                 <div>
                   <strong>{review.user.display_name}</strong>
                   {review.user.affiliation && <span style={{ color: "var(--text)", marginLeft: "8px" }}>{review.user.affiliation}</span>}
-                  <div style={{ marginTop: "4px" }}>
-                    <StarPicker value={review.rating} onChange={() => {}} disabled />
-                  </div>
+                  {/* Read-only stars: only shown when NOT editing, to avoid the duplicate picker */}
+                  {!isEditing && (
+                    <div style={{ marginTop: "4px" }}>
+                      <StarPicker value={review.rating} onChange={() => {}} disabled />
+                    </div>
+                  )}
                 </div>
                 <small style={{ color: "var(--text)" }}>
                   {displayDate(review.created_at)}
@@ -446,6 +545,7 @@ export default function VendorsPage() {
 
               {isEditing ? (
                 <form onSubmit={(event) => handleUpdateReview(event, review)} style={{ display: "grid", gap: "8px", marginTop: "12px" }}>
+                  {/* Only ONE star picker here, the editable one */}
                   <StarPicker value={editRating} onChange={setEditRating} disabled={isBusy} />
                   <textarea value={editComment} onChange={(event) => setEditComment(event.target.value)} rows={3} />
 
@@ -496,21 +596,8 @@ export default function VendorsPage() {
                   )}
 
                   <div>
-                    <label style={{ display: "block", marginBottom: "6px", color: "var(--text)", fontSize: "0.9rem" }}>
-                      Add more photos
-                    </label>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png"
-                      multiple
-                      style={{ cursor: "pointer" }}
-                      onChange={(event) => setEditNewFiles(Array.from(event.target.files))}
-                    />
-                    {editNewFiles.length > 0 && (
-                      <p style={{ fontSize: "0.85rem", color: "var(--text)", marginTop: "4px" }}>
-                        {editNewFiles.length} file(s) selected
-                      </p>
-                    )}
+                    <UploadDropzone onFilesSelected={addEditFiles} label="Add more photos" />
+                    <FilePreviewGrid files={editNewFiles} onRemove={removeEditFile} />
                   </div>
 
                   <div style={{ display: "flex", gap: "8px" }}>
@@ -553,8 +640,13 @@ export default function VendorsPage() {
                   <button type="button" disabled={isBusy} style={{ cursor: isBusy ? "default" : "pointer" }} onClick={() => beginEditing(review)}>
                     Edit
                   </button>
-                  <button type="button" disabled={isBusy} style={{ cursor: isBusy ? "default" : "pointer" }} onClick={() => requestDeleteReview(review.id)}>
-                    {isBusy && deleteTargetId === null ? "Deleting..." : "Delete"}
+                  <button
+                    type="button"
+                    disabled={deletingReviewId === review.id}
+                    style={{ cursor: deletingReviewId === review.id ? "default" : "pointer", opacity: deletingReviewId === review.id ? 0.6 : 1 }}
+                    onClick={() => requestDeleteReview(review.id)}
+                  >
+                    Delete
                   </button>
                 </div>
               )}
@@ -564,22 +656,46 @@ export default function VendorsPage() {
       </section>
 
       {deleteTargetId !== null && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div style={{ background: "var(--bg)", borderRadius: "10px", padding: "24px", maxWidth: "360px", width: "90%", border: "1px solid var(--border)" }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
+          <div
+            style={{
+              background: "var(--card, var(--bg))",
+              borderRadius: "10px",
+              padding: "24px",
+              maxWidth: "360px",
+              width: "90%",
+              border: "1px solid var(--border)",
+              boxShadow: "0 10px 40px rgba(0,0,0,0.35)",
+            }}
+          >
             <h3 style={{ marginTop: 0, fontFamily: "var(--heading)", color: "var(--text-h)" }}>Delete this review?</h3>
             <p style={{ color: "var(--text)", fontSize: "0.9rem" }}>
               This action cannot be undone. The review and its photos will be permanently removed.
             </p>
             <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "16px" }}>
-              <button type="button" style={{ cursor: "pointer" }} onClick={cancelDeleteReview}>
+              <button
+                type="button"
+                disabled={deletingReviewId !== null}
+                style={{ cursor: deletingReviewId !== null ? "default" : "pointer" }}
+                onClick={cancelDeleteReview}
+              >
                 Cancel
               </button>
               <button
                 type="button"
-                style={{ cursor: "pointer", background: "#b91c1c", color: "#fff", border: "none", padding: "8px 14px", borderRadius: "6px" }}
+                disabled={deletingReviewId !== null}
+                style={{
+                  cursor: deletingReviewId !== null ? "default" : "pointer",
+                  background: "#b91c1c",
+                  color: "#fff",
+                  border: "none",
+                  padding: "8px 14px",
+                  borderRadius: "6px",
+                  opacity: deletingReviewId !== null ? 0.6 : 1,
+                }}
                 onClick={confirmDeleteReview}
               >
-                Delete
+                {deletingReviewId !== null ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>

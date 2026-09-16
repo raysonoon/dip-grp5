@@ -5,6 +5,8 @@ export const vendorsData = [
     canteen: "Canteen 1",
     rating: 4.6,
     cuisine: "Local / Chinese",
+    lat: 1.3457,
+    lng: 103.6828,
     image: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80",
     menu: [
       { name: "Steamed Chicken Rice", price: "$4.00" },
@@ -18,6 +20,8 @@ export const vendorsData = [
     canteen: "Tamarind Hall Canteen",
     rating: 4.2,
     cuisine: "Western",
+    lat: 1.3502,
+    lng: 103.6875,
     image: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80",
     menu: [
       { name: "Chicken Chop with Black Pepper", price: "$6.50" },
@@ -31,6 +35,8 @@ export const vendorsData = [
     canteen: "North Spine Food Court",
     rating: 4.8,
     cuisine: "Japanese",
+    lat: 1.3478,
+    lng: 103.6800,
     image: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=600&q=80",
     menu: [
       { name: "Tonkotsu Ramen", price: "$5.80" },
