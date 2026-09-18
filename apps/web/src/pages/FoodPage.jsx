@@ -4,6 +4,8 @@ import { Link } from "react-router-dom";
 import { apiUrl } from "../api/client";
 import { fetchVendors } from "../api/vendors";
 
+const DISPLAY_FONT = "'Fraunces', serif";
+
 function displayError(error) {
   return error instanceof Error ? error.message : "Something went wrong";
 }
@@ -54,24 +56,26 @@ export default function FoodPage() {
   });
 
   return (
-    <div style={{ maxWidth: "1000px", width: "100%", margin: "0 auto", padding: "40px 20px", fontFamily: "var(--sans)", boxSizing: "border-box" }}>
-      <header style={{ marginBottom: "30px", textAlign: "center" }}>
-        <h1 style={{ color: "var(--text-h)", fontFamily: "var(--heading)", fontSize: "2.2rem" }}>NTU Foodie Hub</h1>
-        <p style={{ color: "var(--text)" }}>Explore and review food vendors across NTU canteens</p>
+    <div className="max-w-[1000px] w-full mx-auto px-5 py-10 box-border">
+      <header className="mb-8 text-center">
+        <h1 className="text-foreground text-3xl font-bold" style={{ fontFamily: DISPLAY_FONT }}>
+          NTU Foodie Hub
+        </h1>
+        <p className="text-muted-foreground">Explore and review food vendors across NTU canteens</p>
       </header>
 
-      <div style={{ display: "flex", gap: "15px", marginBottom: "25px", flexWrap: "wrap" }}>
+      <div className="flex gap-4 mb-6 flex-wrap">
         <input
           type="text"
           placeholder="Search vendor or cuisine..."
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          style={{ flex: "1", padding: "10px 14px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)" }}
+          className="flex-1 px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground"
         />
         <select
           value={selectedCanteen}
           onChange={(event) => setSelectedCanteen(event.target.value)}
-          style={{ padding: "10px 14px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)" }}
+          className="px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground"
         >
           {canteens.map((canteen) => (
             <option key={canteen} value={canteen}>{canteen}</option>
@@ -79,44 +83,65 @@ export default function FoodPage() {
         </select>
       </div>
 
-      {isLoading && <p style={{ textAlign: "center", color: "var(--text)" }}>Loading vendors...</p>}
+      {isLoading && <p className="text-center text-muted-foreground">Loading vendors...</p>}
       {!isLoading && loadError && (
-        <div role="alert" style={{ textAlign: "center", color: "#b91c1c" }}>
+        <div role="alert" className="text-center text-destructive">
           <p>Could not load vendors: {loadError}</p>
-          <button type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</button>
+          <button
+            type="button"
+            className="cursor-pointer mt-2 underline text-sm font-semibold"
+            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+          >
+            Try again
+          </button>
         </div>
       )}
       {!isLoading && !loadError && filteredVendors.length === 0 && (
-        <p style={{ textAlign: "center", color: "var(--text)" }}>No matching vendors found.</p>
+        <p className="text-center text-muted-foreground">No matching vendors found.</p>
       )}
 
       {!isLoading && !loadError && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "24px" }}>
+        <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
           {filteredVendors.map((vendor) => {
             const rating = vendor.average_rating ?? vendor.average_google_rating;
             return (
               <div
                 key={vendor.id}
-                style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", overflow: "hidden", background: "var(--card)", boxShadow: "var(--shadow)", textAlign: "left" }}
+                className="border border-border rounded-xl overflow-hidden bg-card shadow-sm text-left"
               >
                 {vendor.image_url ? (
-                  <img src={apiUrl(vendor.image_url)} alt={vendor.name} style={{ width: "100%", height: "160px", objectFit: "cover" }} />
+                  <img
+                    src={apiUrl(vendor.image_url)}
+                    alt={vendor.name}
+                    className="w-full h-40 object-cover"
+                  />
                 ) : (
-                  <div role="img" aria-label={`${vendor.name} has no image`} style={{ width: "100%", height: "160px", display: "grid", placeItems: "center", background: "var(--code-bg)", color: "var(--text)" }}>No image available</div>
+                  <div
+                    role="img"
+                    aria-label={`${vendor.name} has no image`}
+                    className="w-full h-40 grid place-items-center bg-muted text-muted-foreground"
+                  >
+                    No image available
+                  </div>
                 )}
-                <div style={{ padding: "16px", textAlign: "center" }}>
-                  <span style={{ fontSize: "0.8rem", color: "var(--accent)", background: "var(--accent-bg)", padding: "4px 10px", borderRadius: "999px" }}>
+                <div className="p-4 text-center">
+                  <span className="text-xs text-primary bg-primary/10 px-2.5 py-1 rounded-full">
                     {vendor.location || "NTU"}
                   </span>
-                  <h3 style={{ margin: "10px 0 5px 0", fontFamily: "var(--heading)", color: "var(--text-h)" }}>{vendor.name}</h3>
-                  <p style={{ margin: "0 0 10px 0", color: "var(--text)", fontSize: "0.9rem" }}>
+                  <h3
+                    className="mt-2.5 mb-1 text-foreground font-bold"
+                    style={{ fontFamily: DISPLAY_FONT }}
+                  >
+                    {vendor.name}
+                  </h3>
+                  <p className="mb-2.5 text-muted-foreground text-sm">
                     {vendor.category || "Food"}
                     {rating != null ? ` • ⭐ ${rating}` : ""}
                     {` • ${vendor.review_count} reviews`}
                   </p>
                   <Link
                     to={`/food/vendors/${vendor.id}`}
-                    style={{ display: "inline-block", color: "#fff", background: "var(--accent)", padding: "10px 16px", borderRadius: "var(--radius-lg)", textDecoration: "none", fontSize: "0.9rem", fontWeight: 600 }}
+                    className="inline-block text-white bg-primary px-4 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity no-underline"
                   >
                     View Reviews
                   </Link>
