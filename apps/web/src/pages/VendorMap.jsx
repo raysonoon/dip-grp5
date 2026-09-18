@@ -16,7 +16,6 @@ L.Marker.prototype.options.icon = DefaultIcon;
 
 const NTU_CENTER = [1.3483, 103.6831];
 const DISPLAY_FONT = "'Fraunces', serif";
-const BODY_FONT = "'Plus Jakarta Sans', sans-serif";
 
 export default function VendorMap({ compact = false }) {
   const mapHeight = compact ? '400px' : '550px';
@@ -36,20 +35,17 @@ export default function VendorMap({ compact = false }) {
         {vendorsData.map((vendor) => (
           <Marker key={vendor.id} position={[vendor.lat, vendor.lng]}>
             <Popup>
-              <div style={{ fontFamily: BODY_FONT, minWidth: '160px' }}>
-                <strong style={{ fontFamily: DISPLAY_FONT, fontSize: '1rem' }}>
+              <div className="min-w-[160px] font-sans">
+                <strong className="text-base" style={{ fontFamily: DISPLAY_FONT }}>
                   {vendor.name}
                 </strong>
                 <br />
-                <span style={{ fontSize: '0.85rem', color: '#6B6560' }}>
+                <span className="text-sm text-muted-foreground">
                   {vendor.canteen} · ⭐ {vendor.rating}
                 </span>
                 <br />
-                <Link
-                  to={`/food/vendors/${vendor.id}`}
-                  style={{ color: '#C41230', fontSize: '0.85rem', fontWeight: 600 }}
-                >
-                  View Menu & Reviews →
+                <Link to={`/food/vendors/${vendor.id}`} className="text-primary text-sm font-semibold hover:underline">
+                  View Menu &amp; Reviews →
                 </Link>
               </div>
             </Popup>
@@ -64,12 +60,9 @@ export default function VendorMap({ compact = false }) {
   }
 
   return (
-    <div className="min-h-screen bg-background pt-24 pb-16" style={{ fontFamily: BODY_FONT }}>
+    <div className="min-h-screen bg-background pt-24 pb-16 font-sans">
       <div className="max-w-7xl mx-auto px-6">
-        <h1
-          className="text-3xl md:text-4xl font-bold mb-2 text-foreground"
-          style={{ fontFamily: DISPLAY_FONT }}
-        >
+        <h1 className="text-3xl md:text-4xl font-bold mb-2 text-foreground" style={{ fontFamily: DISPLAY_FONT }}>
           Vendor Map
         </h1>
         <p className="text-muted-foreground mb-8">

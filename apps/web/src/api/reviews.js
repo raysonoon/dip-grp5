@@ -1,12 +1,13 @@
 import {
+  apiClient,
   API_BASE_URL,
+  DEV_USER_TOKEN,
   ApiAuthConfigurationError,
   ApiError,
   ApiNetworkError,
   ApiResponseError,
   ApiTimeoutError,
-  DEV_USER_TOKEN,
-  apiClient,
+  apiUrl,
 } from "./client.js";
 
 function objectValue(value, label) {
@@ -105,10 +106,7 @@ export function parseReviewList(value) {
 }
 
 export async function fetchVendorReviews(vendorId, signal) {
-  const payload = await apiClient.get(`/reviews?vendor_id=${vendorId}`, {
-    auth: false,
-    signal,
-  });
+  const payload = await apiClient.get(`/reviews?vendor_id=${vendorId}`, { auth: false, signal });
   return parseReviewList(payload);
 }
 
@@ -125,7 +123,7 @@ export function deleteReview(reviewId) {
 }
 
 export function reviewImageUrl(reviewId, imageId) {
-  return `${API_BASE_URL}/reviews/${reviewId}/images/${imageId}`;
+  return apiUrl(`/reviews/${reviewId}/images/${imageId}`);
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -146,7 +144,7 @@ async function multipartRequest(path, { method, formData, signal, timeoutMs = DE
 
   let response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    response = await fetch(apiUrl(path), {
       method,
       headers,
       body: formData,

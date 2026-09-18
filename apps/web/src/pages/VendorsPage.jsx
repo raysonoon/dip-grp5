@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { DEV_USER_ID } from "../api/client";
 import {
@@ -16,6 +16,7 @@ import { fetchVendorById } from "../api/vendors";
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png"];
+const DISPLAY_FONT = "'Fraunces', serif";
 
 function displayError(error) {
   return error instanceof Error ? error.message : "Something went wrong";
@@ -61,7 +62,7 @@ function StarPicker({ value, onChange, disabled }) {
 
   return (
     <div
-      style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+      className="inline-flex items-center gap-1"
       onMouseLeave={() => setHoverValue(null)}
       role="radiogroup"
       aria-label="Rating"
@@ -71,73 +72,51 @@ function StarPicker({ value, onChange, disabled }) {
         return (
           <div
             key={starIndex}
-            style={{ position: "relative", width: "28px", height: "28px", cursor: disabled ? "default" : "pointer" }}
+            className={`relative w-7 h-7 ${disabled ? "" : "cursor-pointer"}`}
             onMouseMove={(event) => handleHover(event, starIndex)}
             onClick={(event) => handlePick(event, starIndex)}
           >
-            <svg viewBox="0 0 24 24" width="28" height="28" style={{ position: "absolute", inset: 0, color: "var(--border)" }} fill="currentColor">
+            <svg viewBox="0 0 24 24" className="w-7 h-7 absolute inset-0 text-border" fill="currentColor">
               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z" />
             </svg>
-            <div style={{ position: "absolute", inset: 0, overflow: "hidden", width: `${fillPercent}%` }}>
-              <svg viewBox="0 0 24 24" width="28" height="28" style={{ color: "#b7791f" }} fill="currentColor">
+            <div className="absolute inset-0 overflow-hidden" style={{ width: `${fillPercent}%` }}>
+              <svg viewBox="0 0 24 24" className="w-7 h-7 text-primary" fill="currentColor">
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z" />
               </svg>
             </div>
           </div>
         );
       })}
-      {!disabled && (
-        <span style={{ marginLeft: "8px", color: "var(--text)", fontSize: "0.9rem" }}>{displayValue.toFixed(1)}</span>
-      )}
+      {!disabled && <span className="ml-2 text-sm text-muted-foreground">{displayValue.toFixed(1)}</span>}
     </div>
   );
 }
 
-// Renders selected-but-not-yet-uploaded files as image previews with a remove (×) button
 function FilePreviewGrid({ files, onRemove }) {
   const [previewUrls, setPreviewUrls] = useState([]);
 
   useEffect(() => {
     const urls = files.map((file) => URL.createObjectURL(file));
     setPreviewUrls(urls);
-    return () => {
-      urls.forEach((url) => URL.revokeObjectURL(url));
-    };
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
   }, [files]);
 
   if (files.length === 0) return null;
 
   return (
-    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "10px" }}>
+    <div className="flex gap-3 flex-wrap mt-3">
       {files.map((file, index) => (
-        <div key={`${file.name}-${index}`} style={{ position: "relative" }}>
+        <div key={`${file.name}-${index}`} className="relative">
           <img
             src={previewUrls[index]}
             alt={file.name}
-            style={{ width: "80px", height: "80px", objectFit: "cover", borderRadius: "8px", border: "1px solid var(--border)" }}
+            className="w-20 h-20 object-cover rounded-lg border border-border"
           />
           <button
             type="button"
             onClick={() => onRemove(index)}
             aria-label={`Remove ${file.name}`}
-            style={{
-              position: "absolute",
-              top: "-8px",
-              right: "-8px",
-              width: "22px",
-              height: "22px",
-              borderRadius: "50%",
-              background: "#b91c1c",
-              color: "#fff",
-              border: "2px solid var(--bg)",
-              cursor: "pointer",
-              fontSize: "0.75rem",
-              lineHeight: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 0,
-            }}
+            className="absolute -top-2 -right-2 w-[22px] h-[22px] rounded-full bg-destructive text-white border-2 border-background cursor-pointer text-xs flex items-center justify-center p-0"
           >
             ✕
           </button>
@@ -147,36 +126,21 @@ function FilePreviewGrid({ files, onRemove }) {
   );
 }
 
-// A clearer, clickable upload region with drag-and-drop styling
 function UploadDropzone({ onFilesSelected, label }) {
   return (
-    <label
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "6px",
-        padding: "20px",
-        border: "2px dashed var(--border)",
-        borderRadius: "8px",
-        cursor: "pointer",
-        textAlign: "center",
-        color: "var(--text)",
-        background: "var(--code-bg)",
-      }}
-    >
-      <span style={{ fontSize: "1.4rem" }}>📷</span>
-      <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>{label}</span>
-      <span style={{ fontSize: "0.75rem", color: "var(--muted-foreground, var(--text))" }}>
-        Click to browse — JPEG or PNG, max 5MB each
-      </span>
+    <label className="flex flex-col items-center justify-center gap-1.5 p-5 rounded-lg border-2 border-dashed border-border cursor-pointer text-center text-muted-foreground bg-muted hover:border-primary/40 transition-colors">
+      <span className="text-2xl">📷</span>
+      <span className="text-sm font-semibold text-foreground">{label}</span>
+      <span className="text-xs text-muted-foreground">Click to browse — JPEG or PNG, max 5MB each</span>
       <input
         type="file"
         accept="image/jpeg,image/png"
         multiple
-        onChange={(event) => onFilesSelected(Array.from(event.target.files))}
-        style={{ display: "none", cursor: "pointer" }}
+        onChange={(event) => {
+          onFilesSelected(Array.from(event.target.files));
+          event.target.value = "";
+        }}
+        className="hidden"
       />
     </label>
   );
@@ -205,36 +169,11 @@ export default function VendorsPage() {
   const [comment, setComment] = useState("");
   const [newFiles, setNewFiles] = useState([]);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
-  const reviewRequestRef = useRef(null);
-  const reviewRequestIdRef = useRef(0);
 
-  const refreshReviews = useCallback(async ({ reset = false } = {}) => {
-    if (!isValidVendorId) return;
-
-    const requestId = reviewRequestIdRef.current + 1;
-    reviewRequestIdRef.current = requestId;
-    reviewRequestRef.current?.abort();
-    const controller = new AbortController();
-    reviewRequestRef.current = controller;
-
-    setIsLoading(true);
-    setLoadError("");
-    if (reset) setReviews([]);
-
-    try {
-      const page = await fetchVendorReviews(numericVendorId, controller.signal);
-      if (requestId === reviewRequestIdRef.current) setReviews(page.items);
-    } catch (error) {
-      if (requestId === reviewRequestIdRef.current && error.name !== "AbortError") {
-        setLoadError(displayError(error));
-      }
-    } finally {
-      if (requestId === reviewRequestIdRef.current) {
-        setIsLoading(false);
-        if (reviewRequestRef.current === controller) reviewRequestRef.current = null;
-      }
-    }
-  }, [isValidVendorId, numericVendorId]);
+  const refreshReviews = useCallback(async () => {
+    const page = await fetchVendorReviews(numericVendorId);
+    setReviews(page.items);
+  }, [numericVendorId]);
 
   useEffect(() => {
     if (!isValidVendorId) {
@@ -243,7 +182,6 @@ export default function VendorsPage() {
       setIsVendorLoading(false);
       return undefined;
     }
-
     const controller = new AbortController();
     setIsVendorLoading(true);
     setVendorError("");
@@ -256,56 +194,44 @@ export default function VendorsPage() {
       .finally(() => {
         if (!controller.signal.aborted) setIsVendorLoading(false);
       });
-
     return () => controller.abort();
   }, [isValidVendorId, numericVendorId, loadAttempt]);
 
   useEffect(() => {
     if (!isValidVendorId) {
-      reviewRequestIdRef.current += 1;
-      reviewRequestRef.current?.abort();
-      reviewRequestRef.current = null;
       setReviews([]);
       setIsLoading(false);
       return undefined;
     }
-
+    const controller = new AbortController();
+    setIsLoading(true);
+    setLoadError("");
     setActionError("");
-    void refreshReviews({ reset: true });
+    setReviews([]);
+    fetchVendorReviews(numericVendorId, controller.signal)
+      .then((page) => setReviews(page.items))
+      .catch((error) => {
+        if (error.name !== "AbortError") setLoadError(displayError(error));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoading(false);
+      });
+    return () => controller.abort();
+  }, [isValidVendorId, numericVendorId, loadAttempt]);
 
-    return () => {
-      reviewRequestIdRef.current += 1;
-      reviewRequestRef.current?.abort();
-      reviewRequestRef.current = null;
-    };
-  }, [isValidVendorId, loadAttempt, refreshReviews]);
-
-  const addNewFiles = (files) => {
-    setNewFiles((prev) => [...prev, ...files]);
-  };
-
-  const removeNewFile = (index) => {
-    setNewFiles((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const addEditFiles = (files) => {
-    setEditNewFiles((prev) => [...prev, ...files]);
-  };
-
-  const removeEditFile = (index) => {
-    setEditNewFiles((prev) => prev.filter((_, i) => i !== index));
-  };
+  const addNewFiles = (files) => setNewFiles((prev) => [...prev, ...files]);
+  const removeNewFile = (index) => setNewFiles((prev) => prev.filter((_, i) => i !== index));
+  const addEditFiles = (files) => setEditNewFiles((prev) => [...prev, ...files]);
+  const removeEditFile = (index) => setEditNewFiles((prev) => prev.filter((_, i) => i !== index));
 
   const handleAddReview = async (event) => {
     event.preventDefault();
     setActionError("");
-
     const validationError = validateFiles(newFiles, 0);
     if (validationError) {
       setActionError(validationError);
       return;
     }
-
     setIsCreating(true);
     try {
       const created = await createReview({
@@ -313,7 +239,6 @@ export default function VendorsPage() {
         rating: Number(rating),
         comment: comment.trim() || null,
       });
-
       for (const file of newFiles) {
         try {
           await uploadReviewImage(created.id, file);
@@ -321,7 +246,6 @@ export default function VendorsPage() {
           setActionError(`Review submitted, but an image failed to upload: ${displayError(uploadError)}`);
         }
       }
-
       setComment("");
       setRating(5);
       setNewFiles([]);
@@ -344,17 +268,14 @@ export default function VendorsPage() {
   const handleUpdateReview = async (event, review) => {
     event.preventDefault();
     setActionError("");
-
     const validationError = validateFiles(editNewFiles, review.images.length);
     if (validationError) {
       setActionError(validationError);
       return;
     }
-
     setBusyReviewId(review.id);
     try {
       await updateReview(review.id, { rating: Number(editRating), comment: editComment.trim() || null });
-
       for (const file of editNewFiles) {
         try {
           await uploadReviewImage(review.id, file);
@@ -362,7 +283,6 @@ export default function VendorsPage() {
           setActionError(`Saved, but an image failed to upload: ${displayError(uploadError)}`);
         }
       }
-
       setEditingReviewId(null);
       setEditNewFiles([]);
       await refreshReviews();
@@ -393,8 +313,18 @@ export default function VendorsPage() {
     const current = sorted[index];
     const swapWith = sorted[swapIndex];
 
+    const usedOrders = new Set(sorted.map((image) => image.display_order));
+    const freeOrder = [1, 2, 3, 4, 5].find((order) => !usedOrders.has(order));
+
+    if (freeOrder === undefined) {
+      setActionError(
+        "Can't reorder — this review has 5 images with no free slot available for reordering."
+      );
+      return;
+    }
+
     try {
-      await reorderReviewImage(review.id, current.id, 99);
+      await reorderReviewImage(review.id, current.id, freeOrder);
       await reorderReviewImage(review.id, swapWith.id, current.display_order);
       await reorderReviewImage(review.id, current.id, swapWith.display_order);
       await refreshReviews();
@@ -404,13 +334,8 @@ export default function VendorsPage() {
     }
   };
 
-  const requestDeleteReview = (reviewId) => {
-    setDeleteTargetId(reviewId);
-  };
-
-  const cancelDeleteReview = () => {
-    setDeleteTargetId(null);
-  };
+  const requestDeleteReview = (reviewId) => setDeleteTargetId(reviewId);
+  const cancelDeleteReview = () => setDeleteTargetId(null);
 
   const confirmDeleteReview = async () => {
     if (deleteTargetId === null) return;
@@ -433,21 +358,25 @@ export default function VendorsPage() {
   };
 
   if (isVendorLoading) {
-    return <p style={{ padding: "40px", textAlign: "center" }}>Loading vendor...</p>;
+    return <p className="p-10 text-center text-muted-foreground">Loading vendor...</p>;
   }
 
   if (!vendor) {
     return (
-      <div style={{ padding: "40px", textAlign: "center", fontFamily: "var(--sans)" }}>
-        <h2>Vendor not found</h2>
-        {vendorError && <p role="alert">{vendorError}</p>}
+      <div className="p-10 text-center">
+        <h2 className="text-xl font-bold text-foreground">Vendor not found</h2>
+        {vendorError && <p role="alert" className="text-destructive mt-2">{vendorError}</p>}
         {isValidVendorId && (
-          <button type="button" style={{ cursor: "pointer" }} onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
+          <button
+            type="button"
+            className="cursor-pointer mt-3 px-4 py-2 rounded-lg border border-border text-sm font-semibold"
+            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+          >
             Try again
           </button>
         )}
-        <div style={{ marginTop: "12px" }}>
-          <Link to="/food">Back to All Vendors</Link>
+        <div className="mt-3">
+          <Link to="/food" className="text-primary hover:underline">Back to All Vendors</Link>
         </div>
       </div>
     );
@@ -458,34 +387,36 @@ export default function VendorsPage() {
   const displayedRating = vendor.average_rating ?? vendor.average_google_rating;
 
   return (
-    <div style={{ maxWidth: "800px", margin: "0 auto", padding: "20px", fontFamily: "var(--sans)" }}>
-      <Link to="/food" style={{ textDecoration: "none", color: "var(--accent)" }}>← Back to All Vendors</Link>
+    <div className="max-w-3xl mx-auto px-6 py-10">
+      <Link to="/food" className="text-primary hover:underline text-sm font-medium">
+        ← Back to All Vendors
+      </Link>
 
-      <div style={{ marginTop: "15px", marginBottom: "25px" }}>
-        <h1 style={{ margin: "0 0 5px 0", fontFamily: "var(--heading)", color: "var(--text-h)" }}>{vendor.name}</h1>
-        <p style={{ color: "var(--text)", margin: 0 }}>
+      <div className="mt-4 mb-6">
+        <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: DISPLAY_FONT }}>
+          {vendor.name}
+        </h1>
+        <p className="text-muted-foreground mt-1">
           {[location, category].filter(Boolean).join(" | ")}
           {displayedRating != null ? ` | ⭐ ${displayedRating}` : ""}
         </p>
       </div>
 
-      <section style={{ marginBottom: "30px", background: "var(--code-bg)", padding: "20px", borderRadius: "10px" }}>
-        <h2 style={{ marginTop: 0, fontFamily: "var(--heading)", color: "var(--text-h)" }}>Menu</h2>
-        <p style={{ color: "var(--text)" }}>Menu information is not available yet.</p>
+      <section className="mb-8 bg-card border border-border p-5 rounded-xl">
+        <h2 className="text-lg font-bold text-foreground mb-3">Menu</h2>
+        <p className="text-muted-foreground">Menu information is not available yet.</p>
       </section>
 
-      <section style={{ marginBottom: "30px" }}>
-        <h2 style={{ fontFamily: "var(--heading)", color: "var(--text-h)" }}>Leave a Review</h2>
-        <form onSubmit={handleAddReview} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <div>
-            <StarPicker value={rating} onChange={setRating} disabled={isCreating} />
-          </div>
+      <section className="mb-8">
+        <h2 className="text-lg font-bold text-foreground mb-3">Leave a Review</h2>
+        <form onSubmit={handleAddReview} className="flex flex-col gap-3">
+          <StarPicker value={rating} onChange={setRating} disabled={isCreating} />
           <textarea
             placeholder="Write your review here..."
             value={comment}
             onChange={(event) => setComment(event.target.value)}
             rows={3}
-            style={{ padding: "10px", borderRadius: "6px", border: "1px solid var(--border)" }}
+            className="p-3 rounded-lg border border-border bg-background text-sm resize-y"
             required
           />
           <div>
@@ -495,87 +426,89 @@ export default function VendorsPage() {
           <button
             type="submit"
             disabled={isCreating}
-            style={{
-              background: "var(--accent)",
-              color: "#fff",
-              padding: "10px",
-              borderRadius: "6px",
-              border: "none",
-              cursor: isCreating ? "wait" : "pointer",
-              fontFamily: "var(--sans)",
-              opacity: isCreating ? 0.7 : 1,
-            }}
+            className={`px-4 py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm ${
+              isCreating ? "cursor-wait opacity-70" : "cursor-pointer hover:opacity-90"
+            }`}
           >
             {isCreating ? "Submitting..." : "Submit Review"}
           </button>
         </form>
-        {actionError && <p role="alert" style={{ color: "#b91c1c", marginTop: "10px" }}>{actionError}</p>}
+        {actionError && (
+          <p role="alert" className="text-destructive mt-2 text-sm">{actionError}</p>
+        )}
       </section>
 
       <section>
-        <h2 style={{ fontFamily: "var(--heading)", color: "var(--text-h)" }}>Student Reviews</h2>
-        {isLoading && <p style={{ color: "var(--text)" }}>Loading reviews...</p>}
+        <h2 className="text-lg font-bold text-foreground mb-3">Student Reviews</h2>
+        {isLoading && <p className="text-muted-foreground">Loading reviews...</p>}
         {!isLoading && loadError && (
-          <div role="alert" style={{ color: "#b91c1c" }}>
+          <div role="alert" className="text-destructive">
             <p>Could not load reviews: {loadError}</p>
-            <button type="button" style={{ cursor: "pointer" }} onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
+            <button
+              type="button"
+              className="cursor-pointer mt-1 text-sm font-semibold underline"
+              onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+            >
               Try again
             </button>
           </div>
         )}
         {!isLoading && !loadError && reviews.length === 0 && (
-          <p style={{ color: "var(--text)" }}>No reviews yet. Be the first to leave one.</p>
+          <p className="text-muted-foreground">No reviews yet. Be the first to leave one.</p>
         )}
         {!isLoading && !loadError && reviews.map((review) => {
-          const isOwnReview = DEV_USER_ID !== null && review.user.id === DEV_USER_ID;
+          const isOwnReview = review.user.id === DEV_USER_ID;
           const isEditing = editingReviewId === review.id;
           const isBusy = busyReviewId === review.id;
           const sortedImages = [...review.images].sort((a, b) => a.display_order - b.display_order);
 
           return (
-            <article key={review.id} style={{ borderBottom: "1px solid var(--border)", padding: "16px 0" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+            <article key={review.id} className="border-b border-border py-5">
+              <div className="flex justify-between gap-3 flex-wrap">
                 <div>
-                  <strong>{review.user.display_name}</strong>
-                  {review.user.affiliation && <span style={{ color: "var(--text)", marginLeft: "8px" }}>{review.user.affiliation}</span>}
-                  {/* Read-only stars: only shown when NOT editing, to avoid the duplicate picker */}
+                  <strong className="text-foreground">{review.user.display_name}</strong>
+                  {review.user.affiliation && (
+                    <span className="text-muted-foreground ml-2 text-sm">{review.user.affiliation}</span>
+                  )}
                   {!isEditing && (
-                    <div style={{ marginTop: "4px" }}>
+                    <div className="mt-1">
                       <StarPicker value={review.rating} onChange={() => {}} disabled />
                     </div>
                   )}
                 </div>
-                <small style={{ color: "var(--text)" }}>
+                <small className="text-muted-foreground">
                   {displayDate(review.created_at)}
                   {review.is_edited ? " (edited)" : ""}
                 </small>
               </div>
 
               {isEditing ? (
-                <form onSubmit={(event) => handleUpdateReview(event, review)} style={{ display: "grid", gap: "8px", marginTop: "12px" }}>
-                  {/* Only ONE star picker here, the editable one */}
+                <form onSubmit={(event) => handleUpdateReview(event, review)} className="grid gap-3 mt-3">
                   <StarPicker value={editRating} onChange={setEditRating} disabled={isBusy} />
-                  <textarea value={editComment} onChange={(event) => setEditComment(event.target.value)} rows={3} />
+                  <textarea
+                    value={editComment}
+                    onChange={(event) => setEditComment(event.target.value)}
+                    rows={3}
+                    className="p-3 rounded-lg border border-border bg-background text-sm resize-y"
+                  />
 
                   {sortedImages.length > 0 && (
                     <div>
-                      <label style={{ display: "block", marginBottom: "6px", color: "var(--text)", fontSize: "0.9rem" }}>
-                        Existing photos
-                      </label>
-                      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                      <label className="block mb-1.5 text-sm text-muted-foreground">Existing photos</label>
+                      <div className="flex gap-3 flex-wrap">
                         {sortedImages.map((image, index) => (
                           <div key={image.id}>
                             <img
                               src={reviewImageUrl(review.id, image.id)}
                               alt={`Review by ${review.user.display_name}`}
                               loading="lazy"
-                              style={{ width: "90px", height: "68px", objectFit: "cover", borderRadius: "6px", border: "1px solid var(--border)" }}
+                              className="w-[90px] h-[68px] object-cover rounded-md border border-border"
                             />
-                            <div style={{ display: "flex", justifyContent: "center", gap: "6px", marginTop: "4px" }}>
+                            <div className="flex justify-center gap-1.5 mt-1">
                               <button
                                 type="button"
                                 disabled={index === 0 || isBusy}
-                                style={{ cursor: index === 0 || isBusy ? "default" : "pointer", fontSize: "0.75rem" }}
+                                className={`text-xs ${index === 0 || isBusy ? "cursor-default opacity-40" : "cursor-pointer"}`}
                                 onClick={() => handleReorderReviewImage(review, image.id, "up")}
                               >
                                 ←
@@ -583,7 +516,7 @@ export default function VendorsPage() {
                               <button
                                 type="button"
                                 disabled={isBusy}
-                                style={{ cursor: isBusy ? "default" : "pointer", fontSize: "0.75rem", color: "#b91c1c" }}
+                                className={`text-xs text-destructive ${isBusy ? "cursor-default opacity-40" : "cursor-pointer"}`}
                                 onClick={() => handleDeleteReviewImage(review.id, image.id)}
                               >
                                 ✕
@@ -591,7 +524,9 @@ export default function VendorsPage() {
                               <button
                                 type="button"
                                 disabled={index === sortedImages.length - 1 || isBusy}
-                                style={{ cursor: index === sortedImages.length - 1 || isBusy ? "default" : "pointer", fontSize: "0.75rem" }}
+                                className={`text-xs ${
+                                  index === sortedImages.length - 1 || isBusy ? "cursor-default opacity-40" : "cursor-pointer"
+                                }`}
                                 onClick={() => handleReorderReviewImage(review, image.id, "down")}
                               >
                                 →
@@ -608,14 +543,22 @@ export default function VendorsPage() {
                     <FilePreviewGrid files={editNewFiles} onRemove={removeEditFile} />
                   </div>
 
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <button type="submit" disabled={isBusy} style={{ cursor: isBusy ? "wait" : "pointer" }}>
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={isBusy}
+                      className={`px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold ${
+                        isBusy ? "cursor-wait opacity-70" : "cursor-pointer hover:opacity-90"
+                      }`}
+                    >
                       {isBusy ? "Saving..." : "Save"}
                     </button>
                     <button
                       type="button"
                       disabled={isBusy}
-                      style={{ cursor: isBusy ? "default" : "pointer" }}
+                      className={`px-4 py-2 rounded-lg border border-border text-sm font-semibold ${
+                        isBusy ? "cursor-default opacity-70" : "cursor-pointer"
+                      }`}
                       onClick={() => {
                         setEditingReviewId(null);
                         setEditNewFiles([]);
@@ -626,32 +569,41 @@ export default function VendorsPage() {
                   </div>
                 </form>
               ) : (
-                <p style={{ margin: "8px 0 0", color: "var(--text)" }}>{review.comment || "No written comment."}</p>
+                <p className="mt-2 text-foreground">{review.comment || "No written comment."}</p>
               )}
 
               {!isEditing && sortedImages.length > 0 && (
-                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "12px" }}>
+                <div className="flex gap-3 flex-wrap mt-3">
                   {sortedImages.map((image) => (
                     <img
                       key={image.id}
                       src={reviewImageUrl(review.id, image.id)}
                       alt={`Review by ${review.user.display_name}`}
                       loading="lazy"
-                      style={{ width: "120px", height: "90px", objectFit: "cover", borderRadius: "8px" }}
+                      className="w-[120px] h-[90px] object-cover rounded-lg"
                     />
                   ))}
                 </div>
               )}
 
               {isOwnReview && !isEditing && (
-                <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
-                  <button type="button" disabled={isBusy} style={{ cursor: isBusy ? "default" : "pointer" }} onClick={() => beginEditing(review)}>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    className={`px-3 py-1.5 rounded-lg border border-border text-sm font-medium ${
+                      isBusy ? "cursor-default opacity-70" : "cursor-pointer hover:bg-muted"
+                    }`}
+                    onClick={() => beginEditing(review)}
+                  >
                     Edit
                   </button>
                   <button
                     type="button"
                     disabled={deletingReviewId === review.id}
-                    style={{ cursor: deletingReviewId === review.id ? "default" : "pointer", opacity: deletingReviewId === review.id ? 0.6 : 1 }}
+                    className={`px-3 py-1.5 rounded-lg border border-destructive/40 text-destructive text-sm font-medium ${
+                      deletingReviewId === review.id ? "cursor-default opacity-60" : "cursor-pointer hover:bg-destructive/10"
+                    }`}
                     onClick={() => requestDeleteReview(review.id)}
                   >
                     Delete
@@ -664,27 +616,19 @@ export default function VendorsPage() {
       </section>
 
       {deleteTargetId !== null && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div
-            style={{
-              background: "var(--card, var(--bg))",
-              borderRadius: "10px",
-              padding: "24px",
-              maxWidth: "360px",
-              width: "90%",
-              border: "1px solid var(--border)",
-              boxShadow: "0 10px 40px rgba(0,0,0,0.35)",
-            }}
-          >
-            <h3 style={{ marginTop: 0, fontFamily: "var(--heading)", color: "var(--text-h)" }}>Delete this review?</h3>
-            <p style={{ color: "var(--text)", fontSize: "0.9rem" }}>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-card rounded-xl p-6 max-w-sm w-[90%] border border-border shadow-2xl">
+            <h3 className="text-lg font-bold text-foreground mb-2">Delete this review?</h3>
+            <p className="text-muted-foreground text-sm">
               This action cannot be undone. The review and its photos will be permanently removed.
             </p>
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "16px" }}>
+            <div className="flex gap-2.5 justify-end mt-4">
               <button
                 type="button"
                 disabled={deletingReviewId !== null}
-                style={{ cursor: deletingReviewId !== null ? "default" : "pointer" }}
+                className={`px-4 py-2 rounded-lg border border-border text-sm font-semibold ${
+                  deletingReviewId !== null ? "cursor-default" : "cursor-pointer"
+                }`}
                 onClick={cancelDeleteReview}
               >
                 Cancel
@@ -692,15 +636,9 @@ export default function VendorsPage() {
               <button
                 type="button"
                 disabled={deletingReviewId !== null}
-                style={{
-                  cursor: deletingReviewId !== null ? "default" : "pointer",
-                  background: "#b91c1c",
-                  color: "#fff",
-                  border: "none",
-                  padding: "8px 14px",
-                  borderRadius: "6px",
-                  opacity: deletingReviewId !== null ? 0.6 : 1,
-                }}
+                className={`px-4 py-2 rounded-lg bg-destructive text-white text-sm font-semibold ${
+                  deletingReviewId !== null ? "cursor-default opacity-60" : "cursor-pointer hover:opacity-90"
+                }`}
                 onClick={confirmDeleteReview}
               >
                 {deletingReviewId !== null ? "Deleting..." : "Delete"}
