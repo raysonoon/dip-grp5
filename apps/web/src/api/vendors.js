@@ -96,21 +96,28 @@ export function parseVendorList(value) {
   };
 }
 
-async function fetchVendorPage(limit, offset, signal) {
+async function fetchVendorPage(limit, offset, query, signal) {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const normalizedQuery = query.trim();
+  if (normalizedQuery) params.set("q", normalizedQuery);
+
   const payload = await apiClient.get(
-    `/vendors?limit=${limit}&offset=${offset}`,
+    `/vendors?${params.toString()}`,
     { auth: false, signal },
   );
   return parseVendorList(payload);
 }
 
-export async function fetchVendors(signal) {
+export async function fetchVendors(query = "", signal) {
   const vendors = [];
   const limit = 100;
   let offset = 0;
 
   while (true) {
-    const page = await fetchVendorPage(limit, offset, signal);
+    const page = await fetchVendorPage(limit, offset, query, signal);
     vendors.push(...page.items);
     offset += page.items.length;
     if (page.items.length === 0 || offset >= page.total) return vendors;
@@ -122,7 +129,7 @@ export async function fetchVendorById(vendorId, signal) {
   const limit = 100;
 
   while (true) {
-    const page = await fetchVendorPage(limit, offset, signal);
+    const page = await fetchVendorPage(limit, offset, "", signal);
     const vendor = page.items.find((item) => item.id === vendorId);
     if (vendor) return vendor;
 

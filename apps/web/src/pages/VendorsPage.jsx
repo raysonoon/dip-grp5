@@ -12,6 +12,7 @@ import {
 } from "../api/reviews";
 import { fetchVendorById } from "../api/vendors";
 import { askChat, chatErrorMessage } from "../api/chat";
+import ChatMessageContent from "../components/ChatMessageContent";
 
 const RATING_OPTIONS = [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1];
 
@@ -70,7 +71,10 @@ export default function VendorsPage() {
 
     try {
       const response = await askChat(question);
-      setChatMessages((prev) => [...prev, { role: "bot", text: response.answer }]);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "bot", text: response.answer, sources: response.sources },
+      ]);
     } catch (error) {
       console.error("Chat request failed", error);
       setChatMessages((prev) => [
@@ -358,7 +362,11 @@ export default function VendorsPage() {
                         : "bg-card border border-border text-foreground rounded-bl-sm"
                     }`}
                   >
-                    {msg.text}
+                    {msg.role === "bot" ? (
+                      <ChatMessageContent answer={msg.text} sources={msg.sources} />
+                    ) : (
+                      msg.text
+                    )}
                   </div>
                 </div>
               ))}
