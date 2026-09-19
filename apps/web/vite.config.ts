@@ -27,6 +27,12 @@ export default defineConfig({
       '/vendors': {
         target: `http://localhost:${API_PORT}`,
         changeOrigin: true,
+        bypass(req) {
+          const pathname = req.url?.split('?')[0] ?? ''
+          const isVendorPage = /^\/vendors\/\d+\/?$/.test(pathname)
+          const acceptsHtml = req.headers.accept?.includes('text/html')
+          if (isVendorPage && acceptsHtml) return '/index.html'
+        },
       },
       '/media': {
         target: `http://localhost:${API_PORT}`,

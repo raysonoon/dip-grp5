@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
-import { Routes, Route, Link } from "react-router-dom";
+import { useRef, useState, type FormEvent } from "react";
+import { Routes, Route, Link, useNavigate } from "react-router-dom";
 import { askChat, chatErrorMessage } from "./api/chat";
+import ChatMessageContent from "./components/ChatMessageContent";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
 import {
@@ -143,10 +144,11 @@ function StarRow({ rating, size = "sm" }: { rating: number; size?: "sm" | "md" }
 }
 
 function HomePage() {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<
-    { role: "user" | "bot"; text: string }[]
+    { role: "user" | "bot"; text: string; sources?: unknown[] }[]
   >([
     {
       role: "bot",
@@ -157,6 +159,13 @@ function HomePage() {
   const [isTyping, setIsTyping] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const chatRequestPending = useRef(false);
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = searchQuery.trim();
+    if (!query) return;
+    navigate(`/food?q=${encodeURIComponent(query)}`);
+  }
 
   async function sendMessage(text: string) {
     const question = text.trim();
@@ -169,7 +178,10 @@ function HomePage() {
 
     try {
       const response = await askChat(question);
-      setChatMessages((prev) => [...prev, { role: "bot", text: response.answer }]);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "bot", text: response.answer, sources: response.sources },
+      ]);
     } catch (error) {
       console.error("Chat request failed", error);
       setChatMessages((prev) => [
@@ -282,7 +294,7 @@ function HomePage() {
             <p className="text-lg text-muted-foreground mb-8 leading-relaxed"> Discover hidden gems across 13 canteens, a variety of cafes, fast food outlets and restaurants — rated, reviewed, and recommended by your fellow NTU foodies.</p>
 
             {/* Search bar */}
-            <div className="flex gap-3 mb-7">
+            <form className="flex gap-3 mb-7" onSubmit={submitSearch}>
               <div className="flex-1 flex items-center gap-3 px-4 py-3 rounded-xl bg-card border border-border focus-within:border-primary/40 transition-colors">
                 <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                 <input
@@ -293,10 +305,13 @@ function HomePage() {
                   className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none flex-1"
                 />
               </div>
-              <button className="px-5 py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-opacity">
+              <button
+                type="submit"
+                className="px-5 py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-opacity"
+              >
                 Search
               </button>
-            </div>
+            </form>
 
             {/* Quick tags */}
             <div className="flex flex-wrap gap-2 mb-10">
@@ -831,7 +846,11 @@ function HomePage() {
                         : "bg-card border border-border text-foreground rounded-bl-sm"
                     }`}
                   >
-                    {msg.text}
+                    {msg.role === "bot" ? (
+                      <ChatMessageContent answer={msg.text} sources={msg.sources} />
+                    ) : (
+                      msg.text
+                    )}
                   </div>
                 </div>
               ))}
@@ -943,6 +962,7 @@ function App() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/food" element={<FoodPage />} />
+      <Route path="/vendors/:vendorId" element={<VendorsPage />} />
       <Route path="/food/vendors/:vendorId" element={<VendorsPage />} />
     </Routes>
   );

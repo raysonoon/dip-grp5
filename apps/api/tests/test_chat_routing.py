@@ -1,9 +1,14 @@
+from datetime import UTC, datetime
+
 from app.services.chat import ChatService, format_sql_context
 from app.services.embedding import Embedder
 from app.services.intent_router import IntentRouter
 from app.services.retrieval import FakeKnowledgeStore, KnowledgeResult
 from app.services.sql_search import PgSqlStore, SqlResult
-from app.services.structured_filters import extract_structured_filters
+from app.services.structured_filters import (
+    StructuredFilter,
+    extract_structured_filters,
+)
 
 DIMENSION = 768
 
@@ -111,6 +116,141 @@ def test_router_none_keeps_vector_only_behavior() -> None:
     assert response.sources[0].source_type == "internal_review"
 
 
+def test_vector_path_filters_explicit_source_and_vendor_mentions(session) -> None:
+    from app.models import Vendor
+
+    nie = Vendor(
+        name="NIE Canteen",
+        location="NIE",
+        category="Food court",
+    )
+    quad = Vendor(
+        name="Quad Cafe",
+        location="The Quad",
+        category="Food court",
+    )
+    unrelated = Vendor(
+        name="Another Cafe",
+        location="North Spine",
+        category="Cafe",
+    )
+    session.add_all([nie, quad, unrelated])
+    session.commit()
+    store = FakeKnowledgeStore(
+        items=[
+            (
+                _vector(0.8),
+                KnowledgeResult(
+                    source_type="reddit",
+                    source_id="reddit-nie",
+                    vendor_id=nie.id,
+                    content="NIE canteen has $3 noodles.",
+                    metadata={},
+                ),
+            ),
+            (
+                _vector(0.7),
+                KnowledgeResult(
+                    source_type="reddit",
+                    source_id="reddit-quad",
+                    vendor_id=quad.id,
+                    content="Quad Cafe has affordable chicken noodles.",
+                    metadata={},
+                ),
+            ),
+            (
+                _vector(0.1),
+                KnowledgeResult(
+                    source_type="google_review",
+                    source_id="google-unrelated",
+                    vendor_id=unrelated.id,
+                    content="Unrelated but more similar result.",
+                    metadata={},
+                ),
+            ),
+        ],
+        vendor_names={
+            nie.id: nie.name,
+            quad.id: quad.name,
+            unrelated.id: unrelated.name,
+        },
+    )
+    service = ChatService(
+        FakeEmbedder(),
+        store,
+        generate=lambda _prompt: "NIE Canteen [1] and Quad Cafe [2]",
+        session=session,
+    )
+
+    response = service.answer(
+        "What do Reddit users say about noodle options at NIE Canteen "
+        "and Quad Cafe?"
+    )
+
+    assert [source.source_id for source in response.sources] == [
+        "reddit-quad",
+        "reddit-nie",
+    ]
+    assert {source.vendor_name for source in response.sources} == {
+        "NIE Canteen",
+        "Quad Cafe",
+    }
+
+
+def test_explicit_reddit_vendor_query_reads_comments_without_vector_chunks(
+    session,
+) -> None:
+    from app.models import RedditComment, Vendor
+
+    nie = Vendor(
+        name="NIE Canteen",
+        location="NIE",
+        category="Food court",
+    )
+    session.add(nie)
+    session.flush()
+    session.add(
+        RedditComment(
+            reddit_comment_id="reddit-noodles",
+            vendor_id=nie.id,
+            subreddit="NTU",
+            thread_id="thread-1",
+            thread_title="Cheap food",
+            comment_text="NIE canteen has $3 noodles.",
+            created_at=datetime.now(UTC),
+            permalink="/r/NTU/comments/thread-1/comment/reddit-noodles/",
+        )
+    )
+    session.commit()
+    store = FakeKnowledgeStore(
+        items=[],
+        vendor_names={nie.id: nie.name},
+    )
+    captured: dict[str, str] = {}
+
+    def fake_generate(prompt: str) -> str:
+        captured["prompt"] = prompt
+        return "NIE Canteen has $3 noodles [1]."
+
+    service = ChatService(
+        FakeEmbedder(),
+        store,
+        generate=fake_generate,
+        session=session,
+    )
+
+    response = service.answer(
+        "What do Reddit users say about noodles at NIE Canteen?"
+    )
+
+    assert "NIE canteen has $3 noodles" in captured["prompt"]
+    assert [source.source_type for source in response.sources] == ["reddit"]
+    assert response.sources[0].vendor_name == "NIE Canteen"
+    assert response.sources[0].permalink == (
+        "/r/NTU/comments/thread-1/comment/reddit-noodles/"
+    )
+
+
 def test_sql_path_returns_vendor_sources(session) -> None:
     from app.models import Vendor
 
@@ -153,6 +293,48 @@ def test_sql_path_returns_vendor_sources(session) -> None:
     assert response.search_type == "SQL"
     assert response.sources[0].source_type == "vendor"
     assert response.sources[0].vendor_name == "Halal Nook"
+
+
+def test_empty_sql_list_falls_back_to_vector_for_dish_terms(session) -> None:
+    _seed_prompt(
+        session,
+        intent_key="Q-NOODLE",
+        question_text="noodle",
+        search_type="SQL",
+    )
+    store = FakeKnowledgeStore(
+        items=[
+            (
+                _vector(0.1),
+                KnowledgeResult(
+                    source_type="internal_review",
+                    source_id="review-1",
+                    vendor_id=4,
+                    content="Best noodles on campus, definitely worth trying.",
+                    metadata={},
+                ),
+            )
+        ],
+        vendor_names={4: "Demo Vendor 2"},
+    )
+    service = ChatService(
+        FakeEmbedder(),
+        store,
+        generate=lambda _prompt: "Try Demo Vendor 2 [1]",
+        router=_make_router(session),
+        sql_store=PgSqlStore(session),
+        filter_extractor_llm=lambda _question: StructuredFilter(
+            cuisine="Noodle"
+        ),
+    )
+
+    response = service.answer("noodle")
+
+    assert response.search_type == "Vector"
+    assert response.answer == "Try Demo Vendor 2 [1]"
+    assert [source.vendor_name for source in response.sources] == [
+        "Demo Vendor 2"
+    ]
 
 
 def test_hybrid_path_filters_vector_results(session) -> None:

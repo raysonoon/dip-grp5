@@ -21,6 +21,7 @@ class ChatSource(BaseModel):
     vendor_id: int | None = None
     vendor_name: str | None = None
     excerpt: str | None = None
+    permalink: str | None = None
     location: str | None = None
     unit_code: str | None = None
     category: str | None = None

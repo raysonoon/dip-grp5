@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     ForeignKey,
     Identity,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,6 +45,17 @@ class Vendor(Base):
             "average_rating IS NULL OR average_rating BETWEEN 0 AND 5",
             name="average_rating_range",
         ),
+        Index(
+            "ix_vendors_search_document_fts",
+            text("to_tsvector('simple', search_document)"),
+            postgresql_using="gin",
+        ).ddl_if(dialect="postgresql"),
+        Index(
+            "ix_vendors_search_document_trgm",
+            "search_document",
+            postgresql_using="gin",
+            postgresql_ops={"search_document": "gin_trgm_ops"},
+        ).ddl_if(dialect="postgresql"),
     )
 
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
@@ -76,6 +89,19 @@ class Vendor(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+    search_document: Mapped[str] = mapped_column(
+        Text,
+        Computed(
+            "lower(trim("
+            "coalesce(name, '') || ' ' || "
+            "coalesce(unit_code, '') || ' ' || "
+            "coalesce(category, '') || ' ' || "
+            "coalesce(location, '')"
+            "))",
+            persisted=True,
+        ),
+        nullable=False,
     )
 
     reviews: Mapped[list["Review"]] = relationship(back_populates="vendor")
