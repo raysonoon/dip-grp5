@@ -96,13 +96,52 @@ export function parseVendorList(value) {
   };
 }
 
-async function fetchVendorPage(limit, offset, signal) {
+export async function fetchVendorPage({
+  q = "",
+  location = "",
+  category = "",
+  limit = 100,
+  offset = 0,
+  signal,
+} = {}) {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+
+  if (q.trim()) {
+    params.set("q", q.trim());
+  }
+
+  if (location) {
+    params.set("location", location);
+  }
+
+  if (category) {
+    params.set("category", category);
+  }
+
   const payload = await apiClient.get(
-    `/vendors?limit=${limit}&offset=${offset}`,
+    `/vendors?${params.toString()}`,
     { auth: false, signal },
   );
+
   return parseVendorList(payload);
 }
+
+
+export async function fetchVendorFilters(signal) {
+  const payload = await apiClient.get(
+    "/vendors/filters",
+    { auth: false, signal },
+  );
+
+  return {
+    locations: Array.isArray(payload.locations) ? payload.locations : [],
+    categories: Array.isArray(payload.categories) ? payload.categories : [],
+  };
+}
+
 
 export async function fetchVendors(signal) {
   const vendors = [];
@@ -110,10 +149,18 @@ export async function fetchVendors(signal) {
   let offset = 0;
 
   while (true) {
-    const page = await fetchVendorPage(limit, offset, signal);
+    const page = await fetchVendorPage({
+      limit,
+      offset,
+      signal,
+    });
+
     vendors.push(...page.items);
     offset += page.items.length;
-    if (page.items.length === 0 || offset >= page.total) return vendors;
+
+    if (page.items.length === 0 || offset >= page.total) {
+      return vendors;
+    }
   }
 }
 
@@ -122,7 +169,11 @@ export async function fetchVendorById(vendorId, signal) {
   const limit = 100;
 
   while (true) {
-    const page = await fetchVendorPage(limit, offset, signal);
+    const page = await fetchVendorPage({
+      limit,
+      offset,
+      signal,
+  });
     const vendor = page.items.find((item) => item.id === vendorId);
     if (vendor) return vendor;
 

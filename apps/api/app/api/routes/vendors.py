@@ -72,6 +72,8 @@ def _resolve_vendor_image(
 def list_vendors(
     session: DbSession,
     q: Annotated[str | None, Query(max_length=100)] = None,
+    location: Annotated[str | None, Query(max_length=255)] = None,
+    category: Annotated[str | None, Query(max_length=255)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> VendorListRead:
@@ -85,6 +87,18 @@ def list_vendors(
                 Vendor.category.ilike(search_pattern),
             )
         )
+    if location is not None and (location_text := location.strip()):
+        if location_text.lower().startswith("hall "):
+            filters.append(
+                func.lower(Vendor.location) == location_text.lower()
+            )
+        else:
+            filters.append(
+                Vendor.location.ilike(f"%{location_text}%")
+            )
+
+    if category is not None and (category_text := category.strip()):
+        filters.append(Vendor.category == category_text)
 
     total = session.scalar(
         select(func.count(Vendor.id)).where(*filters)
@@ -153,6 +167,30 @@ def list_vendors(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/filters")
+def get_vendor_filters(
+    session: DbSession,
+) -> dict[str, list[str]]:
+    locations = session.scalars(
+        select(Vendor.location)
+        .where(Vendor.location.is_not(None))
+        .distinct()
+        .order_by(Vendor.location.asc())
+    ).all()
+
+    categories = session.scalars(
+        select(Vendor.category)
+        .where(Vendor.category.is_not(None))
+        .distinct()
+        .order_by(Vendor.category.asc())
+    ).all()
+
+    return {
+        "locations": locations,
+        "categories": categories,
+    }
 
 
 @router.get(
