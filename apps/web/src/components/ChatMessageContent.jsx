@@ -4,6 +4,8 @@ import ReactMarkdown from "react-markdown";
 import { Link } from "react-router-dom";
 import remarkBreaks from "remark-breaks";
 
+import { CITATION_MARKER_PATTERN, citationNumbers } from "./citationMarkers.js";
+
 const SOURCE_LABELS = {
   count: "Count",
   google_review: "Google review",
@@ -131,33 +133,33 @@ function decorateText(text, sources, answerText) {
   }
   vendors.sort((left, right) => right.vendor_name.length - left.vendor_name.length);
 
-  const patterns = ["\\[(\\d+)\\]", ...vendors.map((source) => escapeRegExp(source.vendor_name))];
+  const patterns = [CITATION_MARKER_PATTERN, ...vendors.map((source) => escapeRegExp(source.vendor_name))];
   const matcher = new RegExp(patterns.join("|"), "gi");
   const parts = [];
   let cursor = 0;
 
   for (const match of text.matchAll(matcher)) {
     if (match.index > cursor) parts.push(text.slice(cursor, match.index));
-    const citationMatch = /^\[(\d+)\]$/.exec(match[0]);
+    const citationMatch = new RegExp(`^${CITATION_MARKER_PATTERN}$`).exec(match[0]);
 
     if (citationMatch) {
-      const citationNumber = Number(citationMatch[1]);
-      const source = sources[citationNumber - 1];
-      if (!source) {
-        parts.push(match[0]);
-      } else {
+      const citations = citationNumbers(citationMatch[1]);
+      parts.push(...citations.map((citationNumber) => {
+        const source = sources[citationNumber - 1];
+        if (!source) return `[${citationNumber}]`;
+
         const vendorMentioned = source.vendor_name
           ? answerText.toLocaleLowerCase().includes(source.vendor_name.toLocaleLowerCase())
           : false;
-        parts.push(
+        return (
           <CitationPopover
             key={`citation-${match.index}-${citationNumber}`}
             source={source}
             citationNumber={citationNumber}
             showVendorLink={!vendorMentioned}
-          />,
+          />
         );
-      }
+      }));
     } else {
       const source = vendors.find(
         (candidate) => candidate.vendor_name.toLocaleLowerCase() === match[0].toLocaleLowerCase(),
