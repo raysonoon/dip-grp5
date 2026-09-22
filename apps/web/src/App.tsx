@@ -209,12 +209,6 @@ function HomePage() {
               Sign In
             </button>
             <Link
-              to="/map"
-              className="text-sm px-4 py-2 rounded-lg border border-border text-foreground font-semibold hover:bg-muted transition-colors"
-            >
-              Map
-            </Link>
-            <Link
               to="/food"
               className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity"
             >
@@ -237,25 +231,12 @@ function HomePage() {
 
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-border bg-background px-6 py-4 flex flex-col gap-4 text-sm">
-            {["Discover", "Map"].map((link) =>
-              link === "Discover" ? (
-                <Link
-                  key={link}
-                  to="/food"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {link}
-                </Link>
-              ) : (
-                <Link
-                  key={link}
-                  to="/map"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {link}
-                </Link>
-              )
-            )}
+            <Link
+              to="/food"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Discover
+            </Link>
             <button className="w-full py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold">
               Leave a Review
             </button>
@@ -354,35 +335,94 @@ function HomePage() {
       </section>
 
       {/* ── CAMPUS MAP TEASER ────────────────────────── */}
-<section className="py-24 bg-card border-t border-border">
-  <div className="max-w-7xl mx-auto px-6">
-    <div className="text-center mb-12">
-      <p className="text-[#1B2D4F] text-xs font-bold uppercase tracking-widest mb-2">
-        Navigate Campus
-      </p>
-      <h2
-        className="text-3xl md:text-4xl font-bold mb-4"
-        style={{ fontFamily: DISPLAY_FONT }}
-      >
-        All Food Places in 1 Map
-      </h2>
-      <p className="text-muted-foreground max-w-sm mx-auto text-sm leading-relaxed">
-        Check what's available and plan your route in seconds.
-      </p>
-    </div>
+      <section className="py-24 bg-card border-t border-border">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center mb-12">
+            <p className="text-[#1B2D4F] text-xs font-bold uppercase tracking-widest mb-2">
+              Navigate Campus
+            </p>
+            <h2
+              className="text-3xl md:text-4xl font-bold mb-4"
+              style={{ fontFamily: DISPLAY_FONT }}
+            >
+              All Food Places in 1 Map
+            </h2>
+            <p className="text-muted-foreground max-w-sm mx-auto text-sm leading-relaxed">
+              Check what's available and plan your route in seconds.
+            </p>
+          </div>
 
-    <VendorMap compact />
+          <VendorMap />
+        </div>
+      </section>
 
-    <div className="text-center mt-8">
-      <Link
-        to="/map"
-        className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
-      >
-        View full map <ChevronRight className="w-4 h-4" />
-      </Link>
-    </div>
-  </div>
-</section>
+      {/* ── TRENDING STALLS ───────────────────────────── */}
+      <section className="py-24">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex items-end justify-between mb-12">
+            <div>
+              <p className="text-primary text-xs font-bold uppercase tracking-widest mb-2">
+                This Week's Picks
+              </p>
+              <h2
+                className="text-3xl md:text-4xl font-bold"
+                style={{ fontFamily: DISPLAY_FONT }}
+              >
+                Trending on Campus
+              </h2>
+            </div>
+            <Link
+              to="/food"
+              className="hidden md:flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              View all stalls <ChevronRight className="w-4 h-4" />
+            </Link>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {STALLS.map((stall) => (
+              <div
+                key={stall.id}
+                className="group rounded-2xl bg-card border border-border overflow-hidden hover:border-primary/40 transition-all duration-300 flex flex-col"
+              >
+                <div className="relative h-48 overflow-hidden bg-muted">
+                  <img
+                    src={stall.image}
+                    alt={stall.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                  <span className="absolute top-3 right-3 text-xs px-2.5 py-1 rounded-full bg-background/80 backdrop-blur-md text-foreground font-semibold">
+                    {stall.price}
+                  </span>
+                </div>
+                <div className="p-5 flex-1 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                      <MapPin className="w-3.5 h-3.5 text-primary" />
+                      <span>{stall.canteen}</span>
+                    </div>
+                    <h3 className="font-bold text-foreground text-lg mb-2">
+                      {stall.name}
+                    </h3>
+                    <div className="flex items-center gap-2 mb-3">
+                      <StarRow rating={stall.rating} />
+                      <span className="text-xs font-semibold text-foreground">
+                        {stall.rating}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        ({stall.reviews})
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground italic border-t border-border pt-3 mt-2 line-clamp-2">
+                    "{stall.topReview}"
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* ── REVIEWS SECTION ───────────────────────────── */}
       <section className="py-24 bg-card border-t border-border">
@@ -533,6 +573,35 @@ function HomePage() {
           </button>
         )}
       </div>
+
+      {/* ── FOOTER ───────────────────────────────────── */}
+      <footer className="border-t border-border py-10">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
+              <Utensils className="w-3 h-3 text-primary-foreground" />
+            </div>
+            <span
+              className="text-sm font-bold"
+              style={{ fontFamily: DISPLAY_FONT }}
+            >
+              NTU Foodie Guide
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">Made by NTU students, for NTU students.</p>
+          <div className="flex gap-6 text-xs text-muted-foreground">
+            {["About", "Contribute", "Privacy"].map((l) => (
+              <a
+                key={l}
+                href="#"
+                className="hover:text-foreground transition-colors"
+              >
+                {l}
+              </a>
+            ))}
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
@@ -543,7 +612,6 @@ function App() {
       <Route path="/" element={<HomePage />} />
       <Route path="/food" element={<FoodPage />} />
       <Route path="/food/vendors/:vendorId" element={<VendorsPage />} />
-      <Route path="/map" element={<VendorMap />} />
     </Routes>
   );
 }

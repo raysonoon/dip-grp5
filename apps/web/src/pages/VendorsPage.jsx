@@ -92,7 +92,7 @@ function StarPicker({ value, onChange, disabled }) {
   );
 }
 
-function FilePreviewGrid({ files, onRemove }) {
+function FilePreviewGrid({ files, onRemove, onReorder }) {
   const [previewUrls, setPreviewUrls] = useState([]);
 
   useEffect(() => {
@@ -106,20 +106,42 @@ function FilePreviewGrid({ files, onRemove }) {
   return (
     <div className="flex gap-3 flex-wrap mt-3">
       {files.map((file, index) => (
-        <div key={`${file.name}-${index}`} className="relative">
-          <img
-            src={previewUrls[index]}
-            alt={file.name}
-            className="w-20 h-20 object-cover rounded-lg border border-border"
-          />
-          <button
-            type="button"
-            onClick={() => onRemove(index)}
-            aria-label={`Remove ${file.name}`}
-            className="absolute -top-2 -right-2 w-[22px] h-[22px] rounded-full bg-destructive text-white border-2 border-background cursor-pointer text-xs flex items-center justify-center p-0"
-          >
-            ✕
-          </button>
+        <div key={`${file.name}-${index}`}>
+          <div className="relative">
+            <img
+              src={previewUrls[index]}
+              alt={file.name}
+              className="w-20 h-20 object-cover rounded-lg border border-border"
+            />
+            <button
+              type="button"
+              onClick={() => onRemove(index)}
+              aria-label={`Remove ${file.name}`}
+              className="absolute -top-2 -right-2 w-[22px] h-[22px] rounded-full bg-destructive text-white border-2 border-background cursor-pointer text-xs flex items-center justify-center p-0"
+            >
+              ✕
+            </button>
+          </div>
+          {onReorder && (
+            <div className="flex justify-center gap-1.5 mt-1">
+              <button
+                type="button"
+                disabled={index === 0}
+                className={`text-xs ${index === 0 ? "cursor-default opacity-40" : "cursor-pointer"}`}
+                onClick={() => onReorder(index, index - 1)}
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                disabled={index === files.length - 1}
+                className={`text-xs ${index === files.length - 1 ? "cursor-default opacity-40" : "cursor-pointer"}`}
+                onClick={() => onReorder(index, index + 1)}
+              >
+                →
+              </button>
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -160,6 +182,7 @@ export default function VendorsPage() {
   const [actionError, setActionError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [busyReviewId, setBusyReviewId] = useState(null);
+  const [reorderingReviewId, setReorderingReviewId] = useState(null);
   const [deletingReviewId, setDeletingReviewId] = useState(null);
   const [editingReviewId, setEditingReviewId] = useState(null);
   const [editRating, setEditRating] = useState(5);
@@ -173,6 +196,7 @@ export default function VendorsPage() {
   const refreshReviews = useCallback(async () => {
     const page = await fetchVendorReviews(numericVendorId);
     setReviews(page.items);
+    return page.items;
   }, [numericVendorId]);
 
   useEffect(() => {
@@ -221,8 +245,24 @@ export default function VendorsPage() {
 
   const addNewFiles = (files) => setNewFiles((prev) => [...prev, ...files]);
   const removeNewFile = (index) => setNewFiles((prev) => prev.filter((_, i) => i !== index));
+  const reorderNewFiles = (fromIndex, toIndex) => {
+    setNewFiles((prev) => {
+      const updated = [...prev];
+      const [moved] = updated.splice(fromIndex, 1);
+      updated.splice(toIndex, 0, moved);
+      return updated;
+    });
+  };
   const addEditFiles = (files) => setEditNewFiles((prev) => [...prev, ...files]);
   const removeEditFile = (index) => setEditNewFiles((prev) => prev.filter((_, i) => i !== index));
+  const reorderEditFiles = (fromIndex, toIndex) => {
+    setEditNewFiles((prev) => {
+      const updated = [...prev];
+      const [moved] = updated.splice(fromIndex, 1);
+      updated.splice(toIndex, 0, moved);
+      return updated;
+    });
+  };
 
   const handleAddReview = async (event) => {
     event.preventDefault();
@@ -239,17 +279,33 @@ export default function VendorsPage() {
         rating: Number(rating),
         comment: comment.trim() || null,
       });
+
+      let hadImages = false;
       for (const file of newFiles) {
+        hadImages = true;
         try {
           await uploadReviewImage(created.id, file);
         } catch (uploadError) {
           setActionError(`Review submitted, but an image failed to upload: ${displayError(uploadError)}`);
         }
       }
+
       setComment("");
       setRating(5);
       setNewFiles([]);
-      await refreshReviews();
+      const refreshedItems = await refreshReviews();
+
+      // If images were uploaded, open the new review in edit mode right away
+      // so the user can reorder them without a separate trip through "Edit".
+      if (hadImages) {
+        const createdReview = refreshedItems.find((item) => item.id === created.id);
+        if (createdReview) {
+          setEditingReviewId(createdReview.id);
+          setEditRating(createdReview.rating);
+          setEditComment(createdReview.comment ?? "");
+          setEditNewFiles([]);
+        }
+      }
     } catch (error) {
       setActionError(displayError(error));
     } finally {
@@ -303,27 +359,34 @@ export default function VendorsPage() {
     }
   };
 
+  // Guarded against concurrent clicks on the same review: without this, clicking
+  // the reorder arrows quickly (or with 3+ images) could fire a second reorder
+  // before the first one's refreshReviews() had updated `review.images`, causing
+  // display_order conflicts on the backend.
   const handleReorderReviewImage = async (review, imageId, direction) => {
+    if (reorderingReviewId === review.id) return;
+    setReorderingReviewId(review.id);
     setActionError("");
-    const sorted = [...review.images].sort((a, b) => a.display_order - b.display_order);
-    const index = sorted.findIndex((image) => image.id === imageId);
-    const swapIndex = direction === "up" ? index - 1 : index + 1;
-    if (swapIndex < 0 || swapIndex >= sorted.length) return;
-
-    const current = sorted[index];
-    const swapWith = sorted[swapIndex];
-
-    const usedOrders = new Set(sorted.map((image) => image.display_order));
-    const freeOrder = [1, 2, 3, 4, 5].find((order) => !usedOrders.has(order));
-
-    if (freeOrder === undefined) {
-      setActionError(
-        "Can't reorder — this review has 5 images with no free slot available for reordering."
-      );
-      return;
-    }
 
     try {
+      const sorted = [...review.images].sort((a, b) => a.display_order - b.display_order);
+      const index = sorted.findIndex((image) => image.id === imageId);
+      const swapIndex = direction === "up" ? index - 1 : index + 1;
+      if (swapIndex < 0 || swapIndex >= sorted.length) return;
+
+      const current = sorted[index];
+      const swapWith = sorted[swapIndex];
+
+      const usedOrders = new Set(sorted.map((image) => image.display_order));
+      const freeOrder = [1, 2, 3, 4, 5].find((order) => !usedOrders.has(order));
+
+      if (freeOrder === undefined) {
+        setActionError(
+          "Can't reorder — this review has 5 images with no free slot available for reordering."
+        );
+        return;
+      }
+
       await reorderReviewImage(review.id, current.id, freeOrder);
       await reorderReviewImage(review.id, swapWith.id, current.display_order);
       await reorderReviewImage(review.id, current.id, swapWith.display_order);
@@ -331,6 +394,8 @@ export default function VendorsPage() {
     } catch (error) {
       setActionError(displayError(error));
       await refreshReviews();
+    } finally {
+      setReorderingReviewId(null);
     }
   };
 
@@ -421,7 +486,7 @@ export default function VendorsPage() {
           />
           <div>
             <UploadDropzone onFilesSelected={addNewFiles} label="Add photos to your review" />
-            <FilePreviewGrid files={newFiles} onRemove={removeNewFile} />
+            <FilePreviewGrid files={newFiles} onRemove={removeNewFile} onReorder={reorderNewFiles} />
           </div>
           <button
             type="submit"
@@ -460,6 +525,7 @@ export default function VendorsPage() {
           const isOwnReview = review.user.id === DEV_USER_ID;
           const isEditing = editingReviewId === review.id;
           const isBusy = busyReviewId === review.id;
+          const isReordering = reorderingReviewId === review.id;
           const sortedImages = [...review.images].sort((a, b) => a.display_order - b.display_order);
 
           return (
@@ -494,7 +560,9 @@ export default function VendorsPage() {
 
                   {sortedImages.length > 0 && (
                     <div>
-                      <label className="block mb-1.5 text-sm text-muted-foreground">Existing photos</label>
+                      <label className="block mb-1.5 text-sm text-muted-foreground">
+                        Photos — use the arrows to reorder
+                      </label>
                       <div className="flex gap-3 flex-wrap">
                         {sortedImages.map((image, index) => (
                           <div key={image.id}>
@@ -507,25 +575,31 @@ export default function VendorsPage() {
                             <div className="flex justify-center gap-1.5 mt-1">
                               <button
                                 type="button"
-                                disabled={index === 0 || isBusy}
-                                className={`text-xs ${index === 0 || isBusy ? "cursor-default opacity-40" : "cursor-pointer"}`}
+                                disabled={index === 0 || isBusy || isReordering}
+                                className={`text-xs ${
+                                  index === 0 || isBusy || isReordering ? "cursor-default opacity-40" : "cursor-pointer"
+                                }`}
                                 onClick={() => handleReorderReviewImage(review, image.id, "up")}
                               >
                                 ←
                               </button>
                               <button
                                 type="button"
-                                disabled={isBusy}
-                                className={`text-xs text-destructive ${isBusy ? "cursor-default opacity-40" : "cursor-pointer"}`}
+                                disabled={isBusy || isReordering}
+                                className={`text-xs text-destructive ${
+                                  isBusy || isReordering ? "cursor-default opacity-40" : "cursor-pointer"
+                                }`}
                                 onClick={() => handleDeleteReviewImage(review.id, image.id)}
                               >
                                 ✕
                               </button>
                               <button
                                 type="button"
-                                disabled={index === sortedImages.length - 1 || isBusy}
+                                disabled={index === sortedImages.length - 1 || isBusy || isReordering}
                                 className={`text-xs ${
-                                  index === sortedImages.length - 1 || isBusy ? "cursor-default opacity-40" : "cursor-pointer"
+                                  index === sortedImages.length - 1 || isBusy || isReordering
+                                    ? "cursor-default opacity-40"
+                                    : "cursor-pointer"
                                 }`}
                                 onClick={() => handleReorderReviewImage(review, image.id, "down")}
                               >
@@ -540,7 +614,7 @@ export default function VendorsPage() {
 
                   <div>
                     <UploadDropzone onFilesSelected={addEditFiles} label="Add more photos" />
-                    <FilePreviewGrid files={editNewFiles} onRemove={removeEditFile} />
+                    <FilePreviewGrid files={editNewFiles} onRemove={removeEditFile} onReorder={reorderEditFiles} />
                   </div>
 
                   <div className="flex gap-2">
