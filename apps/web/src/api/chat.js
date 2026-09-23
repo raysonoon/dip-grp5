@@ -22,11 +22,18 @@ function nullableString(value, label) {
   return value;
 }
 
+function nullableNumber(value, label) {
+  if (value !== null && typeof value !== "number") {
+    throw new ChatResponseError(`Invalid ${label} in chat API response`);
+  }
+  return value;
+}
+
 function parseSource(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new ChatResponseError("Invalid source in chat API response");
   }
-  if (typeof value.source_type !== "string" || typeof value.excerpt !== "string") {
+  if (typeof value.source_type !== "string") {
     throw new ChatResponseError("Invalid source in chat API response");
   }
   if (value.vendor_id !== null && !Number.isInteger(value.vendor_id)) {
@@ -37,7 +44,15 @@ function parseSource(value) {
     source_id: nullableString(value.source_id, "source_id"),
     vendor_id: value.vendor_id,
     vendor_name: nullableString(value.vendor_name, "vendor_name"),
-    excerpt: value.excerpt,
+    excerpt: nullableString(value.excerpt, "excerpt"),
+    permalink: nullableString(value.permalink, "permalink"),
+    location: nullableString(value.location, "location"),
+    unit_code: nullableString(value.unit_code, "unit_code"),
+    category: nullableString(value.category, "category"),
+    price_range: nullableString(value.price_range, "price_range"),
+    opening_hours: nullableString(value.opening_hours, "opening_hours"),
+    rating: nullableNumber(value.rating, "rating"),
+    count: nullableNumber(value.count, "count"),
   };
 }
 

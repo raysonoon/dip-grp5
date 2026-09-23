@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Bot, Send, X } from "lucide-react";
+
 import { DEV_USER_ID } from "../api/client";
 import {
   createReview,
@@ -12,6 +14,8 @@ import {
   uploadReviewImage,
 } from "../api/reviews";
 import { fetchVendorById } from "../api/vendors";
+import { askChat, chatErrorMessage } from "../api/chat";
+import ChatMessageContent from "../components/ChatMessageContent";
 
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -24,7 +28,148 @@ function displayError(error) {
 
 function displayDate(value) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
+
+function validateFiles(files, existingCount) {
+  if (existingCount + files.length > MAX_IMAGES) {
+    return `You can attach at most ${MAX_IMAGES} images per review.`;
+  }
+  for (const file of files) {
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      return "Only JPEG or PNG images are allowed.";
+    }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return `${file.name} is too large. Max file size is 5 MB.`;
+    }
+  }
+  return null;
+}
+
+function StarPicker({ value, onChange, disabled }) {
+  const [hoverValue, setHoverValue] = useState(null);
+  const displayValue = hoverValue ?? value;
+
+  const handlePick = (event, starIndex) => {
+    if (disabled) return;
+    const { left, width } = event.currentTarget.getBoundingClientRect();
+    const isHalf = event.clientX - left < width / 2;
+    onChange(isHalf ? starIndex - 0.5 : starIndex);
+  };
+
+  const handleHover = (event, starIndex) => {
+    if (disabled) return;
+    const { left, width } = event.currentTarget.getBoundingClientRect();
+    const isHalf = event.clientX - left < width / 2;
+    setHoverValue(isHalf ? starIndex - 0.5 : starIndex);
+  };
+
+  return (
+    <div
+      className="inline-flex items-center gap-1"
+      onMouseLeave={() => setHoverValue(null)}
+      role="radiogroup"
+      aria-label="Rating"
+    >
+      {[1, 2, 3, 4, 5].map((starIndex) => {
+        const fillPercent = Math.max(0, Math.min(1, displayValue - (starIndex - 1))) * 100;
+        return (
+          <div
+            key={starIndex}
+            className={`relative w-7 h-7 ${disabled ? "" : "cursor-pointer"}`}
+            onMouseMove={(event) => handleHover(event, starIndex)}
+            onClick={(event) => handlePick(event, starIndex)}
+          >
+            <svg viewBox="0 0 24 24" className="w-7 h-7 absolute inset-0 text-border" fill="currentColor">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z" />
+            </svg>
+            <div className="absolute inset-0 overflow-hidden" style={{ width: `${fillPercent}%` }}>
+              <svg viewBox="0 0 24 24" className="w-7 h-7 text-primary" fill="currentColor">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z" />
+              </svg>
+            </div>
+          </div>
+        );
+      })}
+      {!disabled && <span className="ml-2 text-sm text-muted-foreground">{displayValue.toFixed(1)}</span>}
+    </div>
+  );
+}
+
+function FilePreviewGrid({ files, onRemove, onReorder }) {
+  const [previewUrls, setPreviewUrls] = useState([]);
+
+  useEffect(() => {
+    const urls = files.map((file) => URL.createObjectURL(file));
+    setPreviewUrls(urls);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [files]);
+
+  if (files.length === 0) return null;
+
+  return (
+    <div className="flex gap-3 flex-wrap mt-3">
+      {files.map((file, index) => (
+        <div key={`${file.name}-${index}`}>
+          <div className="relative">
+            <img
+              src={previewUrls[index]}
+              alt={file.name}
+              className="w-20 h-20 object-cover rounded-lg border border-border"
+            />
+            <button
+              type="button"
+              onClick={() => onRemove(index)}
+              aria-label={`Remove ${file.name}`}
+              className="absolute -top-2 -right-2 w-[22px] h-[22px] rounded-full bg-destructive text-white border-2 border-background cursor-pointer text-xs flex items-center justify-center p-0"
+            >
+              ✕
+            </button>
+          </div>
+          {onReorder && (
+            <div className="flex justify-center gap-1.5 mt-1">
+              <button
+                type="button"
+                disabled={index === 0}
+                className={`text-xs ${index === 0 ? "cursor-default opacity-40" : "cursor-pointer"}`}
+                onClick={() => onReorder(index, index - 1)}
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                disabled={index === files.length - 1}
+                className={`text-xs ${index === files.length - 1 ? "cursor-default opacity-40" : "cursor-pointer"}`}
+                onClick={() => onReorder(index, index + 1)}
+              >
+                →
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function UploadDropzone({ onFilesSelected, label }) {
+  return (
+    <label className="flex flex-col items-center justify-center gap-1.5 p-5 rounded-lg border-2 border-dashed border-border cursor-pointer text-center text-muted-foreground bg-muted hover:border-primary/40 transition-colors">
+      <span className="text-2xl">📷</span>
+      <span className="text-sm font-semibold text-foreground">{label}</span>
+      <span className="text-xs text-muted-foreground">Click to browse — JPEG or PNG, max 5MB each</span>
+      <input
+        type="file"
+        accept="image/jpeg,image/png"
+        multiple
+        onChange={(event) => {
+          onFilesSelected(Array.from(event.target.files));
+          event.target.value = "";
+        }}
+        className="hidden"
+      />
+    </label>
+  );
 }
 
 function validateFiles(files, existingCount) {
@@ -172,6 +317,7 @@ export default function VendorsPage() {
   const { vendorId } = useParams();
   const numericVendorId = Number(vendorId);
   const isValidVendorId = Number.isInteger(numericVendorId) && numericVendorId > 0;
+
   const [vendor, setVendor] = useState(null);
   const [vendorError, setVendorError] = useState("");
   const [isVendorLoading, setIsVendorLoading] = useState(isValidVendorId);
@@ -190,6 +336,75 @@ export default function VendorsPage() {
   const [editNewFiles, setEditNewFiles] = useState([]);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+  const reviewRequestRef = useRef(null);
+  const reviewRequestIdRef = useRef(0);
+
+  // Chatbot state
+  const [chatMessages, setChatMessages] = useState([
+    {
+      role: "bot",
+      text: "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!",
+    },
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const chatRequestPending = useRef(false);
+
+  async function sendMessage(text) {
+    const question = text.trim();
+    if (!question || chatRequestPending.current) return;
+
+    chatRequestPending.current = true;
+    setChatMessages((prev) => [...prev, { role: "user", text: question }]);
+    setChatInput("");
+    setIsTyping(true);
+
+    try {
+      const response = await askChat(question);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "bot", text: response.answer, sources: response.sources },
+      ]);
+    } catch (error) {
+      console.error("Chat request failed", error);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "bot", text: chatErrorMessage(error) },
+      ]);
+    } finally {
+      chatRequestPending.current = false;
+      setIsTyping(false);
+    }
+  }
+
+  const refreshReviews = useCallback(async ({ reset = false } = {}) => {
+    if (!isValidVendorId) return;
+
+    const requestId = reviewRequestIdRef.current + 1;
+    reviewRequestIdRef.current = requestId;
+    reviewRequestRef.current?.abort();
+    const controller = new AbortController();
+    reviewRequestRef.current = controller;
+
+    setIsLoading(true);
+    setLoadError("");
+    if (reset) setReviews([]);
+
+    try {
+      const page = await fetchVendorReviews(numericVendorId, controller.signal);
+      if (requestId === reviewRequestIdRef.current) setReviews(page.items);
+    } catch (error) {
+      if (requestId === reviewRequestIdRef.current && error.name !== "AbortError") {
+        setLoadError(displayError(error));
+      }
+    } finally {
+      if (requestId === reviewRequestIdRef.current) {
+        setIsLoading(false);
+        if (reviewRequestRef.current === controller) reviewRequestRef.current = null;
+      }
+    }
+  }, [isValidVendorId, numericVendorId]);
   const [newFiles, setNewFiles] = useState([]);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
 
@@ -422,40 +637,30 @@ export default function VendorsPage() {
     }
   };
 
-  if (isVendorLoading) {
-    return <p className="p-10 text-center text-muted-foreground">Loading vendor...</p>;
-  }
-
-  if (!vendor) {
-    return (
-      <div className="p-10 text-center">
-        <h2 className="text-xl font-bold text-foreground">Vendor not found</h2>
-        {vendorError && <p role="alert" className="text-destructive mt-2">{vendorError}</p>}
-        {isValidVendorId && (
-          <button
-            type="button"
-            className="cursor-pointer mt-3 px-4 py-2 rounded-lg border border-border text-sm font-semibold"
-            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
-          >
-            Try again
-          </button>
-        )}
-        <div className="mt-3">
-          <Link to="/food" className="text-primary hover:underline">Back to All Vendors</Link>
-        </div>
-      </div>
-    );
-  }
-
-  const location = vendor.location;
-  const category = vendor.category;
-  const displayedRating = vendor.average_rating ?? vendor.average_google_rating;
+  const location = vendor?.location;
+  const category = vendor?.category;
+  const displayedRating = vendor?.average_rating ?? vendor?.average_google_rating;
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-10">
-      <Link to="/food" className="text-primary hover:underline text-sm font-medium">
-        ← Back to All Vendors
-      </Link>
+    <>
+      {isVendorLoading ? (
+        <p style={{ padding: "40px", textAlign: "center" }}>Loading vendor...</p>
+      ) : !vendor ? (
+        <div style={{ padding: "40px", textAlign: "center", fontFamily: "var(--sans)" }}>
+          <h2>Vendor not found</h2>
+          {vendorError && <p role="alert">{vendorError}</p>}
+          {isValidVendorId && (
+            <button type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
+              Try again
+            </button>
+          )}
+          <div style={{ marginTop: "12px" }}>
+            <Link to="/food">Back to All Vendors</Link>
+          </div>
+        </div>
+      ) : (
+        <div style={{ maxWidth: "800px", margin: "0 auto", padding: "20px", fontFamily: "var(--sans)" }}>
+          <Link to="/food" style={{ textDecoration: "none", color: "var(--accent)" }}>← Back to All Vendors</Link>
 
       <div className="mt-4 mb-6">
         <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: DISPLAY_FONT }}>

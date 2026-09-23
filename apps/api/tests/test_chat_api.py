@@ -1,7 +1,10 @@
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
 
 from app.api import dependencies
 from app.main import app
+from app.models import RedditComment
 from app.schemas.chat import ChatResponse, ChatSource
 from app.services.chat import ChatService
 from app.services.embedding import Embedder
@@ -114,3 +117,78 @@ def test_chat_service_orchestrates_retrieval() -> None:
     assert "what is the best food?" in captured["prompt"]
     assert "great chicken rice" in captured["prompt"]
     assert "Demo Vendor 1" in captured["prompt"]
+
+
+def test_chat_service_resolves_reddit_permalinks_from_comments(session) -> None:
+    session.add_all(
+        [
+            RedditComment(
+                reddit_comment_id="reddit-linked",
+                subreddit="NTU",
+                thread_id="thread-1",
+                thread_title="Food recommendations",
+                comment_text="Try the noodles.",
+                created_at=datetime.now(UTC),
+                permalink="/r/NTU/comments/thread-1/comment/reddit-linked/",
+            ),
+            RedditComment(
+                reddit_comment_id="reddit-unlinked",
+                subreddit="NTU",
+                thread_id="thread-2",
+                thread_title="More food recommendations",
+                comment_text="Try the rice.",
+                created_at=datetime.now(UTC),
+                permalink=None,
+            ),
+        ]
+    )
+    session.commit()
+    store = FakeKnowledgeStore(
+        items=[
+            (
+                _vector(0.1),
+                KnowledgeResult(
+                    source_type="reddit",
+                    source_id="reddit-linked",
+                    vendor_id=None,
+                    content="Try the noodles.",
+                    metadata={},
+                ),
+            ),
+            (
+                _vector(0.2),
+                KnowledgeResult(
+                    source_type="reddit",
+                    source_id="reddit-unlinked",
+                    vendor_id=None,
+                    content="Try the rice.",
+                    metadata={},
+                ),
+            ),
+            (
+                _vector(0.3),
+                KnowledgeResult(
+                    source_type="google_review",
+                    source_id="google-1",
+                    vendor_id=None,
+                    content="Good portions.",
+                    metadata={},
+                ),
+            ),
+        ]
+    )
+    service = ChatService(
+        FakeEmbedder(),
+        store,
+        generate=lambda _prompt: "Answer [1] [2] [3]",
+        session=session,
+    )
+
+    response = service.answer("What should I eat?")
+    sources = {source.source_id: source for source in response.sources}
+
+    assert sources["reddit-linked"].permalink == (
+        "/r/NTU/comments/thread-1/comment/reddit-linked/"
+    )
+    assert sources["reddit-unlinked"].permalink is None
+    assert sources["google-1"].permalink is None

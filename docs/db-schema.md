@@ -12,6 +12,7 @@ more tables.
 | `reviews` | `review.py` | Community reviews written by users |
 | `review_images` | `review.py` | Ordered images attached to a review |
 | `google_reviews` | `google_review.py` | Imported Google reviews for a vendor |
+| `reddit_comments` | `reddit_comment.py` | Comments scraped from Reddit mentioning vendors |
 | `chatbot_prompts` | `chatbot_prompt.py` | Curated chatbot questions / prompt templates |
 | `knowledge_chunks` | `knowledge.py` | Text chunks with pgvector embeddings (RAG) |
 
@@ -138,6 +139,28 @@ Reviews imported from Google for a vendor.
 Constraints / indexes:
 
 - `rating_range`: `rating BETWEEN 1 AND 5`
+
+## `reddit_comments`
+
+Comments scraped from Reddit (r/NTU) that mention campus food vendors.
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | integer (identity PK) | no | |
+| `reddit_comment_id` | varchar(32) | no | Unique Reddit comment id |
+| `vendor_id` | integer (FK `vendors.id`) | yes | Set only when exactly one vendor is confidently identified; on delete `SET NULL` |
+| `author` | varchar(255) | yes | |
+| `subreddit` | varchar(100) | no | Source subreddit |
+| `thread_id` | varchar(32) | no | Id of the source Reddit post |
+| `thread_title` | text | no | Title of the source Reddit post |
+| `comment_text` | text | no | |
+| `created_at` | timestamptz | no | Reddit comment timestamp |
+| `mentioned_vendors` | json | yes | Names of all vendors mentioned in the comment |
+| `permalink` | text | yes | Link to the comment |
+
+Constraints / indexes:
+
+- `uq_reddit_comments_reddit_comment_id`: unique on `reddit_comment_id`
 
 ## `chatbot_prompts`
 

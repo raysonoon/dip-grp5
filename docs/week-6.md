@@ -1,0 +1,3 @@
+- [ ] Manual tests
+- [ ] Gemini API keys
+- [ ] Discuss Wk 8 availability

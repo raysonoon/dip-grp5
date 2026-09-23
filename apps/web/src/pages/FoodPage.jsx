@@ -1,59 +1,200 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { ArrowLeft, Bot, Send, X } from "lucide-react";
 
 import { apiUrl } from "../api/client";
-import { fetchVendors } from "../api/vendors";
+import {
+  fetchVendorFilters,
+  fetchVendorPage,
+} from "../api/vendors";
 
 const DISPLAY_FONT = "'Fraunces', serif";
+
+import { askChat, chatErrorMessage } from "../api/chat";
+import ChatMessageContent from "../components/ChatMessageContent";
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 function displayError(error) {
   return error instanceof Error ? error.message : "Something went wrong";
 }
 
+
+function getLocationGroup(location) {
+  const value = location.toLowerCase();
+
+  if (value.includes("north spine")) return "North Spine";
+  if (value.includes("south spine")) return "South Spine";
+  if (value.includes("north hill")) return "North Hill";
+  if (value.includes("tanjong hall")) return "Tanjong Hall";
+  if (value.includes("binjai hall")) return "Binjai Hall";
+  if (value.includes("the hive")) return "The Hive";
+  if (value.includes("the arc")) return "The Arc";
+  if (value.includes("nie")) return "NIE";
+  if (value.includes("gaia")) return "Gaia";
+  if (value.includes("pioneer hall")) return "Pioneer Hall";
+  if (value.includes("saraca hall")) return "Saraca Hall";
+  if (value.includes("hall 11")) return "Hall 11";
+  if (value.includes("hall 13")) return "Hall 13";
+  if (value.includes("hall 14")) return "Hall 14";
+  if (value.includes("hall 16")) return "Hall 16";
+  if (value.includes("hall 1")) return "Hall 1";
+  if (value.includes("hall 2")) return "Hall 2";
+  if (value.includes("hall 4")) return "Hall 4";
+  if (value.includes("hall 9")) return "Hall 9";
+
+  return location;
+}
+
+
 export default function FoodPage() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCanteen, setSelectedCanteen] = useState("All");
+  const PAGE_LIMIT = 12;
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQuery = searchParams.get("q") ?? "";
+  const [searchTerm, setSearchTerm] = useState(urlQuery);
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(
+    urlQuery.trim(),
+  );
+  const [selectedLocation, setSelectedLocation] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+
+  const [locations, setLocations] = useState([]);
+  const [categories, setCategories] = useState([]);
+
   const [vendors, setVendors] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
 
+  // --- CHATBOT STATE ---
+  const [chatMessages, setChatMessages] = useState([
+    {
+      role: "bot",
+      text: "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!",
+    },
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const chatRequestPending = useRef(false);
+
+  async function sendMessage(text) {
+    const question = text.trim();
+    if (!question || chatRequestPending.current) return;
+
+    chatRequestPending.current = true;
+    setChatMessages((prev) => [
+      ...prev,
+      { role: "user", text: question },
+    ]);
+    setChatInput("");
+    setIsTyping(true);
+
+    try {
+      const response = await askChat(question);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "bot", text: response.answer, sources: response.sources },
+      ]);
+    } catch (error) {
+      console.error("Chat request failed", error);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "bot", text: chatErrorMessage(error) },
+      ]);
+    } finally {
+      chatRequestPending.current = false;
+      setIsTyping(false);
+    }
+  }
+
+  // Keep the input and URL query in sync
+  useEffect(() => {
+    setSearchTerm(urlQuery);
+    setDebouncedSearchTerm(urlQuery.trim());
+  }, [urlQuery]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const query = searchTerm.trim();
+      setDebouncedSearchTerm(query);
+      setSearchParams(
+        (currentParams) => {
+          const nextParams = new URLSearchParams(currentParams);
+          if (query) nextParams.set("q", query);
+          else nextParams.delete("q");
+          return nextParams;
+        },
+        { replace: true },
+      );
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchTerm, setSearchParams]);
+
+  // Load filter dropdown values once
   useEffect(() => {
     const controller = new AbortController();
-    setIsLoading(true);
-    setLoadError("");
 
-    fetchVendors(controller.signal)
-      .then(setVendors)
-      .catch((error) => {
-        if (error.name !== "AbortError") setLoadError(displayError(error));
+    fetchVendorFilters(controller.signal)
+      .then((filters) => {
+        const groupedLocations = [
+          ...new Set(filters.locations.map(getLocationGroup)),
+        ].sort();
+        setLocations(groupedLocations);
+        setCategories(filters.categories);
       })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false);
+      .catch((error) => {
+        if (error.name !== "AbortError") {
+          console.error("Could not load vendor filters", error);
+        }
       });
 
     return () => controller.abort();
-  }, [loadAttempt]);
+  }, []);
 
-  const canteens = [
-    "All",
-    ...new Set(vendors.map((vendor) => vendor.location).filter(Boolean)),
-  ];
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-  const filteredVendors = vendors.filter((vendor) => {
-    const searchableValues = [
-      vendor.name,
-      vendor.category,
-      vendor.location,
-      vendor.unit_code,
-    ];
-    const matchesSearch = searchableValues.some((value) =>
-      value?.toLowerCase().includes(normalizedSearch),
-    );
-    const matchesCanteen =
-      selectedCanteen === "All" || vendor.location === selectedCanteen;
-    return matchesSearch && matchesCanteen;
-  });
+  // Load one filtered/paginated vendor page
+  useEffect(() => {
+    const controller = new AbortController();
+
+    setIsLoading(true);
+    setLoadError("");
+
+    fetchVendorPage({
+      q: debouncedSearchTerm,
+      location: selectedLocation,
+      category: selectedCategory,
+      limit: PAGE_LIMIT,
+      offset,
+      signal: controller.signal,
+    })
+      .then((page) => {
+        setVendors(page.items);
+        setTotal(page.total);
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") {
+          setLoadError(displayError(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [
+    debouncedSearchTerm,
+    selectedLocation,
+    selectedCategory,
+    offset,
+    loadAttempt,
+  ]);
 
   return (
     <div className="max-w-[1000px] w-full mx-auto px-5 py-10 box-border">

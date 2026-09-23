@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/api/chat.test.js src/api/reviews.test.js src/api/vendors.test.js",
+    "test": "node --test src/api/chat.test.js src/api/reviews.test.js src/api/vendors.test.js src/components/citationMarkers.test.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
@@ -16,8 +16,10 @@
     "lucide-react": "^0.487.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
     "react-leaflet": "^4.2.1",
     "react-router-dom": "^7.18.3",
+    "remark-breaks": "^4.0.0",
     "tw-animate-css": "^1.3.8"
   },
   "devDependencies": {
