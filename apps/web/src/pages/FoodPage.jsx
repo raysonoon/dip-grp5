@@ -3,9 +3,11 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Bot, Send, X } from "lucide-react";
 
 import { apiUrl } from "../api/client";
-import { fetchVendors } from "../api/vendors";
+import {
+  fetchVendorFilters,
+  fetchVendorPage,
+} from "../api/vendors";
 
-// TODO: Update these imports to point to your actual chat API functions
 import { askChat, chatErrorMessage } from "../api/chat";
 import ChatMessageContent from "../components/ChatMessageContent";
 
@@ -15,15 +17,53 @@ function displayError(error) {
   return error instanceof Error ? error.message : "Something went wrong";
 }
 
+
+function getLocationGroup(location) {
+  const value = location.toLowerCase();
+
+  if (value.includes("north spine")) return "North Spine";
+  if (value.includes("south spine")) return "South Spine";
+  if (value.includes("north hill")) return "North Hill";
+  if (value.includes("tanjong hall")) return "Tanjong Hall";
+  if (value.includes("binjai hall")) return "Binjai Hall";
+  if (value.includes("the hive")) return "The Hive";
+  if (value.includes("the arc")) return "The Arc";
+  if (value.includes("nie")) return "NIE";
+  if (value.includes("gaia")) return "Gaia";
+  if (value.includes("pioneer hall")) return "Pioneer Hall";
+  if (value.includes("saraca hall")) return "Saraca Hall";
+  if (value.includes("hall 11")) return "Hall 11";
+  if (value.includes("hall 13")) return "Hall 13";
+  if (value.includes("hall 14")) return "Hall 14";
+  if (value.includes("hall 16")) return "Hall 16";
+  if (value.includes("hall 1")) return "Hall 1";
+  if (value.includes("hall 2")) return "Hall 2";
+  if (value.includes("hall 4")) return "Hall 4";
+  if (value.includes("hall 9")) return "Hall 9";
+
+  return location;
+}
+
+
 export default function FoodPage() {
+  const PAGE_LIMIT = 12;
+
   const [searchParams, setSearchParams] = useSearchParams();
   const urlQuery = searchParams.get("q") ?? "";
   const [searchTerm, setSearchTerm] = useState(urlQuery);
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(
     urlQuery.trim(),
   );
-  const [selectedCanteen, setSelectedCanteen] = useState("All");
+  const [selectedLocation, setSelectedLocation] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+
+  const [locations, setLocations] = useState([]);
+  const [categories, setCategories] = useState([]);
+
   const [vendors, setVendors] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -45,7 +85,10 @@ export default function FoodPage() {
     if (!question || chatRequestPending.current) return;
 
     chatRequestPending.current = true;
-    setChatMessages((prev) => [...prev, { role: "user", text: question }]);
+    setChatMessages((prev) => [
+      ...prev,
+      { role: "user", text: question },
+    ]);
     setChatInput("");
     setIsTyping(true);
 
@@ -66,8 +109,8 @@ export default function FoodPage() {
       setIsTyping(false);
     }
   }
-  // ---------------------
 
+  // Keep the input and URL query in sync
   useEffect(() => {
     setSearchTerm(urlQuery);
     setDebouncedSearchTerm(urlQuery.trim());
@@ -91,138 +134,443 @@ export default function FoodPage() {
     return () => window.clearTimeout(timeoutId);
   }, [searchTerm, setSearchParams]);
 
+  // Load filter dropdown values once
   useEffect(() => {
     const controller = new AbortController();
-    setIsLoading(true);
-    setLoadError("");
 
-    fetchVendors(debouncedSearchTerm, controller.signal)
-      .then(setVendors)
-      .catch((error) => {
-        if (error.name !== "AbortError") setLoadError(displayError(error));
+    fetchVendorFilters(controller.signal)
+      .then((filters) => {
+        const groupedLocations = [
+          ...new Set(filters.locations.map(getLocationGroup)),
+        ].sort();
+        setLocations(groupedLocations);
+        setCategories(filters.categories);
       })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false);
+      .catch((error) => {
+        if (error.name !== "AbortError") {
+          console.error("Could not load vendor filters", error);
+        }
       });
 
     return () => controller.abort();
-  }, [debouncedSearchTerm, loadAttempt]);
+  }, []);
 
-  const canteens = [
-    "All",
-    ...new Set(vendors.map((vendor) => vendor.location).filter(Boolean)),
-  ];
-  const filteredVendors = vendors.filter((vendor) => {
-    const matchesCanteen =
-      selectedCanteen === "All" || vendor.location === selectedCanteen;
-    return matchesCanteen;
-  });
+  // Load one filtered/paginated vendor page
+  useEffect(() => {
+    const controller = new AbortController();
+
+    setIsLoading(true);
+    setLoadError("");
+
+    fetchVendorPage({
+      q: debouncedSearchTerm,
+      location: selectedLocation,
+      category: selectedCategory,
+      limit: PAGE_LIMIT,
+      offset,
+      signal: controller.signal,
+    })
+      .then((page) => {
+        setVendors(page.items);
+        setTotal(page.total);
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") {
+          setLoadError(displayError(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [
+    debouncedSearchTerm,
+    selectedLocation,
+    selectedCategory,
+    offset,
+    loadAttempt,
+  ]);
 
   return (
     <>
-      <div style={{ maxWidth: "1000px", width: "100%", margin: "0 auto", padding: "40px 20px", fontFamily: "var(--sans)", boxSizing: "border-box" }}>
-        <header style={{ marginBottom: "30px", textAlign: "center" }}>
-          <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "20px" }}>
+      <div
+        style={{
+          maxWidth: "1000px",
+          width: "100%",
+          margin: "0 auto",
+          padding: "40px 20px",
+          fontFamily: "var(--sans)",
+          boxSizing: "border-box",
+        }}
+      >
+        <header
+          style={{
+            marginBottom: "30px",
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-start",
+              marginBottom: "20px",
+            }}
+          >
             <Link
               to="/"
               aria-label="Back to homepage"
-              style={{ display: "inline-flex", alignItems: "center", gap: "8px", color: "#fff", background: "var(--accent)", padding: "10px 16px", borderRadius: "var(--radius-lg)", textDecoration: "none", fontSize: "0.9rem", fontWeight: 600 }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                color: "#fff",
+                background: "var(--accent)",
+                padding: "10px 16px",
+                borderRadius: "var(--radius-lg)",
+                textDecoration: "none",
+                fontSize: "0.9rem",
+                fontWeight: 600,
+              }}
             >
               <ArrowLeft size={17} aria-hidden="true" />
               Back to homepage
             </Link>
           </div>
-          <h1 style={{ color: "var(--text-h)", fontFamily: "var(--heading)", fontSize: "2.2rem" }}>NTU Foodie Hub</h1>
-          <p style={{ color: "var(--text)" }}>Explore and review food vendors across NTU canteens</p>
+          <h1
+            style={{
+              color: "var(--text-h)",
+              fontFamily: "var(--heading)",
+              fontSize: "2.2rem",
+            }}
+          >
+            NTU Foodie Hub
+          </h1>
+
+          <p style={{ color: "var(--text)" }}>
+            Explore and review food vendors across NTU canteens
+          </p>
         </header>
 
-        <div style={{ display: "flex", gap: "15px", marginBottom: "25px", flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "15px",
+            marginBottom: "25px",
+            flexWrap: "wrap",
+          }}
+        >
           <input
             type="text"
-            placeholder="Search vendor or cuisine..."
+            placeholder="Search vendor, location or cuisine..."
             value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            style={{ flex: "1", padding: "10px 14px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)" }}
+            onChange={(event) => {
+              setSearchTerm(event.target.value);
+              setOffset(0);
+            }}
+            style={{
+              flex: "1",
+              padding: "10px 14px",
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--border)",
+            }}
           />
+
           <select
-            value={selectedCanteen}
-            onChange={(event) => setSelectedCanteen(event.target.value)}
-            style={{ padding: "10px 14px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)" }}
+            value={selectedLocation}
+            onChange={(event) => {
+              setSelectedLocation(event.target.value);
+              setOffset(0);
+            }}
+            style={{
+              padding: "10px 14px",
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--border)",
+            }}
           >
-            {canteens.map((canteen) => (
-              <option key={canteen} value={canteen}>{canteen}</option>
+            <option value="">All locations</option>
+
+            {locations.map((location) => (
+              <option key={location} value={location}>
+                {location}
+              </option>
             ))}
           </select>
+
+          <select
+            value={selectedCategory}
+            onChange={(event) => {
+              setSelectedCategory(event.target.value);
+              setOffset(0);
+            }}
+            style={{
+              padding: "10px 14px",
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <option value="">All categories</option>
+
+            {categories.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
+
+          {(searchTerm || selectedLocation || selectedCategory) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm("");
+                setSelectedLocation("");
+                setSelectedCategory("");
+                setOffset(0);
+              }}
+            >
+              Clear
+            </button>
+          )}
         </div>
 
-        {isLoading && <p style={{ textAlign: "center", color: "var(--text)" }}>Loading vendors...</p>}
-        {!isLoading && loadError && (
-          <div role="alert" style={{ textAlign: "center", color: "#b91c1c" }}>
-            <p>Could not load vendors: {loadError}</p>
-            <button type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</button>
-          </div>
-        )}
-        {!isLoading && !loadError && filteredVendors.length === 0 && (
-          <p style={{ textAlign: "center", color: "var(--text)" }}>No matching vendors found.</p>
+        {isLoading && (
+          <p
+            style={{
+              textAlign: "center",
+              color: "var(--text)",
+            }}
+          >
+            Loading vendors...
+          </p>
         )}
 
-        {!isLoading && !loadError && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "24px" }}>
-            {filteredVendors.map((vendor) => {
-              const rating = vendor.average_rating ?? vendor.average_google_rating;
-              return (
-                <div
-                  key={vendor.id}
-                  style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", overflow: "hidden", background: "var(--card)", boxShadow: "var(--shadow)", textAlign: "left" }}
-                >
-                  {vendor.image_url ? (
-                    <img src={apiUrl(vendor.image_url)} alt={vendor.name} style={{ width: "100%", height: "160px", objectFit: "cover" }} />
-                  ) : (
-                    <div role="img" aria-label={`${vendor.name} has no image`} style={{ width: "100%", height: "160px", display: "grid", placeItems: "center", background: "var(--code-bg)", color: "var(--text)" }}>No image available</div>
-                  )}
-                  <div style={{ padding: "16px", textAlign: "center" }}>
-                    <span style={{ fontSize: "0.8rem", color: "var(--accent)", background: "var(--accent-bg)", padding: "4px 10px", borderRadius: "999px" }}>
-                      {vendor.location || "NTU"}
-                    </span>
-                    <h3 style={{ margin: "10px 0 5px 0", fontFamily: "var(--heading)", color: "var(--text-h)" }}>{vendor.name}</h3>
-                    <p style={{ margin: "0 0 10px 0", color: "var(--text)", fontSize: "0.9rem" }}>
-                      {vendor.category || "Food"}
-                      {rating != null ? ` • ⭐ ${rating}` : ""}
-                      {` • ${vendor.review_count} reviews`}
-                    </p>
-                    <Link
-                      to={`/food/vendors/${vendor.id}`}
-                      style={{ display: "inline-block", color: "#fff", background: "var(--accent)", padding: "10px 16px", borderRadius: "var(--radius-lg)", textDecoration: "none", fontSize: "0.9rem", fontWeight: 600 }}
-                    >
-                      View Reviews
-                    </Link>
-                  </div>
-                </div>
-              );
-            })}
+        {!isLoading && loadError && (
+          <div
+            role="alert"
+            style={{
+              textAlign: "center",
+              color: "#b91c1c",
+            }}
+          >
+            <p>Could not load vendors: {loadError}</p>
+
+            <button
+              type="button"
+              onClick={() =>
+                setLoadAttempt((attempt) => attempt + 1)
+              }
+            >
+              Try again
+            </button>
           </div>
         )}
+
+        {!isLoading &&
+          !loadError &&
+          vendors.length === 0 && (
+            <p
+              style={{
+                textAlign: "center",
+                color: "var(--text)",
+              }}
+            >
+              No vendors found for the selected search or filters.
+            </p>
+          )}
+
+        {!isLoading &&
+          !loadError &&
+          vendors.length > 0 && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fill, minmax(280px, 1fr))",
+                gap: "24px",
+              }}
+            >
+              {vendors.map((vendor) => {
+                const rating =
+                  vendor.average_rating ??
+                  vendor.average_google_rating;
+
+                return (
+                  <div
+                    key={vendor.id}
+                    style={{
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius-lg)",
+                      overflow: "hidden",
+                      background: "var(--card)",
+                      boxShadow: "var(--shadow)",
+                      textAlign: "left",
+                    }}
+                  >
+                    {vendor.image_url ? (
+                      <img
+                        src={apiUrl(vendor.image_url)}
+                        alt={vendor.name}
+                        style={{
+                          width: "100%",
+                          height: "160px",
+                          objectFit: "cover",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        role="img"
+                        aria-label={`${vendor.name} has no image`}
+                        style={{
+                          width: "100%",
+                          height: "160px",
+                          display: "grid",
+                          placeItems: "center",
+                          background: "var(--code-bg)",
+                          color: "var(--text)",
+                        }}
+                      >
+                        No image available
+                      </div>
+                    )}
+
+                    <div
+                      style={{
+                        padding: "16px",
+                        textAlign: "center",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "0.8rem",
+                          color: "var(--accent)",
+                          background: "var(--accent-bg)",
+                          padding: "4px 10px",
+                          borderRadius: "999px",
+                        }}
+                      >
+                        {vendor.location || "NTU"}
+                      </span>
+
+                      <h3
+                        style={{
+                          margin: "10px 0 5px 0",
+                          fontFamily: "var(--heading)",
+                          color: "var(--text-h)",
+                        }}
+                      >
+                        {vendor.name}
+                      </h3>
+
+                      <p
+                        style={{
+                          margin: "0 0 10px 0",
+                          color: "var(--text)",
+                          fontSize: "0.9rem",
+                        }}
+                      >
+                        {vendor.category || "Food"}
+                        {rating != null
+                          ? ` • ⭐ ${rating}`
+                          : ""}
+                        {` • ${vendor.review_count} reviews`}
+                      </p>
+
+                      <Link
+                        to={`/food/vendors/${vendor.id}`}
+                        style={{
+                          display: "inline-block",
+                          color: "#fff",
+                          background: "var(--accent)",
+                          padding: "10px 16px",
+                          borderRadius: "var(--radius-lg)",
+                          textDecoration: "none",
+                          fontSize: "0.9rem",
+                          fontWeight: 600,
+                        }}
+                      >
+                        View Reviews
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+        {!isLoading && !loadError && total > 0 && (
+  <div className="mt-8 flex items-center justify-center gap-2">
+    <button
+      type="button"
+      disabled={offset === 0}
+      onClick={() =>
+        setOffset(Math.max(0, offset - PAGE_LIMIT))
+      }
+      className="rounded-lg border px-4 py-2 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      Previous
+    </button>
+
+    {Array.from(
+      { length: Math.ceil(total / PAGE_LIMIT) },
+      (_, index) => {
+        const pageNumber = index + 1;
+        const currentPage = Math.floor(offset / PAGE_LIMIT) + 1;
+
+        return (
+          <button
+            key={pageNumber}
+            type="button"
+            onClick={() =>
+              setOffset(index * PAGE_LIMIT)
+            }
+            className={`h-10 min-w-10 rounded-lg border px-3 ${
+              currentPage === pageNumber
+                ? "bg-black text-white"
+                : "bg-white text-black"
+            }`}
+          >
+            {pageNumber}
+          </button>
+        );
+      },
+    )}
+
+    <button
+      type="button"
+      disabled={offset + PAGE_LIMIT >= total}
+      onClick={() => setOffset(offset + PAGE_LIMIT)}
+      className="rounded-lg border px-4 py-2 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      Next
+    </button>
+  </div>
+)}
       </div>
 
-      {/* ── FLOATING CHAT WIDGET ─────────────────────── */}
+      {/* FLOATING CHAT WIDGET */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-        {/* Chat popover */}
         {chatOpen && (
           <div className="w-[360px] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
-            {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
                   <Bot className="w-4 h-4 text-primary-foreground" />
                 </div>
+
                 <div>
-                  <div className="text-sm font-semibold text-foreground">Foodie</div>
+                  <div className="text-sm font-semibold text-foreground">
+                    Foodie
+                  </div>
+
                   <div className="text-xs text-[#4CAF50] flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#4CAF50] inline-block" />
                     Online
                   </div>
                 </div>
               </div>
+
               <button
                 type="button"
                 onClick={() => setChatOpen(false)}
@@ -233,12 +581,15 @@ export default function FoodPage() {
               </button>
             </div>
 
-            {/* Messages */}
             <div className="p-4 h-72 overflow-y-auto flex flex-col gap-3 bg-background">
               {chatMessages.map((msg, i) => (
                 <div
                   key={i}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  className={`flex ${
+                    msg.role === "user"
+                      ? "justify-end"
+                      : "justify-start"
+                  }`}
                 >
                   <div
                     className={`max-w-[82%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
@@ -255,6 +606,7 @@ export default function FoodPage() {
                   </div>
                 </div>
               ))}
+
               {isTyping && (
                 <div className="flex justify-start">
                   <div className="px-4 py-3 rounded-2xl bg-card border border-border rounded-bl-sm">
@@ -263,7 +615,9 @@ export default function FoodPage() {
                         <div
                           key={i}
                           className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce"
-                          style={{ animationDelay: `${i * 0.15}s` }}
+                          style={{
+                            animationDelay: `${i * 0.15}s`,
+                          }}
                         />
                       ))}
                     </div>
@@ -272,17 +626,22 @@ export default function FoodPage() {
               )}
             </div>
 
-            {/* Input area */}
             <div className="px-4 pt-4 pb-4 border-t border-border bg-card">
               <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendMessage(chatInput)}
+                  onChange={(event) =>
+                    setChatInput(event.target.value)
+                  }
+                  onKeyDown={(event) =>
+                    event.key === "Enter" &&
+                    sendMessage(chatInput)
+                  }
                   placeholder="Ask anything about campus food..."
                   className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40 transition-colors"
                 />
+
                 <button
                   type="button"
                   onClick={() => sendMessage(chatInput)}
@@ -296,10 +655,9 @@ export default function FoodPage() {
           </div>
         )}
 
-        {/* Toggle button */}
         <button
           type="button"
-          onClick={() => setChatOpen((o) => !o)}
+          onClick={() => setChatOpen((open) => !open)}
           className="flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-primary text-primary-foreground font-semibold text-sm shadow-lg hover:opacity-90 transition-opacity"
           aria-label="Open Foodie chatbot"
         >
@@ -308,6 +666,7 @@ export default function FoodPage() {
           ) : (
             <Bot className="w-4 h-4" />
           )}
+
           {!chatOpen && "Ask Foodie"}
         </button>
       </div>
