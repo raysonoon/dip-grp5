@@ -29,7 +29,10 @@ def get_embedder() -> Embedder:
         if settings.gemini_api_key is not None
         else None
     )
-    return GoogleEmbedder(api_key=api_key)
+    # Interactive requests must fail fast enough for the web client's timeout.
+    # Long retry/backoff remains available to offline reindex jobs, which build
+    # their own GoogleEmbedder with the configured retry count.
+    return GoogleEmbedder(api_key=api_key, max_retries=1)
 
 
 def get_knowledge_store(session: DbSession) -> KnowledgeStore:
@@ -87,6 +90,7 @@ def get_chat_service(
         router=router,
         sql_store=sql_store,
         filter_extractor_llm=filter_extractor_llm,
+        session=session,
     )
 
 

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { Bot, Send, X } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { ArrowLeft, Bot, Send, X } from "lucide-react";
 
 import { apiUrl } from "../api/client";
 import {
@@ -9,6 +9,9 @@ import {
 } from "../api/vendors";
 
 import { askChat, chatErrorMessage } from "../api/chat";
+import ChatMessageContent from "../components/ChatMessageContent";
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 function displayError(error) {
   return error instanceof Error ? error.message : "Something went wrong";
@@ -45,7 +48,12 @@ function getLocationGroup(location) {
 export default function FoodPage() {
   const PAGE_LIMIT = 12;
 
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQuery = searchParams.get("q") ?? "";
+  const [searchTerm, setSearchTerm] = useState(urlQuery);
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(
+    urlQuery.trim(),
+  );
   const [selectedLocation, setSelectedLocation] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
 
@@ -88,7 +96,7 @@ export default function FoodPage() {
       const response = await askChat(question);
       setChatMessages((prev) => [
         ...prev,
-        { role: "bot", text: response.answer },
+        { role: "bot", text: response.answer, sources: response.sources },
       ]);
     } catch (error) {
       console.error("Chat request failed", error);
@@ -101,6 +109,30 @@ export default function FoodPage() {
       setIsTyping(false);
     }
   }
+
+  // Keep the input and URL query in sync
+  useEffect(() => {
+    setSearchTerm(urlQuery);
+    setDebouncedSearchTerm(urlQuery.trim());
+  }, [urlQuery]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const query = searchTerm.trim();
+      setDebouncedSearchTerm(query);
+      setSearchParams(
+        (currentParams) => {
+          const nextParams = new URLSearchParams(currentParams);
+          if (query) nextParams.set("q", query);
+          else nextParams.delete("q");
+          return nextParams;
+        },
+        { replace: true },
+      );
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchTerm, setSearchParams]);
 
   // Load filter dropdown values once
   useEffect(() => {
@@ -131,7 +163,7 @@ export default function FoodPage() {
     setLoadError("");
 
     fetchVendorPage({
-      q: searchTerm,
+      q: debouncedSearchTerm,
       location: selectedLocation,
       category: selectedCategory,
       limit: PAGE_LIMIT,
@@ -155,7 +187,7 @@ export default function FoodPage() {
 
     return () => controller.abort();
   }, [
-    searchTerm,
+    debouncedSearchTerm,
     selectedLocation,
     selectedCategory,
     offset,
@@ -180,6 +212,33 @@ export default function FoodPage() {
             textAlign: "center",
           }}
         >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-start",
+              marginBottom: "20px",
+            }}
+          >
+            <Link
+              to="/"
+              aria-label="Back to homepage"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                color: "#fff",
+                background: "var(--accent)",
+                padding: "10px 16px",
+                borderRadius: "var(--radius-lg)",
+                textDecoration: "none",
+                fontSize: "0.9rem",
+                fontWeight: 600,
+              }}
+            >
+              <ArrowLeft size={17} aria-hidden="true" />
+              Back to homepage
+            </Link>
+          </div>
           <h1
             style={{
               color: "var(--text-h)",
@@ -539,7 +598,11 @@ export default function FoodPage() {
                         : "bg-card border border-border text-foreground rounded-bl-sm"
                     }`}
                   >
-                    {msg.text}
+                    {msg.role === "bot" ? (
+                      <ChatMessageContent answer={msg.text} sources={msg.sources} />
+                    ) : (
+                      msg.text
+                    )}
                   </div>
                 </div>
               ))}

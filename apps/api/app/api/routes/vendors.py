@@ -14,7 +14,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -29,6 +29,7 @@ from app.schemas import (
     VendorListItem,
     VendorListRead,
 )
+from app.services.vendor_search import build_vendor_search_plan
 
 
 router = APIRouter(prefix="/vendors", tags=["vendors"])
@@ -77,16 +78,9 @@ def list_vendors(
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> VendorListRead:
-    filters = []
-    if q is not None and (search_text := q.strip()):
-        search_pattern = f"%{search_text}%"
-        filters.append(
-            or_(
-                Vendor.name.ilike(search_pattern),
-                Vendor.location.ilike(search_pattern),
-                Vendor.category.ilike(search_pattern),
-            )
-        )
+    search_plan = build_vendor_search_plan(session, q)
+    filters = list(search_plan.filters)
+
     if location is not None and (location_text := location.strip()):
         if location_text.lower().startswith("hall "):
             filters.append(
@@ -114,7 +108,11 @@ def list_vendors(
         .outerjoin(Review, Review.vendor_id == Vendor.id)
         .where(*filters)
         .group_by(Vendor.id)
-        .order_by(Vendor.name.asc(), Vendor.id.asc())
+        .order_by(
+            *search_plan.order_by,
+            Vendor.name.asc(),
+            Vendor.id.asc(),
+        )
         .offset(offset)
         .limit(limit)
     ).all()

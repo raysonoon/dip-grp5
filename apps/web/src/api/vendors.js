@@ -129,7 +129,6 @@ export async function fetchVendorPage({
   return parseVendorList(payload);
 }
 
-
 export async function fetchVendorFilters(signal) {
   const payload = await apiClient.get(
     "/vendors/filters",
@@ -143,13 +142,14 @@ export async function fetchVendorFilters(signal) {
 }
 
 
-export async function fetchVendors(signal) {
+export async function fetchVendors(query = "", signal) {
   const vendors = [];
   const limit = 100;
   let offset = 0;
 
   while (true) {
     const page = await fetchVendorPage({
+      q: query,
       limit,
       offset,
       signal,
@@ -173,7 +173,7 @@ export async function fetchVendorById(vendorId, signal) {
       limit,
       offset,
       signal,
-  });
+    });
     const vendor = page.items.find((item) => item.id === vendorId);
     if (vendor) return vendor;
 

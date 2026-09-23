@@ -35,6 +35,11 @@ class ParaphraseEmbedder(Embedder):
         ]
 
 
+class FailingEmbedder(Embedder):
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        raise RuntimeError("embedding quota exhausted")
+
+
 def _seed_prompt(
     session: Session,
     *,
@@ -126,6 +131,27 @@ def test_tier3_llm_classifier_used_as_fallback(session: Session) -> None:
     router = IntentRouter(session, classify_llm=classify_llm)
     match = router.classify("something unusual")
     assert match.search_type == "SQL + Vector"
+    assert match.tier == 3
+
+
+def test_embedding_failure_falls_through_to_llm_classifier(
+    session: Session,
+) -> None:
+    _seed_prompt(
+        session,
+        intent_key="Q001",
+        question_text="Where can I find halal food?",
+        search_type="SQL",
+    )
+    router = IntentRouter(
+        session,
+        embedder=FailingEmbedder(),
+        classify_llm=lambda _question, _prompts: "SQL",
+    )
+
+    match = router.classify("Show me something different")
+
+    assert match.search_type == "SQL"
     assert match.tier == 3
 
 
