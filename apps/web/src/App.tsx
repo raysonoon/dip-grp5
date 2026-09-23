@@ -1,6 +1,9 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
 import { askChat, chatErrorMessage } from "./api/chat";
+import { apiUrl } from "./api/client";
+import { fetchVendorReviews } from "./api/reviews";
+import { fetchVendors } from "./api/vendors";
 import ChatMessageContent from "./components/ChatMessageContent";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
@@ -22,64 +25,48 @@ import {
 const DISPLAY_FONT = "'Fraunces', serif";
 const BODY_FONT = "'Plus Jakarta Sans', sans-serif";
 
-const STALLS = [
-  {
-    id: 1,
-    name: "Uncle Lim's Chicken Rice",
-    canteen: "North Spine Food Court",
-    cuisine: "Chinese",
-    rating: 4.7,
-    reviews: 312,
-    price: "$3.50–$5",
-    image:
-      "https://images.unsplash.com/photo-1602253057119-44d745d9b860?w=400&h=280&fit=crop&auto=format",
-    tags: ["Chicken Rice", "Roast"],
-    topReview:
-      "The roast chicken is absolutely tender and the chilli sauce hits different!",
+const TRENDING_WEIGHTS = {
+  recency: 0.4,
+  reviews: 0.35,
+  rating: 0.25,
+};
+
+type TrendingVendor = {
+  id: number;
+  name: string;
+  location: string | null;
+  category: string | null;
+  price_range: string | null;
+  image_url: string | null;
+  average_rating: number | null;
+  average_google_rating: number | null;
+  review_count: number;
+  created_at: string;
+  topReview: string | null;
+};
+
+function computeTrendingScore(
+  vendor: {
+    created_at: string;
+    review_count: number;
+    average_rating: number | null;
+    average_google_rating: number | null;
   },
-  {
-    id: 2,
-    name: "Ah Kow Ramen Bar",
-    canteen: "The Hive",
-    cuisine: "Japanese",
-    rating: 4.5,
-    reviews: 187,
-    price: "$7–$10",
-    image:
-      "https://images.unsplash.com/photo-1612927601601-6638404737ce?w=400&h=280&fit=crop&auto=format",
-    tags: ["Ramen", "Tonkotsu"],
-    topReview:
-      "Rich broth and perfectly done soft-boiled eggs. Go early to skip the queue!",
-  },
-  {
-    id: 3,
-    name: "Mama's Ban Mian",
-    canteen: "Pioneer Canteen",
-    cuisine: "Chinese",
-    rating: 4.8,
-    reviews: 429,
-    price: "$4–$6",
-    image:
-      "https://images.unsplash.com/photo-1681038560284-58214f7ea0ac?w=400&h=280&fit=crop&auto=format",
-    tags: ["Ban Mian", "Soup"],
-    topReview:
-      "Best ban mian on campus. Handmade noodles and crispy ikan bilis — perfection.",
-  },
-  {
-    id: 4,
-    name: "Seoulmate Korean Kitchen",
-    canteen: "Foodgle Hub",
-    cuisine: "Korean",
-    rating: 4.4,
-    reviews: 204,
-    price: "$8–$12",
-    image:
-      "https://images.unsplash.com/photo-1526318896980-cf78c088247c?w=400&h=280&fit=crop&auto=format",
-    tags: ["Bibimbap", "Kimchi Jjigae"],
-    topReview:
-      "Portions are generous and the kimchi jjigae is genuinely authentic. Great value.",
-  },
-];
+  maxReviewCount: number,
+  minCreatedAt: number,
+  maxCreatedAt: number,
+) {
+  const created = new Date(vendor.created_at).getTime();
+  const recency = (created - minCreatedAt) / Math.max(maxCreatedAt - minCreatedAt, 1);
+  const reviews = maxReviewCount > 0 ? vendor.review_count / maxReviewCount : 0;
+  const rating = vendor.average_rating ?? vendor.average_google_rating ?? 0;
+  const ratingScore = Math.min(1, rating / 5);
+  return (
+    TRENDING_WEIGHTS.recency * recency +
+    TRENDING_WEIGHTS.reviews * reviews +
+    TRENDING_WEIGHTS.rating * ratingScore
+  );
+}
 
 const REVIEWS = [
   {
@@ -159,6 +146,66 @@ function HomePage() {
   const [isTyping, setIsTyping] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const chatRequestPending = useRef(false);
+
+  const [trendingVendors, setTrendingVendors] = useState<TrendingVendor[]>([]);
+  const [trendingLoading, setTrendingLoading] = useState(true);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setTrendingLoading(true);
+
+    fetchVendors("", controller.signal)
+      .then(async (vendors: TrendingVendor[]) => {
+        if (vendors.length === 0) {
+          setTrendingVendors([]);
+          return;
+        }
+
+        const createdTimes = vendors.map((vendor) =>
+          new Date(vendor.created_at).getTime(),
+        );
+        const minCreatedAt = Math.min(...createdTimes);
+        const maxCreatedAt = Math.max(...createdTimes);
+        const maxReviewCount = Math.max(
+          ...vendors.map((vendor) => vendor.review_count),
+        );
+
+        const ranked = vendors
+          .map((vendor) => ({
+            vendor,
+            score: computeTrendingScore(
+              vendor,
+              maxReviewCount,
+              minCreatedAt,
+              maxCreatedAt,
+            ),
+          }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 4)
+          .map((entry) => entry.vendor);
+
+        const withTopReviews = await Promise.all(
+          ranked.map(async (vendor) => {
+            try {
+              const page = await fetchVendorReviews(vendor.id, controller.signal);
+              return { ...vendor, topReview: page.items[0]?.comment ?? null };
+            } catch {
+              return { ...vendor, topReview: null };
+            }
+          }),
+        );
+
+        setTrendingVendors(withTopReviews);
+      })
+      .catch(() => {
+        setTrendingVendors([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setTrendingLoading(false);
+      });
+
+    return () => controller.abort();
+  }, []);
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -666,60 +713,80 @@ function HomePage() {
 </Link>
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {STALLS.map((stall) => (
-              <div
-                key={stall.id}
-                className="group rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/25 transition-all duration-300 cursor-pointer"
-              >
-                <div className="relative h-44 overflow-hidden bg-muted">
-                  <img
-                    src={stall.image}
-                    alt={`${stall.name} dish`}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
-                    {stall.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="absolute top-3 right-3 px-2 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-bold">
-                    {stall.rating}★
-                  </div>
-                </div>
+          {trendingLoading ? (
+            <p className="text-sm text-muted-foreground">Loading trending stalls...</p>
+          ) : trendingVendors.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No stalls to show yet.</p>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {trendingVendors.map((vendor) => {
+                const rating = vendor.average_rating ?? vendor.average_google_rating;
+                return (
+                  <Link
+                    key={vendor.id}
+                    to={`/food/vendors/${vendor.id}`}
+                    className="group rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/25 transition-all duration-300 cursor-pointer flex flex-col"
+                  >
+                    <div className="relative h-44 overflow-hidden bg-muted">
+                      {vendor.image_url ? (
+                        <img
+                          src={apiUrl(vendor.image_url)}
+                          alt={`${vendor.name} dish`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
+                          No image
+                        </div>
+                      )}
+                      <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
+                        {vendor.category && (
+                          <span
+                            key={vendor.category}
+                            className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm"
+                          >
+                            {vendor.category}
+                          </span>
+                        )}
+                      </div>
+                      <div className="absolute top-3 right-3 px-2 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-bold">
+                        {rating != null ? `${rating.toFixed(1)}★` : "—"}
+                      </div>
+                    </div>
 
-                <div className="p-4">
-                  <h3 className="font-semibold text-sm leading-snug mb-1">
-                    {stall.name}
-                  </h3>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
-                    <MapPin className="w-3 h-3 flex-shrink-0" />
-                    {stall.canteen}
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-                    <StarRow rating={stall.rating} />
-                    <span>{stall.reviews} reviews</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 border-t border-border pt-3">
-                    &ldquo;{stall.topReview}&rdquo;
-                  </p>
-                  <div className="flex items-center justify-between mt-3">
-                    <span className="text-xs font-bold text-foreground">
-                      {stall.price}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {stall.cuisine}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+                    <div className="p-4 flex flex-col flex-1">
+                      <h3 className="font-semibold text-sm leading-snug mb-1">
+                        {vendor.name}
+                      </h3>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
+                        <MapPin className="w-3 h-3 flex-shrink-0" />
+                        {vendor.location ?? "NTU"}
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
+                        <StarRow rating={rating ?? 0} />
+                        <span>{vendor.review_count} reviews</span>
+                      </div>
+                      <div className="mt-auto border-t border-border pt-3">
+                        {vendor.topReview && (
+                          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 mb-3">
+                            &ldquo;{vendor.topReview}&rdquo;
+                          </p>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-foreground">
+                            {vendor.price_range ?? "Price unavailable"}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {vendor.category ?? "Food"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </div>
       </section>
 
