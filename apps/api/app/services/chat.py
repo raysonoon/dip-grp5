@@ -1,7 +1,12 @@
 import logging
+import re
 from collections.abc import Callable
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
+from app.models import RedditComment, Vendor
 from app.schemas.chat import ChatResponse, ChatSource
 from app.services.embedding import Embedder
 from app.services.intent_router import IntentMatch, IntentRouter
@@ -30,6 +35,27 @@ DEFAULT_SYSTEM_PROMPT = (
 
 EMPTY_CONTEXT = "(no context retrieved)"
 EXCERPT_CHARS = 200
+_DIRECT_REDDIT_STOP_WORDS = {
+    "a",
+    "about",
+    "and",
+    "at",
+    "cite",
+    "do",
+    "every",
+    "list",
+    "markdown",
+    "options",
+    "reddit",
+    "say",
+    "so",
+    "statement",
+    "the",
+    "use",
+    "users",
+    "what",
+    "with",
+}
 
 
 def build_prompt(
@@ -121,6 +147,7 @@ class ChatService:
         router: IntentRouter | None = None,
         sql_store: SqlStore | None = None,
         filter_extractor_llm: Callable[[str], StructuredFilter] | None = None,
+        session: Session | None = None,
     ) -> None:
         self._embedder = embedder
         self._store = store
@@ -130,6 +157,7 @@ class ChatService:
         self._router = router
         self._sql_store = sql_store
         self._filter_extractor_llm = filter_extractor_llm
+        self._session = session
         self._client = None
 
     def answer(self, question: str) -> ChatResponse:
@@ -150,8 +178,15 @@ class ChatService:
         question: str,
         match: IntentMatch | None,
     ) -> ChatResponse:
-        query_vector = self._embedder.embed([question])[0]
-        results = self._store.search(query_vector, limit=self._top_k)
+        vector_filters = self._build_vector_filters(question)
+        results = self._search_direct_reddit(question, vector_filters)
+        if not results:
+            query_vector = self._embedder.embed([question])[0]
+            results = self._store.search(
+                query_vector,
+                limit=self._top_k,
+                filters=vector_filters or None,
+            )
         vendor_names = self._store.resolve_vendor_names(
             {result.vendor_id for result in results if result.vendor_id is not None}
         )
@@ -162,9 +197,13 @@ class ChatService:
             template=match.prompt_template if match else None,
         )
         answer = self._generate(prompt)
+        reddit_permalinks = self._resolve_reddit_permalinks(results)
         return ChatResponse(
             answer=answer,
-            sources=[self._to_source(result, vendor_names) for result in results],
+            sources=[
+                self._to_source(result, vendor_names, reddit_permalinks)
+                for result in results
+            ],
             search_type="Vector",
             intent=match.intent_key if match else None,
         )
@@ -178,6 +217,11 @@ class ChatService:
         logger.info("SQL path filters: %s", _describe_filters(filters))
         results = self._sql_store.search(filters)
         logger.info("SQL path returned %d vendor result(s)", len(results))
+        if not results and filters.query_kind == "list":
+            logger.info(
+                "SQL list path returned no vendors; falling back to Vector search"
+            )
+            return self._answer_vector(question, match=None)
         context = format_sql_context(results)
         prompt = build_prompt(
             question,
@@ -205,7 +249,10 @@ class ChatService:
         results = self._store.search(
             query_vector,
             limit=self._top_k,
-            filters={"vendor_ids": vendor_ids},
+            filters={
+                **self._build_vector_filters(question),
+                "vendor_ids": vendor_ids,
+            },
         )
         logger.info("Hybrid path retrieved %d knowledge chunk(s)", len(results))
         vendor_names = self._store.resolve_vendor_names(
@@ -218,9 +265,13 @@ class ChatService:
             template=match.prompt_template,
         )
         answer = self._generate(prompt)
+        reddit_permalinks = self._resolve_reddit_permalinks(results)
         return ChatResponse(
             answer=answer,
-            sources=[self._to_source(result, vendor_names) for result in results],
+            sources=[
+                self._to_source(result, vendor_names, reddit_permalinks)
+                for result in results
+            ],
             search_type="SQL + Vector",
             intent=match.intent_key,
         )
@@ -233,6 +284,70 @@ class ChatService:
                 self._filter_extractor_llm,
             )
         return filters
+
+    def _build_vector_filters(self, question: str) -> dict:
+        filters: dict[str, object] = {}
+        normalized_question = question.casefold()
+        if "reddit" in normalized_question:
+            filters["source_type"] = "reddit"
+        elif "google review" in normalized_question:
+            filters["source_type"] = "google_review"
+
+        if self._session is None:
+            return filters
+
+        vendors = self._session.execute(
+            select(Vendor.id, Vendor.name)
+        ).all()
+        mentioned_vendor_ids = [
+            vendor_id
+            for vendor_id, vendor_name in vendors
+            if vendor_name.casefold() in normalized_question
+        ]
+        if mentioned_vendor_ids:
+            filters["vendor_ids"] = mentioned_vendor_ids
+        return filters
+
+    def _search_direct_reddit(
+        self,
+        question: str,
+        filters: dict,
+    ) -> list[KnowledgeResult]:
+        if self._session is None or filters.get("source_type") != "reddit":
+            return []
+        vendor_ids = filters.get("vendor_ids")
+        if not vendor_ids:
+            return []
+
+        comments = list(
+            self._session.scalars(
+                select(RedditComment).where(
+                    RedditComment.vendor_id.in_(vendor_ids)
+                )
+            ).all()
+        )
+        query_tokens = {
+            token
+            for token in re.findall(r"[a-z0-9]+", question.casefold())
+            if len(token) > 1 and token not in _DIRECT_REDDIT_STOP_WORDS
+        }
+
+        def relevance(comment: RedditComment) -> tuple[int, float]:
+            content = comment.comment_text.casefold()
+            score = sum(token in content for token in query_tokens)
+            return score, comment.created_at.timestamp()
+
+        comments.sort(key=relevance, reverse=True)
+        return [
+            KnowledgeResult(
+                source_type="reddit",
+                source_id=comment.reddit_comment_id,
+                vendor_id=comment.vendor_id,
+                content=comment.comment_text,
+                metadata={"permalink": comment.permalink},
+            )
+            for comment in comments[: self._top_k]
+        ]
 
     def _generate(self, prompt: str) -> str:
         if self._generate_fn is not None:
@@ -257,6 +372,7 @@ class ChatService:
     def _to_source(
         result: KnowledgeResult,
         vendor_names: dict[int, str],
+        reddit_permalinks: dict[str, str | None],
     ) -> ChatSource:
         content = result.content
         excerpt = content[:EXCERPT_CHARS] + "…" if len(content) > EXCERPT_CHARS else content
@@ -270,7 +386,35 @@ class ChatService:
                 else None
             ),
             excerpt=excerpt,
+            permalink=(
+                reddit_permalinks.get(result.source_id)
+                if result.source_type == "reddit" and result.source_id is not None
+                else None
+            ),
         )
+
+    def _resolve_reddit_permalinks(
+        self,
+        results: list[KnowledgeResult],
+    ) -> dict[str, str | None]:
+        if self._session is None:
+            return {}
+
+        source_ids = {
+            result.source_id
+            for result in results
+            if result.source_type == "reddit" and result.source_id is not None
+        }
+        if not source_ids:
+            return {}
+
+        rows = self._session.execute(
+            select(
+                RedditComment.reddit_comment_id,
+                RedditComment.permalink,
+            ).where(RedditComment.reddit_comment_id.in_(source_ids))
+        ).all()
+        return {source_id: permalink for source_id, permalink in rows}
 
     @staticmethod
     def _to_sql_source(result: SqlResult) -> ChatSource:

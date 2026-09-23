@@ -81,3 +81,30 @@ test("fetchVendors returns backend vendors across pages", async (context) => {
 
   assert.deepEqual(vendors.map((vendor) => vendor.id), [12, 13]);
 });
+
+test("fetchVendors sends a trimmed search query to every backend page", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const requestedPaths = [];
+  globalThis.fetch = async (path) => {
+    requestedPaths.push(path);
+    if (requestedPaths.length === 1) {
+      return jsonResponse({ items: [VENDOR], total: 2, limit: 100, offset: 0 });
+    }
+    return jsonResponse({
+      items: [{ ...VENDOR, id: 13, name: "Second Backend Vendor" }],
+      total: 2,
+      limit: 100,
+      offset: 1,
+    });
+  };
+
+  await fetchVendors("  Chicken Rice  ");
+
+  assert.deepEqual(requestedPaths, [
+    "/vendors?limit=100&offset=0&q=Chicken+Rice",
+    "/vendors?limit=100&offset=1&q=Chicken+Rice",
+  ]);
+});

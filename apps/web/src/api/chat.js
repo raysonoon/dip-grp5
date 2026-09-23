@@ -45,6 +45,7 @@ function parseSource(value) {
     vendor_id: value.vendor_id,
     vendor_name: nullableString(value.vendor_name, "vendor_name"),
     excerpt: nullableString(value.excerpt, "excerpt"),
+    permalink: nullableString(value.permalink, "permalink"),
     location: nullableString(value.location, "location"),
     unit_code: nullableString(value.unit_code, "unit_code"),
     category: nullableString(value.category, "category"),

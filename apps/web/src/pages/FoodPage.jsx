@@ -1,19 +1,27 @@
 import { useEffect, useState, useRef } from "react";
-import { Link } from "react-router-dom";
-import { Bot, Send, X } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { ArrowLeft, Bot, Send, X } from "lucide-react";
 
 import { apiUrl } from "../api/client";
 import { fetchVendors } from "../api/vendors";
 
 // TODO: Update these imports to point to your actual chat API functions
 import { askChat, chatErrorMessage } from "../api/chat";
+import ChatMessageContent from "../components/ChatMessageContent";
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 function displayError(error) {
   return error instanceof Error ? error.message : "Something went wrong";
 }
 
 export default function FoodPage() {
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQuery = searchParams.get("q") ?? "";
+  const [searchTerm, setSearchTerm] = useState(urlQuery);
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(
+    urlQuery.trim(),
+  );
   const [selectedCanteen, setSelectedCanteen] = useState("All");
   const [vendors, setVendors] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,7 +51,10 @@ export default function FoodPage() {
 
     try {
       const response = await askChat(question);
-      setChatMessages((prev) => [...prev, { role: "bot", text: response.answer }]);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "bot", text: response.answer, sources: response.sources },
+      ]);
     } catch (error) {
       console.error("Chat request failed", error);
       setChatMessages((prev) => [
@@ -58,11 +69,34 @@ export default function FoodPage() {
   // ---------------------
 
   useEffect(() => {
+    setSearchTerm(urlQuery);
+    setDebouncedSearchTerm(urlQuery.trim());
+  }, [urlQuery]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const query = searchTerm.trim();
+      setDebouncedSearchTerm(query);
+      setSearchParams(
+        (currentParams) => {
+          const nextParams = new URLSearchParams(currentParams);
+          if (query) nextParams.set("q", query);
+          else nextParams.delete("q");
+          return nextParams;
+        },
+        { replace: true },
+      );
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchTerm, setSearchParams]);
+
+  useEffect(() => {
     const controller = new AbortController();
     setIsLoading(true);
     setLoadError("");
 
-    fetchVendors(controller.signal)
+    fetchVendors(debouncedSearchTerm, controller.signal)
       .then(setVendors)
       .catch((error) => {
         if (error.name !== "AbortError") setLoadError(displayError(error));
@@ -72,34 +106,32 @@ export default function FoodPage() {
       });
 
     return () => controller.abort();
-  }, [loadAttempt]);
+  }, [debouncedSearchTerm, loadAttempt]);
 
   const canteens = [
     "All",
     ...new Set(vendors.map((vendor) => vendor.location).filter(Boolean)),
   ];
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-  
   const filteredVendors = vendors.filter((vendor) => {
-    const searchableValues = [
-      vendor.name,
-      vendor.category,
-      vendor.location,
-      vendor.unit_code,
-    ];
-    
-    const matchesSearch = searchableValues.some((value) =>
-      value != null && String(value).toLowerCase().includes(normalizedSearch)
-    );
     const matchesCanteen =
       selectedCanteen === "All" || vendor.location === selectedCanteen;
-    return matchesSearch && matchesCanteen;
+    return matchesCanteen;
   });
 
   return (
     <>
       <div style={{ maxWidth: "1000px", width: "100%", margin: "0 auto", padding: "40px 20px", fontFamily: "var(--sans)", boxSizing: "border-box" }}>
         <header style={{ marginBottom: "30px", textAlign: "center" }}>
+          <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "20px" }}>
+            <Link
+              to="/"
+              aria-label="Back to homepage"
+              style={{ display: "inline-flex", alignItems: "center", gap: "8px", color: "#fff", background: "var(--accent)", padding: "10px 16px", borderRadius: "var(--radius-lg)", textDecoration: "none", fontSize: "0.9rem", fontWeight: 600 }}
+            >
+              <ArrowLeft size={17} aria-hidden="true" />
+              Back to homepage
+            </Link>
+          </div>
           <h1 style={{ color: "var(--text-h)", fontFamily: "var(--heading)", fontSize: "2.2rem" }}>NTU Foodie Hub</h1>
           <p style={{ color: "var(--text)" }}>Explore and review food vendors across NTU canteens</p>
         </header>
@@ -215,7 +247,11 @@ export default function FoodPage() {
                         : "bg-card border border-border text-foreground rounded-bl-sm"
                     }`}
                   >
-                    {msg.text}
+                    {msg.role === "bot" ? (
+                      <ChatMessageContent answer={msg.text} sources={msg.sources} />
+                    ) : (
+                      msg.text
+                    )}
                   </div>
                 </div>
               ))}
