@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Bot, Send, X } from "lucide-react";
 
@@ -172,147 +172,6 @@ function UploadDropzone({ onFilesSelected, label }) {
   );
 }
 
-function validateFiles(files, existingCount) {
-  if (existingCount + files.length > MAX_IMAGES) {
-    return `You can attach at most ${MAX_IMAGES} images per review.`;
-  }
-  for (const file of files) {
-    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-      return "Only JPEG or PNG images are allowed.";
-    }
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      return `${file.name} is too large. Max file size is 5 MB.`;
-    }
-  }
-  return null;
-}
-
-function StarPicker({ value, onChange, disabled }) {
-  const [hoverValue, setHoverValue] = useState(null);
-  const displayValue = hoverValue ?? value;
-
-  const handlePick = (event, starIndex) => {
-    if (disabled) return;
-    const { left, width } = event.currentTarget.getBoundingClientRect();
-    const isHalf = event.clientX - left < width / 2;
-    onChange(isHalf ? starIndex - 0.5 : starIndex);
-  };
-
-  const handleHover = (event, starIndex) => {
-    if (disabled) return;
-    const { left, width } = event.currentTarget.getBoundingClientRect();
-    const isHalf = event.clientX - left < width / 2;
-    setHoverValue(isHalf ? starIndex - 0.5 : starIndex);
-  };
-
-  return (
-    <div
-      className="inline-flex items-center gap-1"
-      onMouseLeave={() => setHoverValue(null)}
-      role="radiogroup"
-      aria-label="Rating"
-    >
-      {[1, 2, 3, 4, 5].map((starIndex) => {
-        const fillPercent = Math.max(0, Math.min(1, displayValue - (starIndex - 1))) * 100;
-        return (
-          <div
-            key={starIndex}
-            className={`relative w-7 h-7 ${disabled ? "" : "cursor-pointer"}`}
-            onMouseMove={(event) => handleHover(event, starIndex)}
-            onClick={(event) => handlePick(event, starIndex)}
-          >
-            <svg viewBox="0 0 24 24" className="w-7 h-7 absolute inset-0 text-border" fill="currentColor">
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z" />
-            </svg>
-            <div className="absolute inset-0 overflow-hidden" style={{ width: `${fillPercent}%` }}>
-              <svg viewBox="0 0 24 24" className="w-7 h-7 text-primary" fill="currentColor">
-                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z" />
-              </svg>
-            </div>
-          </div>
-        );
-      })}
-      {!disabled && <span className="ml-2 text-sm text-muted-foreground">{displayValue.toFixed(1)}</span>}
-    </div>
-  );
-}
-
-function FilePreviewGrid({ files, onRemove, onReorder }) {
-  const [previewUrls, setPreviewUrls] = useState([]);
-
-  useEffect(() => {
-    const urls = files.map((file) => URL.createObjectURL(file));
-    setPreviewUrls(urls);
-    return () => urls.forEach((url) => URL.revokeObjectURL(url));
-  }, [files]);
-
-  if (files.length === 0) return null;
-
-  return (
-    <div className="flex gap-3 flex-wrap mt-3">
-      {files.map((file, index) => (
-        <div key={`${file.name}-${index}`}>
-          <div className="relative">
-            <img
-              src={previewUrls[index]}
-              alt={file.name}
-              className="w-20 h-20 object-cover rounded-lg border border-border"
-            />
-            <button
-              type="button"
-              onClick={() => onRemove(index)}
-              aria-label={`Remove ${file.name}`}
-              className="absolute -top-2 -right-2 w-[22px] h-[22px] rounded-full bg-destructive text-white border-2 border-background cursor-pointer text-xs flex items-center justify-center p-0"
-            >
-              ✕
-            </button>
-          </div>
-          {onReorder && (
-            <div className="flex justify-center gap-1.5 mt-1">
-              <button
-                type="button"
-                disabled={index === 0}
-                className={`text-xs ${index === 0 ? "cursor-default opacity-40" : "cursor-pointer"}`}
-                onClick={() => onReorder(index, index - 1)}
-              >
-                ←
-              </button>
-              <button
-                type="button"
-                disabled={index === files.length - 1}
-                className={`text-xs ${index === files.length - 1 ? "cursor-default opacity-40" : "cursor-pointer"}`}
-                onClick={() => onReorder(index, index + 1)}
-              >
-                →
-              </button>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function UploadDropzone({ onFilesSelected, label }) {
-  return (
-    <label className="flex flex-col items-center justify-center gap-1.5 p-5 rounded-lg border-2 border-dashed border-border cursor-pointer text-center text-muted-foreground bg-muted hover:border-primary/40 transition-colors">
-      <span className="text-2xl">📷</span>
-      <span className="text-sm font-semibold text-foreground">{label}</span>
-      <span className="text-xs text-muted-foreground">Click to browse — JPEG or PNG, max 5MB each</span>
-      <input
-        type="file"
-        accept="image/jpeg,image/png"
-        multiple
-        onChange={(event) => {
-          onFilesSelected(Array.from(event.target.files));
-          event.target.value = "";
-        }}
-        className="hidden"
-      />
-    </label>
-  );
-}
-
 export default function VendorsPage() {
   const { vendorId } = useParams();
   const numericVendorId = Number(vendorId);
@@ -336,6 +195,8 @@ export default function VendorsPage() {
   const [editNewFiles, setEditNewFiles] = useState([]);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+  const [newFiles, setNewFiles] = useState([]);
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
   const reviewRequestRef = useRef(null);
   const reviewRequestIdRef = useRef(0);
 
@@ -378,41 +239,36 @@ export default function VendorsPage() {
     }
   }
 
-  const refreshReviews = useCallback(async ({ reset = false } = {}) => {
-    if (!isValidVendorId) return;
+  const refreshReviews = useCallback(
+    async ({ reset = false } = {}) => {
+      if (!isValidVendorId) return;
 
-    const requestId = reviewRequestIdRef.current + 1;
-    reviewRequestIdRef.current = requestId;
-    reviewRequestRef.current?.abort();
-    const controller = new AbortController();
-    reviewRequestRef.current = controller;
+      const requestId = reviewRequestIdRef.current + 1;
+      reviewRequestIdRef.current = requestId;
+      reviewRequestRef.current?.abort();
+      const controller = new AbortController();
+      reviewRequestRef.current = controller;
 
-    setIsLoading(true);
-    setLoadError("");
-    if (reset) setReviews([]);
+      setIsLoading(true);
+      setLoadError("");
+      if (reset) setReviews([]);
 
-    try {
-      const page = await fetchVendorReviews(numericVendorId, controller.signal);
-      if (requestId === reviewRequestIdRef.current) setReviews(page.items);
-    } catch (error) {
-      if (requestId === reviewRequestIdRef.current && error.name !== "AbortError") {
-        setLoadError(displayError(error));
+      try {
+        const page = await fetchVendorReviews(numericVendorId, controller.signal);
+        if (requestId === reviewRequestIdRef.current) setReviews(page.items);
+      } catch (error) {
+        if (requestId === reviewRequestIdRef.current && error.name !== "AbortError") {
+          setLoadError(displayError(error));
+        }
+      } finally {
+        if (requestId === reviewRequestIdRef.current) {
+          setIsLoading(false);
+          if (reviewRequestRef.current === controller) reviewRequestRef.current = null;
+        }
       }
-    } finally {
-      if (requestId === reviewRequestIdRef.current) {
-        setIsLoading(false);
-        if (reviewRequestRef.current === controller) reviewRequestRef.current = null;
-      }
-    }
-  }, [isValidVendorId, numericVendorId]);
-  const [newFiles, setNewFiles] = useState([]);
-  const [deleteTargetId, setDeleteTargetId] = useState(null);
-
-  const refreshReviews = useCallback(async () => {
-    const page = await fetchVendorReviews(numericVendorId);
-    setReviews(page.items);
-    return page.items;
-  }, [numericVendorId]);
+    },
+    [isValidVendorId, numericVendorId]
+  );
 
   useEffect(() => {
     if (!isValidVendorId) {
@@ -437,26 +293,10 @@ export default function VendorsPage() {
   }, [isValidVendorId, numericVendorId, loadAttempt]);
 
   useEffect(() => {
-    if (!isValidVendorId) {
-      setReviews([]);
-      setIsLoading(false);
-      return undefined;
-    }
-    const controller = new AbortController();
-    setIsLoading(true);
-    setLoadError("");
     setActionError("");
-    setReviews([]);
-    fetchVendorReviews(numericVendorId, controller.signal)
-      .then((page) => setReviews(page.items))
-      .catch((error) => {
-        if (error.name !== "AbortError") setLoadError(displayError(error));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false);
-      });
-    return () => controller.abort();
-  }, [isValidVendorId, numericVendorId, loadAttempt]);
+    refreshReviews({ reset: true });
+    return () => reviewRequestRef.current?.abort();
+  }, [refreshReviews, loadAttempt]);
 
   const addNewFiles = (files) => setNewFiles((prev) => [...prev, ...files]);
   const removeNewFile = (index) => setNewFiles((prev) => prev.filter((_, i) => i !== index));
@@ -495,9 +335,7 @@ export default function VendorsPage() {
         comment: comment.trim() || null,
       });
 
-      let hadImages = false;
       for (const file of newFiles) {
-        hadImages = true;
         try {
           await uploadReviewImage(created.id, file);
         } catch (uploadError) {
@@ -508,19 +346,7 @@ export default function VendorsPage() {
       setComment("");
       setRating(5);
       setNewFiles([]);
-      const refreshedItems = await refreshReviews();
-
-      // If images were uploaded, open the new review in edit mode right away
-      // so the user can reorder them without a separate trip through "Edit".
-      if (hadImages) {
-        const createdReview = refreshedItems.find((item) => item.id === created.id);
-        if (createdReview) {
-          setEditingReviewId(createdReview.id);
-          setEditRating(createdReview.rating);
-          setEditComment(createdReview.comment ?? "");
-          setEditNewFiles([]);
-        }
-      }
+      await refreshReviews({ reset: true });
     } catch (error) {
       setActionError(displayError(error));
     } finally {
@@ -556,7 +382,7 @@ export default function VendorsPage() {
       }
       setEditingReviewId(null);
       setEditNewFiles([]);
-      await refreshReviews();
+      await refreshReviews({ reset: true });
     } catch (error) {
       setActionError(displayError(error));
     } finally {
@@ -568,16 +394,12 @@ export default function VendorsPage() {
     setActionError("");
     try {
       await deleteReviewImage(reviewId, imageId);
-      await refreshReviews();
+      await refreshReviews({ reset: true });
     } catch (error) {
       setActionError(displayError(error));
     }
   };
 
-  // Guarded against concurrent clicks on the same review: without this, clicking
-  // the reorder arrows quickly (or with 3+ images) could fire a second reorder
-  // before the first one's refreshReviews() had updated `review.images`, causing
-  // display_order conflicts on the backend.
   const handleReorderReviewImage = async (review, imageId, direction) => {
     if (reorderingReviewId === review.id) return;
     setReorderingReviewId(review.id);
@@ -605,10 +427,10 @@ export default function VendorsPage() {
       await reorderReviewImage(review.id, current.id, freeOrder);
       await reorderReviewImage(review.id, swapWith.id, current.display_order);
       await reorderReviewImage(review.id, current.id, swapWith.display_order);
-      await refreshReviews();
+      await refreshReviews({ reset: true });
     } catch (error) {
       setActionError(displayError(error));
-      await refreshReviews();
+      await refreshReviews({ reset: true });
     } finally {
       setReorderingReviewId(null);
     }
@@ -627,7 +449,7 @@ export default function VendorsPage() {
       await deleteReview(reviewId);
       if (editingReviewId === reviewId) setEditingReviewId(null);
       setDeleteTargetId(null);
-      await refreshReviews();
+      await refreshReviews({ reset: true });
     } catch (error) {
       setActionError(displayError(error));
       setDeleteTargetId(null);
@@ -637,30 +459,40 @@ export default function VendorsPage() {
     }
   };
 
-  const location = vendor?.location;
-  const category = vendor?.category;
-  const displayedRating = vendor?.average_rating ?? vendor?.average_google_rating;
+  if (isVendorLoading) {
+    return <p className="p-10 text-center text-muted-foreground">Loading vendor...</p>;
+  }
+
+  if (!vendor) {
+    return (
+      <div className="p-10 text-center">
+        <h2 className="text-xl font-bold text-foreground">Vendor not found</h2>
+        {vendorError && <p role="alert" className="text-destructive mt-2">{vendorError}</p>}
+        {isValidVendorId && (
+          <button
+            type="button"
+            className="cursor-pointer mt-3 px-4 py-2 rounded-lg border border-border text-sm font-semibold"
+            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+          >
+            Try again
+          </button>
+        )}
+        <div className="mt-3">
+          <Link to="/food" className="text-primary hover:underline">Back to All Vendors</Link>
+        </div>
+      </div>
+    );
+  }
+
+  const location = vendor.location;
+  const category = vendor.category;
+  const displayedRating = vendor.average_rating ?? vendor.average_google_rating;
 
   return (
-    <>
-      {isVendorLoading ? (
-        <p style={{ padding: "40px", textAlign: "center" }}>Loading vendor...</p>
-      ) : !vendor ? (
-        <div style={{ padding: "40px", textAlign: "center", fontFamily: "var(--sans)" }}>
-          <h2>Vendor not found</h2>
-          {vendorError && <p role="alert">{vendorError}</p>}
-          {isValidVendorId && (
-            <button type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
-              Try again
-            </button>
-          )}
-          <div style={{ marginTop: "12px" }}>
-            <Link to="/food">Back to All Vendors</Link>
-          </div>
-        </div>
-      ) : (
-        <div style={{ maxWidth: "800px", margin: "0 auto", padding: "20px", fontFamily: "var(--sans)" }}>
-          <Link to="/food" style={{ textDecoration: "none", color: "var(--accent)" }}>← Back to All Vendors</Link>
+    <div className="max-w-3xl mx-auto px-6 py-10">
+      <Link to="/food" className="text-primary hover:underline text-sm font-medium">
+        ← Back to All Vendors
+      </Link>
 
       <div className="mt-4 mb-6">
         <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: DISPLAY_FONT }}>
@@ -926,6 +758,75 @@ export default function VendorsPage() {
           </div>
         </div>
       )}
+
+      {/* ── FLOATING CHATBOT WIDGET ───────────────────── */}
+      <div className="fixed bottom-6 right-6 z-50">
+        {chatOpen ? (
+          <div className="w-80 sm:w-96 rounded-2xl bg-card border border-border shadow-2xl flex flex-col overflow-hidden transition-all">
+            <div className="p-4 bg-primary text-primary-foreground flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Bot className="w-5 h-5" />
+                <span className="font-bold text-sm">NTU Foodie Assistant</span>
+              </div>
+              <button
+                onClick={() => setChatOpen(false)}
+                className="p-1 hover:bg-black/10 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 h-80 overflow-y-auto flex flex-col gap-3 bg-background">
+              {chatMessages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`max-w-[85%] p-3 rounded-xl text-xs leading-relaxed ${
+                    msg.role === "user"
+                      ? "bg-primary text-primary-foreground self-end rounded-tr-none"
+                      : "bg-muted text-foreground self-start rounded-tl-none border border-border"
+                  }`}
+                >
+                  <ChatMessageContent text={msg.text} sources={msg.sources} />
+                </div>
+              ))}
+              {isTyping && (
+                <div className="self-start text-xs text-muted-foreground italic">Thinking...</div>
+              )}
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                sendMessage(chatInput);
+              }}
+              className="p-3 bg-card border-t border-border flex gap-2"
+            >
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Ask about canteens or food..."
+                className="flex-1 bg-background text-xs px-3 py-2 rounded-lg border border-border outline-none focus:border-primary/40"
+              />
+              <button
+                type="submit"
+                disabled={isTyping}
+                className="p-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
+        ) : (
+          <button
+            onClick={() => setChatOpen(true)}
+            className="p-4 rounded-full bg-primary text-primary-foreground shadow-xl hover:scale-105 transition-transform flex items-center gap-2 font-semibold text-sm"
+          >
+            <Bot className="w-5 h-5" />
+            <span>Ask Foodie</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
