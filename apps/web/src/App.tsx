@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import Layout from "./components/Layout";
 import { askChat, chatErrorMessage } from "./api/chat";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
@@ -198,7 +199,7 @@ function HomePage() {
               className="text-lg font-bold text-foreground"
               style={{ fontFamily: DISPLAY_FONT }}
             >
-              NTU Foodie Guide
+              NTUmmy
             </span>
           </div>
 
@@ -289,9 +290,9 @@ function HomePage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search stalls, dishes, canteens..."
+                  placeholder="Search for stalls, dishes, canteens..."
                   className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none flex-1"
-                />
+              />
               </div>
               <button className="px-5 py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-opacity">
                 Search
@@ -624,9 +625,6 @@ function HomePage() {
         </div>
       </section>
 
-      {/* ── FEATURES ─────────────────────────────────── */}
-      
-
       {/* ── TRENDING STALLS ───────────────────────────── */}
       <section className="py-24">
         <div className="max-w-7xl mx-auto px-6">
@@ -902,38 +900,6 @@ function HomePage() {
           {!chatOpen && "Ask Foodie"}
         </button>
       </div>
-
-      {/* ── CTA BANNER ───────────────────────────────── */}
-      
-
-      {/* ── FOOTER ───────────────────────────────────── */}
-      <footer className="border-t border-border py-10">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
-              <Utensils className="w-3 h-3 text-primary-foreground" />
-            </div>
-            <span
-              className="text-sm font-bold"
-              style={{ fontFamily: DISPLAY_FONT }}
-            >
-              NTU Foodie Guide
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">Made by NTU students, for NTU students.</p>
-          <div className="flex gap-6 text-xs text-muted-foreground">
-            {["About", "Contribute", "Privacy"].map((l) => (
-              <a
-                key={l}
-                href="#"
-                className="hover:text-foreground transition-colors"
-              >
-                {l}
-              </a>
-            ))}
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }
@@ -941,9 +907,11 @@ function HomePage() {
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route path="/food" element={<FoodPage />} />
-      <Route path="/food/vendors/:vendorId" element={<VendorsPage />} />
+      <Route element={<Layout />}>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/food" element={<FoodPage />} />
+        <Route path="/food/vendors/:vendorId" element={<VendorsPage />} />
+      </Route>
     </Routes>
   );
 }
