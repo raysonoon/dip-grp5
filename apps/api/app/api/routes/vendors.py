@@ -14,7 +14,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -29,6 +29,7 @@ from app.schemas import (
     VendorListItem,
     VendorListRead,
 )
+from app.services.vendor_search import build_vendor_search_plan
 
 
 router = APIRouter(prefix="/vendors", tags=["vendors"])
@@ -72,19 +73,26 @@ def _resolve_vendor_image(
 def list_vendors(
     session: DbSession,
     q: Annotated[str | None, Query(max_length=100)] = None,
+    location: Annotated[str | None, Query(max_length=255)] = None,
+    category: Annotated[str | None, Query(max_length=255)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> VendorListRead:
-    filters = []
-    if q is not None and (search_text := q.strip()):
-        search_pattern = f"%{search_text}%"
-        filters.append(
-            or_(
-                Vendor.name.ilike(search_pattern),
-                Vendor.location.ilike(search_pattern),
-                Vendor.category.ilike(search_pattern),
+    search_plan = build_vendor_search_plan(session, q)
+    filters = list(search_plan.filters)
+
+    if location is not None and (location_text := location.strip()):
+        if location_text.lower().startswith("hall "):
+            filters.append(
+                func.lower(Vendor.location) == location_text.lower()
             )
-        )
+        else:
+            filters.append(
+                Vendor.location.ilike(f"%{location_text}%")
+            )
+
+    if category is not None and (category_text := category.strip()):
+        filters.append(Vendor.category == category_text)
 
     total = session.scalar(
         select(func.count(Vendor.id)).where(*filters)
@@ -100,7 +108,11 @@ def list_vendors(
         .outerjoin(Review, Review.vendor_id == Vendor.id)
         .where(*filters)
         .group_by(Vendor.id)
-        .order_by(Vendor.name.asc(), Vendor.id.asc())
+        .order_by(
+            *search_plan.order_by,
+            Vendor.name.asc(),
+            Vendor.id.asc(),
+        )
         .offset(offset)
         .limit(limit)
     ).all()
@@ -153,6 +165,30 @@ def list_vendors(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/filters")
+def get_vendor_filters(
+    session: DbSession,
+) -> dict[str, list[str]]:
+    locations = session.scalars(
+        select(Vendor.location)
+        .where(Vendor.location.is_not(None))
+        .distinct()
+        .order_by(Vendor.location.asc())
+    ).all()
+
+    categories = session.scalars(
+        select(Vendor.category)
+        .where(Vendor.category.is_not(None))
+        .distinct()
+        .order_by(Vendor.category.asc())
+    ).all()
+
+    return {
+        "locations": locations,
+        "categories": categories,
+    }
 
 
 @router.get(

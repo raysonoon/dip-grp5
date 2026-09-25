@@ -93,7 +93,9 @@ def test_user_and_vendor_storage_follow_the_new_schema(session: Session) -> None
     assert "level_unit" not in vendor_columns
     assert "average_google_rating" in vendor_columns
     assert "average_rating" in vendor_columns
-    assert len(vendor_columns) == 14
+    assert "search_document" in vendor_columns
+    assert vendor_columns.search_document.computed is not None
+    assert len(vendor_columns) == 15
     assert isinstance(vendor_columns.average_rating.type, Numeric)
     assert vendor_columns.average_rating.type.precision == 2
     assert vendor_columns.average_rating.type.scale == 1

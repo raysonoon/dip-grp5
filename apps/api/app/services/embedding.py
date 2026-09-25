@@ -79,6 +79,8 @@ class GoogleEmbedder:
             except errors.APIError as error:
                 if error.code not in RETRY_STATUSES:
                     raise
+                if attempt + 1 >= self._max_retries:
+                    break
                 delay = _extract_retry_seconds(str(error))
                 if delay is None:
                     delay = min(2**attempt, 30)

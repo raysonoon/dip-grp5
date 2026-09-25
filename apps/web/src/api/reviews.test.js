@@ -8,6 +8,7 @@ const { DEV_USER_TOKEN } = await import("./client.js");
 const {
   createReview,
   deleteReview,
+  fetchReviews,
   fetchVendorReviews,
   reviewImageUrl,
   updateReview,
@@ -50,6 +51,33 @@ function jsonResponse(payload, status = 200) {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+test("fetchReviews fetches the homepage reviews with limit and offset", async (context) => {
+  const originalFetch = globalThis.fetch;
+
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  globalThis.fetch = async (path, options) => {
+    assert.equal(path, "/reviews?limit=15&offset=0");
+    assert.equal(options.method, "GET");
+    assert.equal(options.headers["X-Dev-User-Id"], undefined);
+
+    return jsonResponse({
+      items: [REVIEW_DETAIL],
+      total: 1,
+      limit: 15,
+      offset: 0,
+    });
+  };
+
+  const page = await fetchReviews(15, 0);
+
+  assert.equal(page.items.length, 1);
+  assert.equal(page.items[0].user.display_name, "Test User");
+  assert.equal(page.items[0].vendor.name, "Test Vendor");
+});
 
 test("fetchVendorReviews is public, filters, and parses review details", async (context) => {
   const originalFetch = globalThis.fetch;

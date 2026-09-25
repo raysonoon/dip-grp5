@@ -71,7 +71,14 @@ class IntentRouter:
             self._log_match(question, tier1)
             return tier1
 
-        tier2 = self._tier2(question, prompts)
+        try:
+            tier2 = self._tier2(question, prompts)
+        except Exception:
+            logger.warning(
+                "Embedding intent routing unavailable; falling back to LLM routing",
+                exc_info=True,
+            )
+            tier2 = None
         if tier2 is not None:
             self._log_match(question, tier2)
             return tier2
