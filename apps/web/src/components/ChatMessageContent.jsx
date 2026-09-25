@@ -189,6 +189,11 @@ function decorateChildren(children, sources, answerText) {
   ));
 }
 
+/**
+ * @param {object} props
+ * @param {string} props.answer
+ * @param {unknown[]} [props.sources]
+ */
 export default function ChatMessageContent({ answer, sources = [] }) {
   const components = useMemo(() => ({
     p: ({ children }) => (

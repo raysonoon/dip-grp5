@@ -105,6 +105,14 @@ export function parseReviewList(value) {
   };
 }
 
+export async function fetchReviews(limit = 15, offset = 0, signal) {
+  const payload = await apiClient.get(
+    `/reviews?limit=${limit}&offset=${offset}`,
+    { auth: false, signal },
+  );
+  return parseReviewList(payload);
+}
+
 export async function fetchVendorReviews(vendorId, signal) {
   const payload = await apiClient.get(`/reviews?vendor_id=${vendorId}`, { auth: false, signal });
   return parseReviewList(payload);

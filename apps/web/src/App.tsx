@@ -7,8 +7,8 @@ import { fetchVendors } from "./api/vendors";
 import ChatMessageContent from "./components/ChatMessageContent";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
-// @ts-ignore
 import VendorMap from "./pages/VendorMap";
+import { fetchReviews } from "./api/reviews.js";
 import {
   Search,
   Star,
@@ -21,11 +21,28 @@ import {
   TrendingUp,
   Menu,
   X,
-  ThumbsUp,
+  //ThumbsUp,//
 } from "lucide-react";
 
 const DISPLAY_FONT = "'Fraunces', serif";
 const BODY_FONT = "'Plus Jakarta Sans', sans-serif";
+
+type Review = {
+  id: number;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+  user: {
+    id: number;
+    display_name: string;
+    affiliation: string | null;
+  };
+  vendor: {
+    id: number;
+    name: string;
+    location: string | null;
+  };
+};
 
 const TRENDING_WEIGHTS = {
   recency: 0.4,
@@ -70,45 +87,6 @@ function computeTrendingScore(
   );
 }
 
-const REVIEWS = [
-  {
-    id: 1,
-    initials: "W",
-    user: "Wei Ling T.",
-    programme: "Computer Science, Yr 3",
-    stall: "Uncle Lim's Chicken Rice",
-    canteen: "North Spine",
-    rating: 5,
-    date: "2 days ago",
-    text: "Been eating here every week since Year 1. The soya sauce chicken is unmatched — silky smooth and the rice is always fluffy. Uncle and Auntie are so friendly too!",
-    helpful: 47,
-  },
-  {
-    id: 2,
-    initials: "A",
-    user: "Arjun M.",
-    programme: "Electrical Engineering, Yr 2",
-    stall: "Mama's Ban Mian",
-    canteen: "Pioneer Canteen",
-    rating: 5,
-    date: "5 days ago",
-    text: "Stumbled here before a 9am lab. The dry ban mian with extra egg is my go-to fuel now. Queue moves fast despite looking long. 100% recommend over the usual suspects.",
-    helpful: 33,
-  },
-  {
-    id: 3,
-    initials: "S",
-    user: "Sarah K.",
-    programme: "Business, Yr 4",
-    stall: "Ah Kow Ramen Bar",
-    canteen: "The Hive",
-    rating: 4,
-    date: "1 week ago",
-    text: "For campus ramen this is genuinely impressive. The shoyu broth surprised me. A bit pricier than other options but worth it as an occasional treat between tutorials.",
-    helpful: 29,
-  },
-];
-
 const SUGGESTED_QUESTIONS = [
   "What's cheap near North Spine?",
   "Best mala on campus?",
@@ -133,6 +111,7 @@ function StarRow({ rating, size = "sm" }: { rating: number; size?: "sm" | "md" }
 }
 
 function HomePage() {
+  const [reviewsPaused, setReviewsPaused] = useState(false);
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -148,6 +127,49 @@ function HomePage() {
   const [isTyping, setIsTyping] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const chatRequestPending = useRef(false);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [reviewSlide, setReviewSlide] = useState(0);
+  const reviewSlideCount = Math.ceil(reviews.length / 3);
+
+  useEffect(() => {
+    const controller = new AbortController();
+  
+    async function loadReviews() {
+      try {
+        const response = await fetchReviews(15, 0, controller.signal);
+        setReviews(response.items);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("Failed to fetch reviews:", error);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setReviewsLoading(false);
+        }
+      }
+    }
+  
+    loadReviews();
+  
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (reviewSlideCount <= 1 || reviewsPaused) return;
+  
+    const interval = window.setInterval(() => {
+      setReviewSlide((current) => (current + 1) % reviewSlideCount);
+    }, 8000);
+  
+    return () => window.clearInterval(interval);
+  }, [reviewSlideCount, reviewsPaused]);
+
+  useEffect(() => {
+    if (reviewSlideCount > 0 && reviewSlide >= reviewSlideCount) {
+      setReviewSlide(0);
+    }
+  }, [reviewSlide, reviewSlideCount]);
 
   const [trendingVendors, setTrendingVendors] = useState<TrendingVendor[]>([]);
   const [trendingLoading, setTrendingLoading] = useState(true);
@@ -518,68 +540,122 @@ function HomePage() {
         </div>
       </section>
 
-      {/* ── REVIEWS SECTION ───────────────────────────── */}
-      <section className="py-24 bg-card border-t border-border">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-16">
-            <p className="text-primary text-xs font-bold uppercase tracking-widest mb-2">
-              Real Voices
-            </p>
-            <h2
-              className="text-3xl md:text-4xl font-bold"
-              style={{ fontFamily: DISPLAY_FONT }}
-            >
-              Latest Student Reviews
-            </h2>
-          </div>
+      {/* ── REVIEWS ──────────────────────────────────── */}
+      <section className="py-24 bg-card border-y border-border">
+  <div className="max-w-7xl mx-auto px-6">
+    <div className="flex items-end justify-between mb-12">
+      <div>
+        <p className="text-[#1B2D4F] text-xs font-bold uppercase tracking-widest mb-2">
+          From the Community
+        </p>
+        <h2
+          className="text-3xl md:text-4xl font-bold"
+          style={{ fontFamily: DISPLAY_FONT }}
+        >
+          What students are saying
+        </h2>
+      </div>
+    </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
-            {REVIEWS.map((review) => (
-              <div
+    {reviewsLoading ? (
+      <div className="grid md:grid-cols-3 gap-6">
+        {[0, 1, 2].map((item) => (
+          <div
+            key={item}
+            className="p-6 rounded-2xl border border-border bg-background animate-pulse"
+          >
+            <div className="h-10 w-40 bg-muted rounded mb-5" />
+            <div className="h-4 w-32 bg-muted rounded mb-3" />
+            <div className="h-20 bg-muted rounded" />
+          </div>
+        ))}
+      </div>
+    ) : reviews.length === 0 ? (
+      <div className="text-center py-12 text-muted-foreground">
+        No reviews available yet.
+      </div>
+    ) : (
+      <>
+        <div
+          className="grid md:grid-cols-3 gap-6"
+          onMouseEnter={() => setReviewsPaused(true)}
+          onMouseLeave={() => setReviewsPaused(false)}
+        >
+          {reviews
+            .slice(reviewSlide * 3, reviewSlide * 3 + 3)
+            .map((review) => (
+              <Link
                 key={review.id}
-                className="p-6 rounded-2xl bg-background border border-border flex flex-col justify-between"
+                to={`/food/vendors/${review.vendor.id}`}
+                className="p-6 rounded-2xl border border-border bg-background flex flex-col hover:border-primary/40 transition-colors"
               >
-                <div>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-sm">
-                      {review.initials}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-bold flex-shrink-0">
+                      {review.user.display_name.charAt(0).toUpperCase()}
                     </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-foreground">
-                        {review.user}
-                      </h4>
-                      <p className="text-xs text-muted-foreground">
-                        {review.programme}
-                      </p>
+
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold truncate">
+                        {review.user.display_name}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {review.user.affiliation || "NTU"}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between mb-3">
-                    <StarRow rating={review.rating} />
-                    <span className="text-xs text-muted-foreground">
-                      {review.date}
-                    </span>
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
+                    <Clock className="w-3 h-3" />
+                    {new Date(review.created_at).toLocaleDateString()}
                   </div>
-
-                  <p className="text-sm text-foreground/90 leading-relaxed mb-4">
-                    {review.text}
-                  </p>
                 </div>
 
-                <div className="flex items-center justify-between text-xs text-muted-foreground pt-4 border-t border-border">
-                  <span className="font-semibold text-foreground">
-                    {review.stall}
+                <div className="flex items-center gap-2 mb-3">
+                  <StarRow rating={review.rating} />
+
+                  <span className="text-xs text-muted-foreground">
+                    at
                   </span>
-                  <button className="flex items-center gap-1 hover:text-foreground transition-colors">
-                    <ThumbsUp className="w-3.5 h-3.5" />
-                    <span>{review.helpful}</span>
-                  </button>
+
+                  <span className="text-xs font-semibold text-primary truncate">
+                    {review.vendor.name}
+                  </span>
                 </div>
-              </div>
+
+                <p className="text-sm text-muted-foreground leading-relaxed flex-1 mb-4">
+                  &ldquo;{review.comment || ""}&rdquo;
+                </p>
+
+                <div className="flex items-center text-xs text-muted-foreground border-t border-border pt-3">
+                  <div className="flex items-center gap-1.5">
+                    <MapPin className="w-3 h-3" />
+                    {review.vendor.location || "NTU"}
+                  </div>
+                </div>
+              </Link>
             ))}
-          </div>
         </div>
-      </section>
+
+        <div className="flex justify-center gap-2 mt-8">
+        {Array.from({ length: reviewSlideCount }).map((_, index) => (
+         <button
+           key={index}
+           type="button"
+           onClick={() => setReviewSlide(index)}
+           aria-label={`Go to review slide ${index + 1}`}
+           className={`w-2.5 h-2.5 rounded-full transition-colors ${
+             reviewSlide === index
+               ? "bg-primary"
+               : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
+             }`}
+            />
+         ))}
+        </div>
+      </>
+    )}
+  </div>
+</section>
 
       {/* ── FLOATING CHATBOT WIDGET ───────────────────── */}
       <div className="fixed bottom-6 right-6 z-50">
@@ -603,7 +679,7 @@ function HomePage() {
             <div className="p-4 h-80 overflow-y-auto flex flex-col gap-3 bg-background">
               {chatMessages.map((msg, idx) => (
                 <div
-                  key={i}
+                  key={idx}
                   className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
