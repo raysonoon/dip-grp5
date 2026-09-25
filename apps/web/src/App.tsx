@@ -7,7 +7,6 @@ import { fetchVendors } from "./api/vendors";
 import ChatMessageContent from "./components/ChatMessageContent";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
-// @ts-ignore
 import VendorMap from "./pages/VendorMap";
 import { fetchReviews } from "./api/reviews.js";
 import {
@@ -680,7 +679,7 @@ function HomePage() {
             <div className="p-4 h-80 overflow-y-auto flex flex-col gap-3 bg-background">
               {chatMessages.map((msg, idx) => (
                 <div
-                  key={i}
+                  key={idx}
                   className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
