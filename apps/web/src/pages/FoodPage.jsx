@@ -286,7 +286,7 @@ export default function FoodPage() {
                       {` • ${vendor.review_count} reviews`}
                     </p>
                     <Link
-                      to={`/food/vendors/${vendor.id}`}
+                      to={`/vendors/${vendor.id}`}
                       className="inline-block text-white bg-primary px-4 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity no-underline"
                     >
                       View Reviews
