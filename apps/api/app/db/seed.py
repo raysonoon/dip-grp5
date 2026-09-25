@@ -1,4 +1,5 @@
 import csv
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -18,6 +19,7 @@ from app.models import (
     User,
     Vendor,
 )
+from app.models.knowledge import KnowledgeChunk
 
 
 DEMO_VENDORS = (
@@ -52,6 +54,12 @@ GOOGLE_RATINGS_CSV = (
     / "data"
     / "google_reviews"
     / "ntu_food_places_final.csv"
+)
+
+KNOWLEDGE_CHUNKS_CSV = (
+    Path(__file__).resolve().parents[4]
+    / "data"
+    / "knowledge_chunks.csv"
 )
 
 MOJIBAKE_MARKERS = (
@@ -633,6 +641,113 @@ def seed_chatbot_questions(session: Session) -> tuple[int, int]:
     return created_count, updated_count
 
 
+def _parse_embedding(raw_value: str) -> list[float]:
+    """Parse a pgvector text form like ``[0.1,-0.2,...]`` into floats."""
+    stripped = raw_value.strip()
+    if not stripped.startswith("[") or not stripped.endswith("]"):
+        raise ValueError(f"Invalid embedding vector: {raw_value!r}")
+    inner = stripped[1:-1].strip()
+    if not inner:
+        return []
+    return [float(token) for token in inner.split(",")]
+
+
+def _parse_knowledge_chunk_metadata(raw_value: str) -> dict | None:
+    """Parse a CSV metadata field into a dict, or ``None`` when blank."""
+    stripped = raw_value.strip()
+    if not stripped:
+        return None
+    return json.loads(stripped)
+
+
+def _parse_nullable_str(raw_value: str) -> str | None:
+    stripped = raw_value.strip()
+    return stripped or None
+
+
+def seed_knowledge_chunks(session: Session) -> tuple[int, int, int]:
+    """Seed ``knowledge_chunks`` from an exported CSV (skip guard + by-source_id).
+
+    Imports Google review and Reddit chunks only. ``vendor_id`` is resolved at
+    import time from the already-seeded ``GoogleReview`` / ``RedditComment``
+    rows so it stays correct even when local ``vendors.id`` values differ.
+
+    Returns ``(created, skipped, unresolved_vendor)``. Skipping happens when the
+    table is already populated, the CSV is absent, or a row duplicates an
+    existing ``(source_type, source_id)`` key.
+    """
+    existing_count = session.scalar(select(KnowledgeChunk.id).limit(1))
+    if existing_count is not None:
+        print(
+            "Knowledge chunks already populated; skipping CSV seed "
+            "(run python -m app.db.reindex --force to rebuild)."
+        )
+        return 0, 0, 0
+
+    if not KNOWLEDGE_CHUNKS_CSV.exists():
+        print(
+            "Knowledge chunks CSV not found; skipping seed. "
+            f"Expected at {KNOWLEDGE_CHUNKS_CSV} (run python -m app.db.reindex "
+            "or generate the CSV to enable chatbot knowledge)."
+        )
+        return 0, 0, 0
+
+    google_vendor_ids = {
+        review.external_review_id: review.vendor_id
+        for review in session.scalars(select(GoogleReview)).all()
+    }
+    reddit_vendor_ids = {
+        comment.reddit_comment_id: comment.vendor_id
+        for comment in session.scalars(select(RedditComment)).all()
+    }
+
+    existing_keys = set(
+        session.execute(
+            select(KnowledgeChunk.source_type, KnowledgeChunk.source_id)
+        ).all()
+    )
+
+    created_count = 0
+    skipped_count = 0
+    unresolved_vendor_count = 0
+
+    with KNOWLEDGE_CHUNKS_CSV.open(newline="", encoding="utf-8-sig") as file:
+        for row in csv.DictReader(file):
+            source_type = row["source_type"].strip()
+            source_id = _parse_nullable_str(row["source_id"])
+            if (source_type, source_id) in existing_keys:
+                skipped_count += 1
+                continue
+
+            if source_type == "google_review":
+                vendor_id = google_vendor_ids.get(source_id)
+            elif source_type == "reddit":
+                vendor_id = reddit_vendor_ids.get(source_id)
+            else:
+                vendor_id = None
+
+            if vendor_id is None:
+                unresolved_vendor_count += 1
+
+            session.add(
+                KnowledgeChunk(
+                    source_type=source_type,
+                    source_id=source_id,
+                    vendor_id=vendor_id,
+                    content=row["content"],
+                    embedding=_parse_embedding(row["embedding"]),
+                    metadata_json=_parse_knowledge_chunk_metadata(
+                        row["metadata"]
+                    ),
+                )
+            )
+            existing_keys.add((source_type, source_id))
+            created_count += 1
+
+    session.commit()
+    return created_count, skipped_count, unresolved_vendor_count
+
+
 def main() -> None:
     with SessionLocal() as session:
         admin, admin_created = seed_development_admin(session)
@@ -658,6 +773,11 @@ def main() -> None:
             reddit_skipped,
             reddit_ignored,
         ) = seed_reddit_comments(session)
+        (
+            knowledge_created,
+            knowledge_skipped,
+            knowledge_unresolved,
+        ) = seed_knowledge_chunks(session)
 
     admin_action = "Created" if admin_created else "Confirmed"
     user_action = "Created" if test_user_created else "Confirmed"
@@ -706,6 +826,11 @@ def main() -> None:
         "Reddit comments: "
         f"created={reddit_created}, skipped={reddit_skipped}, "
         f"ignored={reddit_ignored}"
+    )
+    print(
+        "Knowledge chunks: "
+        f"created={knowledge_created}, skipped={knowledge_skipped}, "
+        f"unresolved_vendor={knowledge_unresolved}"
     )
 
 

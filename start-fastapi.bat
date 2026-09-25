@@ -54,9 +54,10 @@ if errorlevel 1 goto migration_failed
 "%PYTHON_EXE%" -m app.db.seed
 if errorlevel 1 goto seed_failed
 
-echo [6/7] Synchronizing chatbot knowledge...
-"%PYTHON_EXE%" -m app.db.reindex
-if errorlevel 1 echo       [WARNING] Chatbot knowledge sync failed; the API will still start.
+echo [6/7] Chatbot knowledge base (optional)...
+echo       Skipped automatically. To (re)build the RAG knowledge base, run:
+echo         python -m app.db.reindex
+echo       (from apps\api; requires GEMINI_API_KEY in apps\api\.env).
 
 echo [7/7] Starting FastAPI...
 call :api_is_ready

@@ -150,6 +150,22 @@ names are not unique and may be shared by multiple users.
 The optional `affiliation` field is retained as part of the user profile and is
 included with the public review-author summary.
 
+The seed also imports `data/knowledge_chunks.csv` (committed with the repo) to
+populate the chatbot RAG knowledge base. This is skipped automatically once the
+table already has rows, so it only runs on a fresh database. To regenerate the
+CSV from a populated database, export the shareable chunks (Google + Reddit,
+excluding per-database `internal_review` rows):
+
+```powershell
+docker exec dip-grp5-postgres psql -U postgres -d dip_grp5 -c "\copy (SELECT source_type, source_id, content, embedding, metadata FROM knowledge_chunks WHERE source_type <> 'internal_review') to '/tmp/knowledge_chunks.csv' with (format csv, header)"
+docker cp dip-grp5-postgres:/tmp/knowledge_chunks.csv data/knowledge_chunks.csv
+```
+
+`vendor_id` is resolved at import time from the already-seeded Google/Reddit
+tables, so the CSV stays correct even if local vendor IDs differ. To rebuild the
+knowledge base from the source data instead (requires `GEMINI_API_KEY`), run
+`python -m app.db.reindex`.
+
 Alternatively, run the one-click launcher at the repo root, which checks Docker,
 starts PostgreSQL, applies migrations, seeds development data, and opens the API
 documentation:
