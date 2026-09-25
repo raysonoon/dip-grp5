@@ -33,7 +33,7 @@ export default function VendorMap() {
   const mappedVendors = vendors.filter((vendor) => vendorsData[vendor.id]);
 
   return (
-    <div className="rounded-2xl border border-border overflow-hidden">
+    <div className="relative z-0 rounded-2xl border border-border overflow-hidden">
       <MapContainer
         center={NTU_CENTER}
         zoom={15}
