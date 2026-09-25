@@ -789,8 +789,10 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
-      <Route path="/food" element={<FoodPage />} />
-      <Route path="/vendors/:vendorId" element={<VendorsPage />} />
+      <Route element={<Layout />}>
+        <Route path="/food" element={<FoodPage />} />
+        <Route path="/vendors/:vendorId" element={<VendorsPage />} />
+      </Route>
     </Routes>
   );
 }

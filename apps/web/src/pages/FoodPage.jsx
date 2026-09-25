@@ -1,11 +1,8 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Bot, Send, X } from "lucide-react";
 
 import { apiUrl } from "../api/client";
 import { fetchVendorFilters, fetchVendorPage } from "../api/vendors";
-import { askChat, chatErrorMessage } from "../api/chat";
-import ChatMessageContent from "../components/ChatMessageContent";
 
 const DISPLAY_FONT = "'Fraunces', serif";
 const SEARCH_DEBOUNCE_MS = 300;
@@ -60,45 +57,6 @@ export default function FoodPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
-
-  // Chatbot state
-  const [chatMessages, setChatMessages] = useState([
-    {
-      role: "bot",
-      text: "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!",
-    },
-  ]);
-  const [chatInput, setChatInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
-  const chatRequestPending = useRef(false);
-
-  async function sendMessage(text) {
-    const question = text.trim();
-    if (!question || chatRequestPending.current) return;
-
-    chatRequestPending.current = true;
-    setChatMessages((prev) => [...prev, { role: "user", text: question }]);
-    setChatInput("");
-    setIsTyping(true);
-
-    try {
-      const response = await askChat(question);
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "bot", text: response.answer, sources: response.sources },
-      ]);
-    } catch (error) {
-      console.error("Chat request failed", error);
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "bot", text: chatErrorMessage(error) },
-      ]);
-    } finally {
-      chatRequestPending.current = false;
-      setIsTyping(false);
-    }
-  }
 
   // Keep the input and URL query in sync
   useEffect(() => {
@@ -323,75 +281,6 @@ export default function FoodPage() {
           )}
         </>
       )}
-
-      {/* ── FLOATING CHATBOT WIDGET ───────────────────── */}
-      <div className="fixed bottom-6 right-6 z-50">
-        {chatOpen ? (
-          <div className="w-80 sm:w-96 rounded-2xl bg-card border border-border shadow-2xl flex flex-col overflow-hidden transition-all">
-            <div className="p-4 bg-primary text-primary-foreground flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Bot className="w-5 h-5" />
-                <span className="font-bold text-sm">NTU Foodie Assistant</span>
-              </div>
-              <button
-                onClick={() => setChatOpen(false)}
-                className="p-1 hover:bg-black/10 rounded-lg transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-4 h-80 overflow-y-auto flex flex-col gap-3 bg-background">
-              {chatMessages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`max-w-[85%] p-3 rounded-xl text-xs leading-relaxed ${
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground self-end rounded-tr-none"
-                      : "bg-muted text-foreground self-start rounded-tl-none border border-border"
-                  }`}
-                >
-                  <ChatMessageContent text={msg.text} sources={msg.sources} />
-                </div>
-              ))}
-              {isTyping && (
-                <div className="self-start text-xs text-muted-foreground italic">Thinking...</div>
-              )}
-            </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                sendMessage(chatInput);
-              }}
-              className="p-3 bg-card border-t border-border flex gap-2"
-            >
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask about canteens or food..."
-                className="flex-1 bg-background text-xs px-3 py-2 rounded-lg border border-border outline-none focus:border-primary/40"
-              />
-              <button
-                type="submit"
-                disabled={isTyping}
-                className="p-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            </form>
-          </div>
-        ) : (
-          <button
-            onClick={() => setChatOpen(true)}
-            className="p-4 rounded-full bg-primary text-primary-foreground shadow-xl hover:scale-105 transition-transform flex items-center gap-2 font-semibold text-sm"
-          >
-            <Bot className="w-5 h-5" />
-            <span>Ask Foodie</span>
-          </button>
-        )}
-      </div>
     </div>
   );
 }
