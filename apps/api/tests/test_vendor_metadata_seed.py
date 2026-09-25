@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import seed
-from app.models import Vendor
+from app.models import Review, User, Vendor
 
 
 GOOGLE_VENDOR_COLUMNS = (
@@ -38,9 +38,11 @@ GOOGLE_VENDOR_COLUMNS = (
 
 def _write_vendor_csv(path: Path) -> None:
     path.write_text(
-        "id,name,location,category,opening_hours,price_range,halal,vegetarian\n"
-        "V001,Existing Vendor,North Spine,Cafe,Daily,$1-10,TRUE,FALSE\n"
-        "V002,Unknown Halal,South Spine,Food Court,Weekdays,$10-20,null,TRUE\n",
+        "id,name,location,unit_number,category,opening_hours,price_range,"
+        "halal,vegetarian\n"
+        "V001,Existing Vendor,North Spine,NS3-01-07,Cafe,Daily,$1-10,TRUE,FALSE\n"
+        "V002,Unknown Halal,South Spine,SS1-02-03,Food Court,Weekdays,$10-20,"
+        "null,TRUE\n",
         encoding="utf-8",
     )
 
@@ -83,7 +85,7 @@ def test_seed_ntu_vendors_populates_metadata_for_new_and_existing_rows(
     assert refreshed_existing is not None
     assert refreshed_existing.name == "Existing Vendor"
     assert refreshed_existing.location == "North Spine"
-    assert refreshed_existing.unit_code == "North Spine"
+    assert refreshed_existing.unit_code == "NS3-01-07"
     assert refreshed_existing.category == "Cafe"
     assert refreshed_existing.opening_hours == "Daily"
     assert refreshed_existing.price_range == "$1-10"
@@ -94,6 +96,8 @@ def test_seed_ntu_vendors_populates_metadata_for_new_and_existing_rows(
         select(Vendor).where(Vendor.directory_id == "V002")
     )
     assert unknown_halal is not None
+    assert unknown_halal.location == "South Spine"
+    assert unknown_halal.unit_code == "SS1-02-03"
     assert unknown_halal.price_range == "$10-20"
     assert unknown_halal.halal is None
     assert unknown_halal.vegetarian is True
@@ -127,8 +131,10 @@ def test_seed_ntu_vendors_preserves_existing_mojibake_fields(
 ) -> None:
     csv_path = tmp_path / "vendors.csv"
     csv_path.write_text(
-        "id,name,location,category,opening_hours,price_range,halal,vegetarian\n"
-        "V001,Gel��re,NS3-01-19,Desserts / caf��,Daily,$1-10,TRUE,TRUE\n",
+        "id,name,location,unit_number,category,opening_hours,price_range,"
+        "halal,vegetarian\n"
+        "V001,Gel��re,North Spine,NS3-01-19,Desserts / caf��,Daily,$1-10,"
+        "TRUE,TRUE\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(seed, "NTU_VENDOR_CSV", csv_path)
@@ -144,6 +150,7 @@ def test_seed_ntu_vendors_preserves_existing_mojibake_fields(
 
     assert existing.name == "Geláre"
     assert existing.category == "Dessert"
+    assert existing.location == "North Spine"
     assert existing.unit_code == "NS3-01-19"
 
 
@@ -172,13 +179,68 @@ def test_seed_ntu_vendors_refreshes_directory_metadata(
     seed.seed_ntu_vendors(session)
 
     assert existing.name == "Existing Vendor"
-    assert existing.location == "Existing Building"
-    assert existing.unit_code == "North Spine"
+    assert existing.location == "North Spine"
+    assert existing.unit_code == "NS3-01-07"
     assert existing.category == "Cafe"
     assert existing.opening_hours == "Daily"
     assert existing.price_range == "$1-10"
     assert existing.halal is True
     assert existing.vegetarian is False
+
+
+def test_seed_ntu_vendors_deletes_stale_vendors_but_keeps_referenced(
+    session: Session,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "vendors.csv"
+    _write_vendor_csv(csv_path)
+    monkeypatch.setattr(seed, "NTU_VENDOR_CSV", csv_path)
+
+    stale = Vendor(
+        directory_id="V999",
+        name="Stale Vendor",
+        unit_code="XYZ-01-01",
+    )
+    referenced = Vendor(
+        directory_id="V998",
+        name="Referenced Vendor",
+        unit_code="XYZ-01-02",
+    )
+    session.add_all([stale, referenced])
+    session.commit()
+
+    user = User(
+        display_name="Tester",
+        email_address="tester@test",
+        password_hash="x",
+        role="user",
+    )
+    session.add(user)
+    session.commit()
+    session.add(
+        Review(
+            user_id=user.id,
+            vendor_id=referenced.id,
+            rating_half_steps=8,
+        )
+    )
+    session.commit()
+
+    seed.seed_ntu_vendors(session)
+
+    assert (
+        session.scalar(
+            select(Vendor).where(Vendor.directory_id == "V999")
+        )
+        is None
+    )
+    assert (
+        session.scalar(
+            select(Vendor).where(Vendor.directory_id == "V998")
+        )
+        is not None
+    )
 
 
 def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
@@ -258,7 +320,7 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
     assert result[4] == 0
 
     assert safe_vendor.name == "Updated Vendor on Google"
-    assert safe_vendor.location == "1 Test Street, Singapore"
+    assert safe_vendor.location is None
     assert safe_vendor.unit_code == "NS3-01-01"
     assert safe_vendor.category == "Restaurant"
     assert safe_vendor.opening_hours == "Daily: 9am to 6pm"

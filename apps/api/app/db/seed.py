@@ -63,7 +63,6 @@ MOJIBAKE_MARKERS = (
 )
 GOOGLE_VENDOR_CORE_FIELD_MAP = (
     ("name", "name"),
-    ("address", "location"),
     ("Level / unit", "unit_code"),
     ("main_category", "category"),
     ("Opening hours", "opening_hours"),
@@ -96,7 +95,7 @@ def _parse_nullable_bool(
 
 def _safe_csv_text(raw_value: str) -> tuple[str | None, bool]:
     """Return normalized text and whether it was rejected as mojibake."""
-    normalized = raw_value.strip()
+    normalized = " ".join(raw_value.split())
     if not normalized:
         return None, False
     if any(marker in normalized for marker in MOJIBAKE_MARKERS):
@@ -208,12 +207,14 @@ def seed_demo_vendors(session: Session) -> list[tuple[Vendor, bool]]:
 
 def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
     results: list[tuple[Vendor, bool]] = []
+    seen_directory_ids: set[str] = set()
 
     with NTU_VENDOR_CSV.open(newline="", encoding="utf-8-sig") as file:
         reader = csv.DictReader(file)
 
         for row in reader:
             directory_id = row["id"].strip()
+            seen_directory_ids.add(directory_id)
             vendor = session.scalar(
                 select(Vendor).where(
                     Vendor.directory_id == directory_id
@@ -224,7 +225,8 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
             skip_new_vendor = False
             for source_column, target_field in (
                 ("name", "name"),
-                ("location", "unit_code"),
+                ("location", "location"),
+                ("unit_number", "unit_code"),
                 ("category", "category"),
                 ("opening_hours", "opening_hours"),
                 ("price_range", "price_range"),
@@ -268,11 +270,6 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
             if vendor is not None:
                 for field, value in vendor_directory_data.items():
                     _set_if_changed(vendor, field, value)
-                if (
-                    vendor.location is None
-                    and "unit_code" in vendor_directory_data
-                ):
-                    vendor.location = vendor_directory_data["unit_code"]
                 session.commit()
                 session.refresh(vendor)
                 results.append((vendor, False))
@@ -280,7 +277,6 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
 
             vendor = Vendor(
                 directory_id=directory_id,
-                location=vendor_directory_data.get("unit_code"),
                 **vendor_directory_data,
             )
             session.add(vendor)
@@ -288,7 +284,64 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
             session.refresh(vendor)
             results.append((vendor, True))
 
+    session.commit()
+
+    deleted_count, skipped_count = _delete_stale_ntu_vendors(
+        session,
+        seen_directory_ids,
+    )
+    if deleted_count or skipped_count:
+        print(
+            "Stale NTU vendors: "
+            f"deleted={deleted_count}, "
+            f"skipped_with_content={skipped_count}"
+        )
+
     return results
+
+
+def _delete_stale_ntu_vendors(
+    session: Session,
+    seen_directory_ids: set[str],
+) -> tuple[int, int]:
+    """Delete vendors whose directory_id is no longer in the directory CSV.
+
+    Vendors with internal reviews or Google reviews are kept because those
+    foreign keys use ON DELETE RESTRICT. Reddit comments are detached via
+    ON DELETE SET NULL and vendor images are removed via ON DELETE CASCADE.
+    """
+    stale_vendors = session.scalars(
+        select(Vendor).where(
+            Vendor.directory_id.is_not(None),
+            Vendor.directory_id.not_in(seen_directory_ids),
+        )
+    ).all()
+
+    deleted_count = 0
+    skipped_count = 0
+    for vendor in stale_vendors:
+        has_reviews = session.scalar(
+            select(Review.id)
+            .where(Review.vendor_id == vendor.id)
+            .limit(1)
+        ) is not None
+        has_google_reviews = session.scalar(
+            select(GoogleReview.id)
+            .where(GoogleReview.vendor_id == vendor.id)
+            .limit(1)
+        ) is not None
+        if has_reviews or has_google_reviews:
+            print(
+                f"Skipping stale vendor {vendor.directory_id}: "
+                "still referenced by reviews or Google reviews"
+            )
+            skipped_count += 1
+            continue
+        session.delete(vendor)
+        deleted_count += 1
+
+    session.commit()
+    return deleted_count, skipped_count
 
 
 def seed_vendor_google_metadata(
