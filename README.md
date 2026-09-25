@@ -174,6 +174,16 @@ documentation:
 .\start-fastapi.bat
 ```
 
+macOS/Linux users run the equivalent bash launcher instead:
+
+```bash
+./start-fastapi.sh
+```
+
+Both do the same thing (Docker + migrations + seed + `fastapi dev`); the `.sh`
+script runs FastAPI in the foreground. Prerequisites are identical: Docker
+Desktop and the `apps/api/.venv` environment.
+
 ### Run the API
 
 Start FastAPI from `apps/api` (venv active):
