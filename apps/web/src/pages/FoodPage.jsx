@@ -1,22 +1,18 @@
 import { useEffect, useState, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Bot, Send, X } from "lucide-react";
+import { Bot, Send, X } from "lucide-react";
 
 import { apiUrl } from "../api/client";
-import {
-  fetchVendorFilters,
-  fetchVendorPage,
-} from "../api/vendors";
-
+import { fetchVendorFilters, fetchVendorPage } from "../api/vendors";
 import { askChat, chatErrorMessage } from "../api/chat";
 import ChatMessageContent from "../components/ChatMessageContent";
 
+const DISPLAY_FONT = "'Fraunces', serif";
 const SEARCH_DEBOUNCE_MS = 300;
 
 function displayError(error) {
   return error instanceof Error ? error.message : "Something went wrong";
 }
-
 
 function getLocationGroup(location) {
   const value = location.toLowerCase();
@@ -44,16 +40,13 @@ function getLocationGroup(location) {
   return location;
 }
 
-
 export default function FoodPage() {
   const PAGE_LIMIT = 12;
 
   const [searchParams, setSearchParams] = useSearchParams();
   const urlQuery = searchParams.get("q") ?? "";
   const [searchTerm, setSearchTerm] = useState(urlQuery);
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(
-    urlQuery.trim(),
-  );
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(urlQuery.trim());
   const [selectedLocation, setSelectedLocation] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
 
@@ -68,7 +61,7 @@ export default function FoodPage() {
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
 
-  // --- CHATBOT STATE ---
+  // Chatbot state
   const [chatMessages, setChatMessages] = useState([
     {
       role: "bot",
@@ -85,10 +78,7 @@ export default function FoodPage() {
     if (!question || chatRequestPending.current) return;
 
     chatRequestPending.current = true;
-    setChatMessages((prev) => [
-      ...prev,
-      { role: "user", text: question },
-    ]);
+    setChatMessages((prev) => [...prev, { role: "user", text: question }]);
     setChatInput("");
     setIsTyping(true);
 
@@ -127,7 +117,7 @@ export default function FoodPage() {
           else nextParams.delete("q");
           return nextParams;
         },
-        { replace: true },
+        { replace: true }
       );
     }, SEARCH_DEBOUNCE_MS);
 
@@ -140,9 +130,7 @@ export default function FoodPage() {
 
     fetchVendorFilters(controller.signal)
       .then((filters) => {
-        const groupedLocations = [
-          ...new Set(filters.locations.map(getLocationGroup)),
-        ].sort();
+        const groupedLocations = [...new Set(filters.locations.map(getLocationGroup))].sort();
         setLocations(groupedLocations);
         setCategories(filters.categories);
       })
@@ -186,490 +174,224 @@ export default function FoodPage() {
       });
 
     return () => controller.abort();
-  }, [
-    debouncedSearchTerm,
-    selectedLocation,
-    selectedCategory,
-    offset,
-    loadAttempt,
-  ]);
+  }, [debouncedSearchTerm, selectedLocation, selectedCategory, offset, loadAttempt]);
+
+  const hasNextPage = offset + PAGE_LIMIT < total;
+  const hasPrevPage = offset > 0;
 
   return (
-    <>
-      <div
-        style={{
-          maxWidth: "1000px",
-          width: "100%",
-          margin: "0 auto",
-          padding: "40px 20px",
-          fontFamily: "var(--sans)",
-          boxSizing: "border-box",
-        }}
-      >
-        <header
-          style={{
-            marginBottom: "30px",
-            textAlign: "center",
+    <div className="max-w-[1000px] w-full mx-auto px-5 py-10 box-border">
+      <header className="mb-8 text-center">
+        <h1 className="text-foreground text-3xl font-bold" style={{ fontFamily: DISPLAY_FONT }}>
+          NTU Foodie Hub
+        </h1>
+        <p className="text-muted-foreground">Explore and review food vendors across NTU canteens</p>
+      </header>
+
+      <div className="flex gap-4 mb-6 flex-wrap">
+        <input
+          type="text"
+          placeholder="Search vendor or cuisine..."
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
+          className="flex-1 px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground"
+        />
+        <select
+          value={selectedLocation}
+          onChange={(event) => {
+            setSelectedLocation(event.target.value);
+            setOffset(0);
           }}
+          className="px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground"
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-start",
-              marginBottom: "20px",
-            }}
-          >
-            <Link
-              to="/"
-              aria-label="Back to homepage"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-                color: "#fff",
-                background: "var(--accent)",
-                padding: "10px 16px",
-                borderRadius: "var(--radius-lg)",
-                textDecoration: "none",
-                fontSize: "0.9rem",
-                fontWeight: 600,
-              }}
-            >
-              <ArrowLeft size={17} aria-hidden="true" />
-              Back to homepage
-            </Link>
-          </div>
-          <h1
-            style={{
-              color: "var(--text-h)",
-              fontFamily: "var(--heading)",
-              fontSize: "2.2rem",
-            }}
-          >
-            NTU Foodie Hub
-          </h1>
-
-          <p style={{ color: "var(--text)" }}>
-            Explore and review food vendors across NTU canteens
-          </p>
-        </header>
-
-        <div
-          style={{
-            display: "flex",
-            gap: "15px",
-            marginBottom: "25px",
-            flexWrap: "wrap",
+          <option value="">All locations</option>
+          {locations.map((location) => (
+            <option key={location} value={location}>
+              {location}
+            </option>
+          ))}
+        </select>
+        <select
+          value={selectedCategory}
+          onChange={(event) => {
+            setSelectedCategory(event.target.value);
+            setOffset(0);
           }}
+          className="px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground"
         >
-          <input
-            type="text"
-            placeholder="Search vendor, location or cuisine..."
-            value={searchTerm}
-            onChange={(event) => {
-              setSearchTerm(event.target.value);
-              setOffset(0);
-            }}
-            style={{
-              flex: "1",
-              padding: "10px 14px",
-              borderRadius: "var(--radius-lg)",
-              border: "1px solid var(--border)",
-            }}
-          />
-
-          <select
-            value={selectedLocation}
-            onChange={(event) => {
-              setSelectedLocation(event.target.value);
-              setOffset(0);
-            }}
-            style={{
-              padding: "10px 14px",
-              borderRadius: "var(--radius-lg)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            <option value="">All locations</option>
-
-            {locations.map((location) => (
-              <option key={location} value={location}>
-                {location}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={selectedCategory}
-            onChange={(event) => {
-              setSelectedCategory(event.target.value);
-              setOffset(0);
-            }}
-            style={{
-              padding: "10px 14px",
-              borderRadius: "var(--radius-lg)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            <option value="">All categories</option>
-
-            {categories.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </select>
-
-          {(searchTerm || selectedLocation || selectedCategory) && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchTerm("");
-                setSelectedLocation("");
-                setSelectedCategory("");
-                setOffset(0);
-              }}
-            >
-              Clear
-            </button>
-          )}
-        </div>
-
-        {isLoading && (
-          <p
-            style={{
-              textAlign: "center",
-              color: "var(--text)",
-            }}
-          >
-            Loading vendors...
-          </p>
-        )}
-
-        {!isLoading && loadError && (
-          <div
-            role="alert"
-            style={{
-              textAlign: "center",
-              color: "#b91c1c",
-            }}
-          >
-            <p>Could not load vendors: {loadError}</p>
-
-            <button
-              type="button"
-              onClick={() =>
-                setLoadAttempt((attempt) => attempt + 1)
-              }
-            >
-              Try again
-            </button>
-          </div>
-        )}
-
-        {!isLoading &&
-          !loadError &&
-          vendors.length === 0 && (
-            <p
-              style={{
-                textAlign: "center",
-                color: "var(--text)",
-              }}
-            >
-              No vendors found for the selected search or filters.
-            </p>
-          )}
-
-        {!isLoading &&
-          !loadError &&
-          vendors.length > 0 && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fill, minmax(280px, 1fr))",
-                gap: "24px",
-              }}
-            >
-              {vendors.map((vendor) => {
-                const rating =
-                  vendor.average_rating ??
-                  vendor.average_google_rating;
-
-                return (
-                  <div
-                    key={vendor.id}
-                    style={{
-                      border: "1px solid var(--border)",
-                      borderRadius: "var(--radius-lg)",
-                      overflow: "hidden",
-                      background: "var(--card)",
-                      boxShadow: "var(--shadow)",
-                      textAlign: "left",
-                    }}
-                  >
-                    {vendor.image_url ? (
-                      <img
-                        src={apiUrl(vendor.image_url)}
-                        alt={vendor.name}
-                        style={{
-                          width: "100%",
-                          height: "160px",
-                          objectFit: "cover",
-                        }}
-                      />
-                    ) : (
-                      <div
-                        role="img"
-                        aria-label={`${vendor.name} has no image`}
-                        style={{
-                          width: "100%",
-                          height: "160px",
-                          display: "grid",
-                          placeItems: "center",
-                          background: "var(--code-bg)",
-                          color: "var(--text)",
-                        }}
-                      >
-                        No image available
-                      </div>
-                    )}
-
-                    <div
-                      style={{
-                        padding: "16px",
-                        textAlign: "center",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "0.8rem",
-                          color: "var(--accent)",
-                          background: "var(--accent-bg)",
-                          padding: "4px 10px",
-                          borderRadius: "999px",
-                        }}
-                      >
-                        {vendor.location || "NTU"}
-                      </span>
-
-                      <h3
-                        style={{
-                          margin: "10px 0 5px 0",
-                          fontFamily: "var(--heading)",
-                          color: "var(--text-h)",
-                        }}
-                      >
-                        {vendor.name}
-                      </h3>
-
-                      <p
-                        style={{
-                          margin: "0 0 10px 0",
-                          color: "var(--text)",
-                          fontSize: "0.9rem",
-                        }}
-                      >
-                        {vendor.category || "Food"}
-                        {rating != null
-                          ? ` • ⭐ ${rating}`
-                          : ""}
-                        {` • ${vendor.review_count} reviews`}
-                      </p>
-
-                      <Link
-                        to={`/food/vendors/${vendor.id}`}
-                        style={{
-                          display: "inline-block",
-                          color: "#fff",
-                          background: "var(--accent)",
-                          padding: "10px 16px",
-                          borderRadius: "var(--radius-lg)",
-                          textDecoration: "none",
-                          fontSize: "0.9rem",
-                          fontWeight: 600,
-                        }}
-                      >
-                        View Reviews
-                      </Link>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-        {!isLoading && !loadError && total > 0 && (
-  <div className="mt-8 flex items-center justify-center gap-2">
-    <button
-      type="button"
-      disabled={offset === 0}
-      onClick={() =>
-        setOffset(Math.max(0, offset - PAGE_LIMIT))
-      }
-      className="rounded-lg border px-4 py-2 disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      Previous
-    </button>
-
-    {Array.from(
-      { length: Math.ceil(total / PAGE_LIMIT) },
-      (_, index) => {
-        const pageNumber = index + 1;
-        const currentPage = Math.floor(offset / PAGE_LIMIT) + 1;
-
-        return (
-          <button
-            key={pageNumber}
-            type="button"
-            onClick={() =>
-              setOffset(index * PAGE_LIMIT)
-            }
-            className={`h-10 min-w-10 rounded-lg border px-3 ${
-              currentPage === pageNumber
-                ? "bg-black text-white"
-                : "bg-white text-black"
-            }`}
-          >
-            {pageNumber}
-          </button>
-        );
-      },
-    )}
-
-    <button
-      type="button"
-      disabled={offset + PAGE_LIMIT >= total}
-      onClick={() => setOffset(offset + PAGE_LIMIT)}
-      className="rounded-lg border px-4 py-2 disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      Next
-    </button>
-  </div>
-)}
+          <option value="">All categories</option>
+          {categories.map((category) => (
+            <option key={category} value={category}>
+              {category}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {/* FLOATING CHAT WIDGET */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-        {chatOpen && (
-          <div className="w-[360px] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                  <Bot className="w-4 h-4 text-primary-foreground" />
-                </div>
+      {isLoading && <p className="text-center text-muted-foreground">Loading vendors...</p>}
+      {!isLoading && loadError && (
+        <div role="alert" className="text-center text-destructive">
+          <p>Could not load vendors: {loadError}</p>
+          <button
+            type="button"
+            className="cursor-pointer mt-2 underline text-sm font-semibold"
+            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+      {!isLoading && !loadError && vendors.length === 0 && (
+        <p className="text-center text-muted-foreground">No matching vendors found.</p>
+      )}
 
-                <div>
-                  <div className="text-sm font-semibold text-foreground">
-                    Foodie
+      {!isLoading && !loadError && vendors.length > 0 && (
+        <>
+          <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
+            {vendors.map((vendor) => {
+              const rating = vendor.average_rating ?? vendor.average_google_rating;
+              return (
+                <div
+                  key={vendor.id}
+                  className="border border-border rounded-xl overflow-hidden bg-card shadow-sm text-left"
+                >
+                  {vendor.image_url ? (
+                    <img
+                      src={apiUrl(vendor.image_url)}
+                      alt={vendor.name}
+                      className="w-full h-40 object-cover"
+                    />
+                  ) : (
+                    <div
+                      role="img"
+                      aria-label={`${vendor.name} has no image`}
+                      className="w-full h-40 grid place-items-center bg-muted text-muted-foreground"
+                    >
+                      No image available
+                    </div>
+                  )}
+                  <div className="p-4 text-center">
+                    <span className="text-xs text-primary bg-primary/10 px-2.5 py-1 rounded-full">
+                      {vendor.location || "NTU"}
+                    </span>
+                    <h3
+                      className="mt-2.5 mb-1 text-foreground font-bold"
+                      style={{ fontFamily: DISPLAY_FONT }}
+                    >
+                      {vendor.name}
+                    </h3>
+                    <p className="mb-2.5 text-muted-foreground text-sm">
+                      {vendor.category || "Food"}
+                      {rating != null ? ` • ⭐ ${rating}` : ""}
+                      {` • ${vendor.review_count} reviews`}
+                    </p>
+                    <Link
+                      to={`/food/vendors/${vendor.id}`}
+                      className="inline-block text-white bg-primary px-4 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity no-underline"
+                    >
+                      View Reviews
+                    </Link>
                   </div>
-
-                  <div className="text-xs text-[#4CAF50] flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#4CAF50] inline-block" />
-                    Online
-                  </div>
                 </div>
-              </div>
+              );
+            })}
+          </div>
 
+          {(hasPrevPage || hasNextPage) && (
+            <div className="flex justify-center gap-3 mt-8">
               <button
                 type="button"
+                disabled={!hasPrevPage}
+                onClick={() => setOffset((prev) => Math.max(0, prev - PAGE_LIMIT))}
+                className={`px-4 py-2 rounded-lg border border-border text-sm font-semibold ${
+                  hasPrevPage ? "cursor-pointer" : "cursor-default opacity-40"
+                }`}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                disabled={!hasNextPage}
+                onClick={() => setOffset((prev) => prev + PAGE_LIMIT)}
+                className={`px-4 py-2 rounded-lg border border-border text-sm font-semibold ${
+                  hasNextPage ? "cursor-pointer" : "cursor-default opacity-40"
+                }`}
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── FLOATING CHATBOT WIDGET ───────────────────── */}
+      <div className="fixed bottom-6 right-6 z-50">
+        {chatOpen ? (
+          <div className="w-80 sm:w-96 rounded-2xl bg-card border border-border shadow-2xl flex flex-col overflow-hidden transition-all">
+            <div className="p-4 bg-primary text-primary-foreground flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Bot className="w-5 h-5" />
+                <span className="font-bold text-sm">NTU Foodie Assistant</span>
+              </div>
+              <button
                 onClick={() => setChatOpen(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1"
-                aria-label="Close chat"
+                className="p-1 hover:bg-black/10 rounded-lg transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-4 h-72 overflow-y-auto flex flex-col gap-3 bg-background">
-              {chatMessages.map((msg, i) => (
+            <div className="p-4 h-80 overflow-y-auto flex flex-col gap-3 bg-background">
+              {chatMessages.map((msg, idx) => (
                 <div
-                  key={i}
-                  className={`flex ${
+                  key={idx}
+                  className={`max-w-[85%] p-3 rounded-xl text-xs leading-relaxed ${
                     msg.role === "user"
-                      ? "justify-end"
-                      : "justify-start"
+                      ? "bg-primary text-primary-foreground self-end rounded-tr-none"
+                      : "bg-muted text-foreground self-start rounded-tl-none border border-border"
                   }`}
                 >
-                  <div
-                    className={`max-w-[82%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground rounded-br-sm"
-                        : "bg-card border border-border text-foreground rounded-bl-sm"
-                    }`}
-                  >
-                    {msg.role === "bot" ? (
-                      <ChatMessageContent answer={msg.text} sources={msg.sources} />
-                    ) : (
-                      msg.text
-                    )}
-                  </div>
+                  <ChatMessageContent text={msg.text} sources={msg.sources} />
                 </div>
               ))}
-
               {isTyping && (
-                <div className="flex justify-start">
-                  <div className="px-4 py-3 rounded-2xl bg-card border border-border rounded-bl-sm">
-                    <div className="flex gap-1 items-center">
-                      {[0, 1, 2].map((i) => (
-                        <div
-                          key={i}
-                          className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce"
-                          style={{
-                            animationDelay: `${i * 0.15}s`,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                <div className="self-start text-xs text-muted-foreground italic">Thinking...</div>
               )}
             </div>
 
-            <div className="px-4 pt-4 pb-4 border-t border-border bg-card">
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(event) =>
-                    setChatInput(event.target.value)
-                  }
-                  onKeyDown={(event) =>
-                    event.key === "Enter" &&
-                    sendMessage(chatInput)
-                  }
-                  placeholder="Ask anything about campus food..."
-                  className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40 transition-colors"
-                />
-
-                <button
-                  type="button"
-                  onClick={() => sendMessage(chatInput)}
-                  className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center hover:opacity-90 transition-opacity flex-shrink-0"
-                  disabled={isTyping}
-                >
-                  <Send className="w-4 h-4 text-primary-foreground" />
-                </button>
-              </div>
-            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                sendMessage(chatInput);
+              }}
+              className="p-3 bg-card border-t border-border flex gap-2"
+            >
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Ask about canteens or food..."
+                className="flex-1 bg-background text-xs px-3 py-2 rounded-lg border border-border outline-none focus:border-primary/40"
+              />
+              <button
+                type="submit"
+                disabled={isTyping}
+                className="p-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
           </div>
+        ) : (
+          <button
+            onClick={() => setChatOpen(true)}
+            className="p-4 rounded-full bg-primary text-primary-foreground shadow-xl hover:scale-105 transition-transform flex items-center gap-2 font-semibold text-sm"
+          >
+            <Bot className="w-5 h-5" />
+            <span>Ask Foodie</span>
+          </button>
         )}
-
-        <button
-          type="button"
-          onClick={() => setChatOpen((open) => !open)}
-          className="flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-primary text-primary-foreground font-semibold text-sm shadow-lg hover:opacity-90 transition-opacity"
-          aria-label="Open Foodie chatbot"
-        >
-          {chatOpen ? (
-            <X className="w-4 h-4" />
-          ) : (
-            <Bot className="w-4 h-4" />
-          )}
-
-          {!chatOpen && "Ask Foodie"}
-        </button>
       </div>
-    </>
+    </div>
   );
 }
