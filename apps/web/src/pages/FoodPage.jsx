@@ -136,6 +136,9 @@ export default function FoodPage() {
 
   const hasNextPage = offset + PAGE_LIMIT < total;
   const hasPrevPage = offset > 0;
+  const totalPages = Math.ceil(total / PAGE_LIMIT);
+  const currentPage = Math.floor(offset / PAGE_LIMIT) + 1;
+  const hasActiveFilters = Boolean(searchTerm.trim() || selectedLocation || selectedCategory);
 
   return (
     <div className="max-w-[1000px] w-full mx-auto px-5 py-10 box-border">
@@ -184,6 +187,20 @@ export default function FoodPage() {
             </option>
           ))}
         </select>
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearchTerm("");
+              setSelectedLocation("");
+              setSelectedCategory("");
+              setOffset(0);
+            }}
+            className="px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm font-semibold cursor-pointer hover:bg-muted transition-colors"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {isLoading && <p className="text-center text-muted-foreground">Loading vendors...</p>}
@@ -267,6 +284,24 @@ export default function FoodPage() {
               >
                 Previous
               </button>
+              {Array.from({ length: totalPages }, (_, index) => {
+                const pageNumber = index + 1;
+                return (
+                  <button
+                    key={pageNumber}
+                    type="button"
+                    onClick={() => setOffset(index * PAGE_LIMIT)}
+                    aria-current={currentPage === pageNumber ? "page" : undefined}
+                    className={`min-w-10 px-3 py-2 rounded-lg border text-sm font-semibold ${
+                      currentPage === pageNumber
+                        ? "bg-primary text-primary-foreground border-primary cursor-default"
+                        : "border-border text-foreground cursor-pointer hover:bg-muted"
+                    }`}
+                  >
+                    {pageNumber}
+                  </button>
+                );
+              })}
               <button
                 type="button"
                 disabled={!hasNextPage}
