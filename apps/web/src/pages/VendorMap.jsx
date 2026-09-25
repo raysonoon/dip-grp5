@@ -24,7 +24,7 @@ export default function VendorMap() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchVendors(controller.signal)
+    fetchVendors("", controller.signal)
       .then(setVendors)
       .catch(() => {});
     return () => controller.abort();
