@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
+import Layout from "./components/Layout";
 import { askChat, chatErrorMessage } from "./api/chat";
 import { apiUrl } from "./api/client";
 import { fetchVendorReviews } from "./api/reviews";
@@ -281,7 +282,7 @@ function HomePage() {
               className="text-lg font-bold text-foreground"
               style={{ fontFamily: DISPLAY_FONT }}
             >
-              NTU Foodie Guide
+              NTUmmy
             </span>
           </div>
 
@@ -363,9 +364,9 @@ function HomePage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search stalls, dishes, canteens..."
+                  placeholder="Search for stalls, dishes, canteens..."
                   className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none flex-1"
-                />
+              />
               </div>
               <button
                 type="submit"
@@ -788,9 +789,10 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
-      <Route path="/food" element={<FoodPage />} />
-      <Route path="/vendors/:vendorId" element={<VendorsPage />} />
-      <Route path="/food/vendors/:vendorId" element={<VendorsPage />} />
+      <Route element={<Layout />}>
+        <Route path="/food" element={<FoodPage />} />
+        <Route path="/vendors/:vendorId" element={<VendorsPage />} />
+      </Route>
     </Routes>
   );
 }
