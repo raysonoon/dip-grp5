@@ -134,6 +134,7 @@ Reviews imported from Google for a vendor.
 | `external_review_id` | varchar(255) | no | Unique external id |
 | `rating` | smallint | no | `1` to `5` |
 | `comment` | text | yes | |
+| `maps_url` | text | yes | Google Maps URL for the imported review |
 | `published_at` | timestamptz | no | |
 
 Constraints / indexes:

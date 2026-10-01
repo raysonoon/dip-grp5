@@ -55,6 +55,11 @@ class GoogleReview(Base):
         nullable=True,
     )
 
+    maps_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

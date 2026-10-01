@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import seed
-from app.models import Review, User, Vendor
+from app.models import GoogleReview, Review, User, Vendor
 
 
 GOOGLE_VENDOR_COLUMNS = (
@@ -337,3 +337,162 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
 
     second_result = seed.seed_vendor_google_metadata(session)
     assert second_result[2] == 0
+
+
+def test_seed_google_reviews_imports_and_backfills_maps_url(
+    session: Session,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "google-reviews.csv"
+
+    with csv_path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=[
+                "ID",
+                "review_id",
+                "rating",
+                "review_text",
+                "published_at_date",
+                "review_link",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "ID": "V001",
+                "review_id": "review-1",
+                "rating": "5",
+                "review_text": "Great food",
+                "published_at_date": "2026-09-01T12:00:00+00:00",
+                "review_link": "https://maps.example.com/review-1",
+            }
+        )
+
+    monkeypatch.setattr(seed, "GOOGLE_REVIEWS_CSV", csv_path)
+
+    vendor = Vendor(
+        directory_id="V001",
+        name="Test Vendor",
+    )
+    session.add(vendor)
+    session.commit()
+
+    created, skipped, missing_vendor = seed.seed_google_reviews(session)
+
+    assert created == 1
+    assert skipped == 0
+    assert missing_vendor == 0
+
+    review = session.scalar(
+        select(GoogleReview).where(
+            GoogleReview.external_review_id == "review-1"
+        )
+    )
+
+    assert review is not None
+    assert review.maps_url == "https://maps.example.com/review-1"
+
+    review.maps_url = None
+    session.commit()
+
+    created, skipped, missing_vendor = seed.seed_google_reviews(session)
+
+    assert created == 0
+    assert skipped == 1
+    assert missing_vendor == 0
+
+    session.refresh(review)
+
+    assert review.maps_url == "https://maps.example.com/review-1"
+
+
+def test_vendor_category_normalization_and_overrides(
+    session: Session,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "vendors.csv"
+    csv_path.write_text(
+        "id,name,location,unit_number,category,opening_hours,price_range,"
+        "halal,vegetarian\n"
+        "V001,Coffee Vendor,North Spine,NS1,Coffee,Daily,$1-10,TRUE,FALSE\n"
+        "V002,Food Court Vendor,South Spine,SS1,Cafeteria,Daily,$1-10,TRUE,FALSE\n"
+        "V005,ANDES by ASTONS,Hall 13,H13,Cafe,Daily,$1-10,TRUE,FALSE\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(seed, "NTU_VENDOR_CSV", csv_path)
+
+    seed.seed_ntu_vendors(session)
+
+    coffee_vendor = session.scalar(
+        select(Vendor).where(Vendor.directory_id == "V001")
+    )
+    canteen_vendor = session.scalar(
+        select(Vendor).where(Vendor.directory_id == "V002")
+    )
+    andes = session.scalar(
+        select(Vendor).where(Vendor.directory_id == "V005")
+    )
+
+    assert coffee_vendor is not None
+    assert coffee_vendor.category == "Drinks"
+
+    assert canteen_vendor is not None
+    assert canteen_vendor.category == "Canteen"
+
+    assert andes is not None
+    assert andes.category == "Restaurant"
+
+
+def test_google_metadata_keeps_canonical_category_and_backfills_existing_row(
+    session: Session,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "google-vendors.csv"
+
+    _write_google_vendor_csv(
+        csv_path,
+        [
+            {
+                "ID": "V053",
+                "Name": "Venture Drive Coffee",
+                "main_category": "Cafe",
+            },
+            {
+                "ID": "V018",
+                "Name": "Food Court 1",
+                "main_category": "Coffee shop",
+            },
+        ],
+    )
+
+    monkeypatch.setattr(seed, "GOOGLE_RATINGS_CSV", csv_path)
+
+    drinks_vendor = Vendor(
+        directory_id="V053",
+        name="Venture Drive Coffee",
+        category="Drinks",
+    )
+    stale_vendor = Vendor(
+        directory_id="V018",
+        name="Food Court 1",
+        category="Coffee shop",
+    )
+
+    session.add_all([drinks_vendor, stale_vendor])
+    session.commit()
+
+    seed.seed_vendor_google_metadata(session)
+
+    assert drinks_vendor.category == "Drinks"
+    assert stale_vendor.category == "Canteen"
+
+    second_result = seed.seed_vendor_google_metadata(session)
+
+    assert second_result[2] == 0
+    assert drinks_vendor.category == "Drinks"
+    assert stale_vendor.category == "Canteen"
