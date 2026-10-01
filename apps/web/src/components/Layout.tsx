@@ -173,6 +173,18 @@ export default function Layout() {
            </div>
           </Link>
           <nav className="flex items-center gap-6 text-sm font-medium">
+             <Link
+              to="/signin"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-2"
+            >
+              Sign In
+            </Link>
+            <Link
+              to="/food"
+              className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity"
+            >
+              Discover
+            </Link>         
           </nav>
         </div>
       </header>

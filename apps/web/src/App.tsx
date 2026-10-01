@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
 import Layout from "./components/Layout";
+import SignInPage from "./pages/SignInPage";
 import { askChat, chatErrorMessage } from "./api/chat";
 import { apiUrl } from "./api/client";
 import { fetchVendorReviews } from "./api/reviews";
@@ -287,9 +288,13 @@ function HomePage() {
           </div>
 
           <div className="hidden md:flex items-center gap-3">
-            <button className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Sign In
-            </button>
+            <Link 
+             to="/signin"
+             className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+             Sign In
+          </Link>
+
             <Link
               to="/food"
               className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity"
@@ -764,7 +769,7 @@ function HomePage() {
               className="text-sm font-bold"
               style={{ fontFamily: DISPLAY_FONT }}
             >
-              NTU Foodie Guide
+              NTUmmy
             </span>
           </div>
           <p className="text-xs text-muted-foreground">Made by NTU students, for NTU students.</p>
@@ -792,6 +797,7 @@ function App() {
       <Route element={<Layout />}>
         <Route path="/food" element={<FoodPage />} />
         <Route path="/vendors/:vendorId" element={<VendorsPage />} />
+        <Route path="signin" element={<SignInPage />} />
       </Route>
     </Routes>
   );
