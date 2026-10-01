@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
 import Layout, { FoodieChat } from "./components/Layout";
+import Header from "./components/Header";
 import { apiUrl } from "./api/client";
 import { fetchVendorReviews } from "./api/reviews";
 import { fetchVendors } from "./api/vendors";
@@ -16,12 +17,9 @@ import {
   Clock,
   Utensils,
   TrendingUp,
-  Menu,
-  X,
   //ThumbsUp,//
 } from "lucide-react";
 
-const DISPLAY_FONT = "'Fraunces', serif";
 const BODY_FONT = "'Plus Jakarta Sans', sans-serif";
 
 type Review = {
@@ -105,7 +103,6 @@ function HomePage() {
   const [reviewsPaused, setReviewsPaused] = useState(false);
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [reviewSlide, setReviewSlide] = useState(0);
@@ -223,59 +220,7 @@ function HomePage() {
       style={{ fontFamily: BODY_FONT }}
     >
       {/* ── NAV ──────────────────────────────────────── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Utensils className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <span
-              className="text-lg font-bold text-foreground"
-              style={{ fontFamily: DISPLAY_FONT }}
-            >
-              NTUmmy
-            </span>
-          </div>
-
-          <div className="hidden md:flex items-center gap-3">
-            <button className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Sign In
-            </button>
-            <Link
-              to="/food"
-              className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity"
-            >
-              Discover
-            </Link>
-          </div>
-
-          <button
-            className="md:hidden text-muted-foreground p-1"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label="Toggle menu"
-          >
-            {mobileMenuOpen ? (
-              <X className="w-5 h-5" />
-            ) : (
-              <Menu className="w-5 h-5" />
-            )}
-          </button>
-        </div>
-
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-border bg-background px-6 py-4 flex flex-col gap-4 text-sm">
-            <Link
-              to="/food"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Discover
-            </Link>
-            <button className="w-full py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold">
-              Leave a Review
-            </button>
-          </div>
-        )}
-      </nav>
+      <Header fixed />
 
       {/* ── HERO ─────────────────────────────────────── */}
       <section className="relative min-h-screen flex items-center pt-16">
@@ -296,8 +241,7 @@ function HomePage() {
             </div>
 
             <h1
-              className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.05] mb-6"
-              style={{ fontFamily: DISPLAY_FONT }}
+              className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.05] mb-6 font-display"
             >
               Find Your Next
               <span className="block text-primary italic">Favourite Stall</span>
@@ -355,8 +299,7 @@ function HomePage() {
               ].map(([num, label]) => (
                 <div key={label}>
                   <div
-                    className="text-3xl font-bold text-foreground"
-                    style={{ fontFamily: DISPLAY_FONT }}
+                    className="text-3xl font-bold text-foreground font-display"
                   >
                     {num}
                   </div>
@@ -378,8 +321,7 @@ function HomePage() {
               Navigate Campus
             </p>
             <h2
-              className="text-3xl md:text-4xl font-bold mb-4"
-              style={{ fontFamily: DISPLAY_FONT }}
+              className="text-3xl md:text-4xl font-bold mb-4 font-display"
             >
               All Food Places in 1 Map
             </h2>
@@ -401,8 +343,7 @@ function HomePage() {
                 This Week's Picks
               </p>
               <h2
-                className="text-3xl md:text-4xl font-bold"
-                style={{ fontFamily: DISPLAY_FONT }}
+                className="text-3xl md:text-4xl font-bold font-display"
               >
                 Trending on Campus
               </h2>
@@ -501,8 +442,7 @@ function HomePage() {
           From the Community
         </p>
         <h2
-          className="text-3xl md:text-4xl font-bold"
-          style={{ fontFamily: DISPLAY_FONT }}
+          className="text-3xl md:text-4xl font-bold font-display"
         >
           What students are saying
         </h2>
@@ -620,8 +560,7 @@ function HomePage() {
               <Utensils className="w-3 h-3 text-primary-foreground" />
             </div>
             <span
-              className="text-sm font-bold"
-              style={{ fontFamily: DISPLAY_FONT }}
+              className="text-sm font-bold font-display"
             >
               NTU Foodie Guide
             </span>
