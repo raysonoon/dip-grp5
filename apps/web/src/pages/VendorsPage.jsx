@@ -17,7 +17,6 @@ import { fetchVendorById } from "../api/vendors";
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png"];
-const DISPLAY_FONT = "'Fraunces', serif";
 
 function displayError(error) {
   return error instanceof Error ? error.message : "Something went wrong";
@@ -453,7 +452,7 @@ export default function VendorsPage() {
       </Link>
 
       <div className="mt-4 mb-6">
-        <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: DISPLAY_FONT }}>
+        <h1 className="text-2xl font-bold text-foreground font-display">
           {vendor.name}
         </h1>
         <p className="text-muted-foreground mt-1">
