@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { apiUrl } from "../api/client";
 import { fetchVendorFilters, fetchVendorPage } from "../api/vendors";
 
-const DISPLAY_FONT = "'Fraunces', serif";
 const SEARCH_DEBOUNCE_MS = 300;
 
 function displayError(error) {
@@ -35,6 +35,23 @@ function getLocationGroup(location) {
   if (value.includes("hall 9")) return "Hall 9";
 
   return location;
+}
+
+function getPageItems(totalPages, currentPage) {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+
+  const items = [1];
+  const start = Math.max(2, currentPage - 1);
+  const end = Math.min(totalPages - 1, currentPage + 1);
+
+  if (start > 2) items.push("start-gap");
+  for (let page = start; page <= end; page++) items.push(page);
+  if (end < totalPages - 1) items.push("end-gap");
+  items.push(totalPages);
+
+  return items;
 }
 
 export default function FoodPage() {
@@ -143,19 +160,19 @@ export default function FoodPage() {
   return (
     <div className="max-w-[1000px] w-full mx-auto px-5 py-10 box-border">
       <header className="mb-8 text-center">
-        <h1 className="text-foreground text-3xl font-bold" style={{ fontFamily: DISPLAY_FONT }}>
+        <h1 className="text-foreground text-3xl font-bold font-display">
           NTU Foodie Hub
         </h1>
         <p className="text-muted-foreground">Explore and review food vendors across NTU canteens</p>
       </header>
 
-      <div className="flex gap-4 mb-6 flex-wrap">
+      <div className="flex gap-3 mb-6 flex-wrap">
         <input
           type="text"
           placeholder="Search vendor or cuisine..."
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          className="flex-1 px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground"
+          className="w-full sm:flex-1 px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground"
         />
         <select
           value={selectedLocation}
@@ -222,13 +239,13 @@ export default function FoodPage() {
 
       {!isLoading && !loadError && vendors.length > 0 && (
         <>
-          <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
+          <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {vendors.map((vendor) => {
               const rating = vendor.average_rating ?? vendor.average_google_rating;
               return (
                 <div
                   key={vendor.id}
-                  className="border border-border rounded-xl overflow-hidden bg-card shadow-sm text-left"
+                  className="min-w-0 border border-border rounded-xl overflow-hidden bg-card shadow-sm text-left"
                 >
                   {vendor.image_url ? (
                     <img
@@ -250,8 +267,7 @@ export default function FoodPage() {
                       {vendor.location || "NTU"}
                     </span>
                     <h3
-                      className="mt-2.5 mb-1 text-foreground font-bold"
-                      style={{ fontFamily: DISPLAY_FONT }}
+                      className="mt-2.5 mb-1 text-foreground font-bold font-display"
                     >
                       {vendor.name}
                     </h3>
@@ -273,44 +289,52 @@ export default function FoodPage() {
           </div>
 
           {(hasPrevPage || hasNextPage) && (
-            <div className="flex justify-center gap-3 mt-8">
+            <div className="flex justify-center items-center gap-2 mt-8">
               <button
                 type="button"
                 disabled={!hasPrevPage}
                 onClick={() => setOffset((prev) => Math.max(0, prev - PAGE_LIMIT))}
-                className={`px-4 py-2 rounded-lg border border-border text-sm font-semibold ${
+                className={`flex items-center gap-1 px-2 sm:px-4 py-2 text-sm font-semibold ${
                   hasPrevPage ? "cursor-pointer" : "cursor-default opacity-40"
                 }`}
               >
-                Previous
+                <ChevronLeft className="w-4 h-4" />
+                <span className="hidden sm:inline">Previous</span>
               </button>
-              {Array.from({ length: totalPages }, (_, index) => {
-                const pageNumber = index + 1;
-                return (
+              {getPageItems(totalPages, currentPage).map((item, index) =>
+                item === "start-gap" || item === "end-gap" ? (
+                  <span
+                    key={`${item}-${index}`}
+                    className="min-w-9 px-1 py-2 text-center text-sm text-muted-foreground"
+                  >
+                    …
+                  </span>
+                ) : (
                   <button
-                    key={pageNumber}
+                    key={item}
                     type="button"
-                    onClick={() => setOffset(index * PAGE_LIMIT)}
-                    aria-current={currentPage === pageNumber ? "page" : undefined}
-                    className={`min-w-10 px-3 py-2 rounded-lg border text-sm font-semibold ${
-                      currentPage === pageNumber
+                    onClick={() => setOffset((item - 1) * PAGE_LIMIT)}
+                    aria-current={currentPage === item ? "page" : undefined}
+                    className={`min-w-9 px-2 py-2 rounded-lg border text-sm font-semibold ${
+                      currentPage === item
                         ? "bg-primary text-primary-foreground border-primary cursor-default"
                         : "border-border text-foreground cursor-pointer hover:bg-muted"
                     }`}
                   >
-                    {pageNumber}
+                    {item}
                   </button>
-                );
-              })}
+                )
+              )}
               <button
                 type="button"
                 disabled={!hasNextPage}
                 onClick={() => setOffset((prev) => prev + PAGE_LIMIT)}
-                className={`px-4 py-2 rounded-lg border border-border text-sm font-semibold ${
+                className={`flex items-center gap-1 px-2 sm:px-4 py-2 text-sm font-semibold ${
                   hasNextPage ? "cursor-pointer" : "cursor-default opacity-40"
                 }`}
               >
-                Next
+                <span className="hidden sm:inline">Next</span>
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           )}
