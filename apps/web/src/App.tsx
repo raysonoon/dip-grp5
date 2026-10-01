@@ -367,7 +367,7 @@ function HomePage() {
                 return (
                   <Link
                     key={vendor.id}
-                    to={`/food/vendors/${vendor.id}`}
+                    to={`/vendors/${vendor.id}`}
                     className="group rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/25 transition-all duration-300 cursor-pointer flex flex-col"
                   >
                     <div className="relative h-44 overflow-hidden bg-muted">
@@ -478,7 +478,7 @@ function HomePage() {
             .map((review) => (
               <Link
                 key={review.id}
-                to={`/food/vendors/${review.vendor.id}`}
+                to={`/vendors/${review.vendor.id}`}
                 className="p-6 rounded-2xl border border-border bg-background flex flex-col hover:border-primary/40 transition-colors"
               >
                 <div className="flex items-center justify-between mb-4">
