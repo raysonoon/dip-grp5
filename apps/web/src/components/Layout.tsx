@@ -2,15 +2,22 @@ import { useState, useRef } from "react";
 import { Link, Outlet } from "react-router-dom";
 import { Bot, Send, X } from "lucide-react";
 import { askChat, chatErrorMessage } from "../api/chat";
+import ChatMessageContent from "./ChatMessageContent";
 import { Utensils } from "lucide-react";
 
 const DISPLAY_FONT = "'Fraunces', serif";
 
+type ChatMessage = {
+  role: "user" | "bot";
+  text: string;
+  sources?: unknown[];
+};
+
 // -------------------------------------------------------------
 // 1. Floating Foodie Chatbot Component
 // -------------------------------------------------------------
-function FoodieChat() {
-  const [chatMessages, setChatMessages] = useState([
+export function FoodieChat() {
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       role: "bot",
       text: "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!",
@@ -32,7 +39,10 @@ function FoodieChat() {
 
     try {
       const response = await askChat(question);
-      setChatMessages((prev) => [...prev, { role: "bot", text: response.answer }]);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "bot", text: response.answer, sources: response.sources },
+      ]);
     } catch (error) {
       console.error("Chat request failed", error);
       setChatMessages((prev) => [
@@ -87,7 +97,11 @@ function FoodieChat() {
                       : "bg-card border border-border text-foreground rounded-bl-sm"
                   }`}
                 >
-                  {msg.text}
+                  {msg.role === "bot" ? (
+                    <ChatMessageContent answer={msg.text} sources={msg.sources} />
+                  ) : (
+                    msg.text
+                  )}
                 </div>
               </div>
             ))}

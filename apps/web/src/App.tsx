@@ -1,11 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
-import Layout from "./components/Layout";
-import { askChat, chatErrorMessage } from "./api/chat";
+import Layout, { FoodieChat } from "./components/Layout";
 import { apiUrl } from "./api/client";
 import { fetchVendorReviews } from "./api/reviews";
 import { fetchVendors } from "./api/vendors";
-import ChatMessageContent from "./components/ChatMessageContent";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
 import VendorMap from "./pages/VendorMap";
@@ -14,8 +12,6 @@ import {
   Search,
   Star,
   MapPin,
-  Bot,
-  Send,
   ChevronRight,
   Clock,
   Utensils,
@@ -88,12 +84,6 @@ function computeTrendingScore(
   );
 }
 
-const SUGGESTED_QUESTIONS = [
-  "What's cheap near North Spine?",
-  "Best mala on campus?",
-  "What's open after 8pm?",
-];
-
 function StarRow({ rating, size = "sm" }: { rating: number; size?: "sm" | "md" }) {
   return (
     <div className="flex items-center gap-0.5">
@@ -116,18 +106,6 @@ function HomePage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<
-    { role: "user" | "bot"; text: string; sources?: unknown[] }[]
-  >([
-    {
-      role: "bot",
-      text: "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!",
-    },
-  ]);
-  const [chatInput, setChatInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
-  const chatRequestPending = useRef(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [reviewSlide, setReviewSlide] = useState(0);
@@ -237,33 +215,6 @@ function HomePage() {
     const query = searchQuery.trim();
     if (!query) return;
     navigate(`/food?q=${encodeURIComponent(query)}`);
-  }
-
-  async function sendMessage(text: string) {
-    const question = text.trim();
-    if (!question || chatRequestPending.current) return;
-
-    chatRequestPending.current = true;
-    setChatMessages((prev) => [...prev, { role: "user", text: question }]);
-    setChatInput("");
-    setIsTyping(true);
-
-    try {
-      const response = await askChat(question);
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "bot", text: response.answer, sources: response.sources },
-      ]);
-    } catch (error) {
-      console.error("Chat request failed", error);
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "bot", text: chatErrorMessage(error) },
-      ]);
-    } finally {
-      chatRequestPending.current = false;
-      setIsTyping(false);
-    }
   }
 
   return (
@@ -659,99 +610,7 @@ function HomePage() {
 </section>
 
       {/* ── FLOATING CHATBOT WIDGET ───────────────────── */}
-      <div className="fixed bottom-6 right-6 z-50">
-        {chatOpen ? (
-          <div className="w-80 sm:w-96 rounded-2xl bg-card border border-border shadow-2xl flex flex-col overflow-hidden transition-all">
-            {/* Header */}
-            <div className="p-4 bg-primary text-primary-foreground flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Bot className="w-5 h-5" />
-                <span className="font-bold text-sm">NTU Foodie Assistant</span>
-              </div>
-              <button
-                onClick={() => setChatOpen(false)}
-                className="p-1 hover:bg-black/10 rounded-lg transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Messages */}
-            <div className="p-4 h-80 overflow-y-auto flex flex-col gap-3 bg-background">
-              {chatMessages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[82%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground rounded-br-sm"
-                        : "bg-card border border-border text-foreground rounded-bl-sm"
-                    }`}
-                  >
-                    {msg.role === "bot" ? (
-                      <ChatMessageContent answer={msg.text} sources={msg.sources} />
-                    ) : (
-                      msg.text
-                    )}
-                  </div>
-                </div>
-              ))}
-              {isTyping && (
-                <div className="self-start text-xs text-muted-foreground italic flex items-center gap-1">
-                  <Clock className="w-3 h-3 animate-spin" /> Thinking...
-                </div>
-              )}
-            </div>
-
-            {/* Quick Prompts */}
-            <div className="px-3 py-2 bg-card border-t border-border flex flex-wrap gap-1">
-              {SUGGESTED_QUESTIONS.map((q) => (
-                <button
-                  key={q}
-                  onClick={() => sendMessage(q)}
-                  className="text-[10px] px-2 py-1 rounded-md bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-
-            {/* Input */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                sendMessage(chatInput);
-              }}
-              className="p-3 bg-card border-t border-border flex gap-2"
-            >
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask about canteens or food..."
-                className="flex-1 bg-background text-xs px-3 py-2 rounded-lg border border-border outline-none focus:border-primary/40"
-              />
-              <button
-                type="submit"
-                disabled={isTyping}
-                className="p-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            </form>
-          </div>
-        ) : (
-          <button
-            onClick={() => setChatOpen(true)}
-            className="p-4 rounded-full bg-primary text-primary-foreground shadow-xl hover:scale-105 transition-transform flex items-center gap-2 font-semibold text-sm"
-          >
-            <Bot className="w-5 h-5" />
-            <span>Ask Foodie</span>
-          </button>
-        )}
-      </div>
+      <FoodieChat />
 
       {/* ── FOOTER ───────────────────────────────────── */}
       <footer className="border-t border-border py-10">
