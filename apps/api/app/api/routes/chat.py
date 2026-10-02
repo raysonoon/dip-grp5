@@ -13,4 +13,4 @@ def ask_chat(
     service: ChatServiceDep,
 ) -> ChatResponse:
     """Answer a question using vector retrieval over the knowledge base."""
-    return service.answer(payload.question)
+    return service.answer(payload.question, history=payload.history)

@@ -69,11 +69,31 @@ export function parseChatResponse(value) {
   };
 }
 
-export async function askChat(question) {
+export const MAX_CHAT_MESSAGES_PER_ROLE = 5;
+
+export function trimChatHistory(history) {
+  const kept = new Set();
+  for (const role of ["user", "assistant"]) {
+    const indexes = history
+      .map((message, index) => (message.role === role ? index : -1))
+      .filter((index) => index >= 0);
+    indexes.slice(-MAX_CHAT_MESSAGES_PER_ROLE).forEach((index) => kept.add(index));
+  }
+  return history.filter((_message, index) => kept.has(index));
+}
+
+export async function askChat(
+  question,
+  { history = [], sessionId, signal } = {},
+) {
   const payload = await apiClient.post(
     "/chat",
-    { question },
-    { auth: false, timeoutMs: CHAT_TIMEOUT_MS },
+    {
+      session_id: sessionId,
+      question,
+      history: trimChatHistory(history),
+    },
+    { auth: false, timeoutMs: CHAT_TIMEOUT_MS, signal },
   );
   return parseChatResponse(payload);
 }

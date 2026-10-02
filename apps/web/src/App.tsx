@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
 import Layout from "./components/Layout";
-import { askChat, chatErrorMessage } from "./api/chat";
 import { apiUrl } from "./api/client";
 import { fetchVendorReviews } from "./api/reviews";
 import { fetchVendors } from "./api/vendors";
@@ -9,6 +8,7 @@ import ChatMessageContent from "./components/ChatMessageContent";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
 import VendorMap from "./pages/VendorMap";
+import { useChatSession } from "./hooks/useChatSession";
 import { fetchReviews } from "./api/reviews.js";
 import {
   Search,
@@ -21,6 +21,8 @@ import {
   Utensils,
   TrendingUp,
   Menu,
+  RotateCcw,
+  Square,
   X,
   //ThumbsUp,//
 } from "lucide-react";
@@ -116,18 +118,16 @@ function HomePage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<
-    { role: "user" | "bot"; text: string; sources?: unknown[] }[]
-  >([
-    {
-      role: "bot",
-      text: "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!",
-    },
-  ]);
-  const [chatInput, setChatInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
+  const {
+    input: chatInput,
+    isGenerating: isTyping,
+    messages: chatMessages,
+    sendMessage,
+    setInput: setChatInput,
+    startNewSession: startNewChat,
+    stopResponse,
+  } = useChatSession();
   const [chatOpen, setChatOpen] = useState(false);
-  const chatRequestPending = useRef(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [reviewSlide, setReviewSlide] = useState(0);
@@ -237,33 +237,6 @@ function HomePage() {
     const query = searchQuery.trim();
     if (!query) return;
     navigate(`/food?q=${encodeURIComponent(query)}`);
-  }
-
-  async function sendMessage(text: string) {
-    const question = text.trim();
-    if (!question || chatRequestPending.current) return;
-
-    chatRequestPending.current = true;
-    setChatMessages((prev) => [...prev, { role: "user", text: question }]);
-    setChatInput("");
-    setIsTyping(true);
-
-    try {
-      const response = await askChat(question);
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "bot", text: response.answer, sources: response.sources },
-      ]);
-    } catch (error) {
-      console.error("Chat request failed", error);
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "bot", text: chatErrorMessage(error) },
-      ]);
-    } finally {
-      chatRequestPending.current = false;
-      setIsTyping(false);
-    }
   }
 
   return (
@@ -668,12 +641,25 @@ function HomePage() {
                 <Bot className="w-5 h-5" />
                 <span className="font-bold text-sm">NTU Foodie Assistant</span>
               </div>
-              <button
-                onClick={() => setChatOpen(false)}
-                className="p-1 hover:bg-black/10 rounded-lg transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={startNewChat}
+                  aria-label="Start a new chat session"
+                  title="New chat"
+                  className="p-1 hover:bg-black/10 rounded-lg transition-colors"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChatOpen(false)}
+                  aria-label="Close chat"
+                  className="p-1 hover:bg-black/10 rounded-lg transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Messages */}
@@ -711,6 +697,7 @@ function HomePage() {
                 <button
                   key={q}
                   onClick={() => sendMessage(q)}
+                  disabled={isTyping}
                   className="text-[10px] px-2 py-1 rounded-md bg-muted text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {q}
@@ -733,13 +720,26 @@ function HomePage() {
                 placeholder="Ask about canteens or food..."
                 className="flex-1 bg-background text-xs px-3 py-2 rounded-lg border border-border outline-none focus:border-primary/40"
               />
-              <button
-                type="submit"
-                disabled={isTyping}
-                className="p-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
-              >
-                <Send className="w-4 h-4" />
-              </button>
+              {isTyping ? (
+                <button
+                  type="button"
+                  onClick={stopResponse}
+                  aria-label="Stop generating response"
+                  title="Stop"
+                  className="p-2 rounded-lg bg-destructive text-destructive-foreground hover:opacity-90 transition-opacity"
+                >
+                  <Square className="w-4 h-4 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!chatInput.trim()}
+                  aria-label="Send message"
+                  className="p-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              )}
             </form>
           </div>
         ) : (

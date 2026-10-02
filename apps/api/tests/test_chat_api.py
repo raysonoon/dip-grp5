@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from app.api import dependencies
 from app.main import app
 from app.models import RedditComment
-from app.schemas.chat import ChatResponse, ChatSource
+from app.schemas.chat import ChatHistoryMessage, ChatResponse, ChatSource
 from app.services.chat import ChatService
 from app.services.embedding import Embedder
 from app.services.retrieval import (
@@ -32,8 +32,14 @@ class FakeChatService:
     def __init__(self, response: ChatResponse) -> None:
         self._response = response
 
-    def answer(self, question: str) -> ChatResponse:
+    def answer(
+        self,
+        question: str,
+        *,
+        history: list[ChatHistoryMessage] | None = None,
+    ) -> ChatResponse:
         self.question = question
+        self.history = history
         return self._response
 
 
@@ -56,19 +62,66 @@ def test_chat_route_returns_answer_and_sources(client: TestClient) -> None:
     fake_service = FakeChatService(_fake_response())
     app.dependency_overrides[dependencies.get_chat_service] = lambda: fake_service
     try:
-        response = client.post("/chat", json={"question": "What should I eat?"})
+        response = client.post(
+            "/chat",
+            json={
+                "session_id": "session-a",
+                "question": "What should I eat?",
+                "history": [
+                    {"role": "user", "content": "I want noodles."},
+                    {"role": "assistant", "content": "Try Demo Vendor 1."},
+                ],
+            },
+        )
         assert response.status_code == 200
         payload = response.json()
         assert payload["answer"] == "Try the chicken rice at Demo Vendor 1."
         assert payload["sources"][0]["vendor_name"] == "Demo Vendor 1"
         assert fake_service.question == "What should I eat?"
+        assert [message.content for message in fake_service.history] == [
+            "I want noodles.",
+            "Try Demo Vendor 1.",
+        ]
     finally:
         app.dependency_overrides.clear()
 
 
 def test_chat_route_rejects_blank_question(client: TestClient) -> None:
-    response = client.post("/chat", json={"question": "   "})
+    response = client.post(
+        "/chat",
+        json={"session_id": "session-a", "question": "   "},
+    )
     assert response.status_code == 422
+
+
+def test_chat_route_drops_oldest_messages_per_role(client: TestClient) -> None:
+    fake_service = FakeChatService(_fake_response())
+    app.dependency_overrides[dependencies.get_chat_service] = lambda: fake_service
+    history = []
+    for index in range(7):
+        history.extend(
+            [
+                {"role": "user", "content": f"user-{index}"},
+                {"role": "assistant", "content": f"assistant-{index}"},
+            ]
+        )
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "session_id": "session-a",
+                "question": "follow up",
+                "history": history,
+            },
+        )
+        assert response.status_code == 200
+        assert [message.content for message in fake_service.history] == [
+            item
+            for index in range(2, 7)
+            for item in (f"user-{index}", f"assistant-{index}")
+        ]
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_chat_service_orchestrates_retrieval() -> None:
@@ -117,6 +170,61 @@ def test_chat_service_orchestrates_retrieval() -> None:
     assert "what is the best food?" in captured["prompt"]
     assert "great chicken rice" in captured["prompt"]
     assert "Demo Vendor 1" in captured["prompt"]
+
+
+def test_chat_service_uses_history_for_follow_up_prompt_and_retrieval() -> None:
+    embedded: list[str] = []
+
+    class CapturingEmbedder(FakeEmbedder):
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            embedded.extend(texts)
+            return super().embed(texts)
+
+    captured: dict[str, str] = {}
+    service = ChatService(
+        CapturingEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda prompt: captured.setdefault("prompt", prompt),
+    )
+    history = [
+        ChatHistoryMessage(role="user", content="Tell me about Quad Cafe."),
+        ChatHistoryMessage(
+            role="assistant",
+            content="Quad Cafe is in the School of Biological Sciences.",
+        ),
+    ]
+
+    service.answer("What time does it close?", history=history)
+
+    assert "Quad Cafe" in embedded[0]
+    assert "What time does it close?" in embedded[0]
+    assert "User: Tell me about Quad Cafe." in captured["prompt"]
+    assert "Foodie: Quad Cafe is in" in captured["prompt"]
+    assert "Question: What time does it close?" in captured["prompt"]
+
+
+def test_current_question_counts_toward_five_user_message_limit() -> None:
+    captured: dict[str, str] = {}
+    service = ChatService(
+        FakeEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda prompt: captured.setdefault("prompt", prompt),
+    )
+    history = [
+        message
+        for index in range(5)
+        for message in (
+            ChatHistoryMessage(role="user", content=f"old-user-{index}"),
+            ChatHistoryMessage(role="assistant", content=f"old-assistant-{index}"),
+        )
+    ]
+
+    service.answer("current-user-question", history=history)
+
+    assert "old-user-0" not in captured["prompt"]
+    assert "old-user-1" in captured["prompt"]
+    assert captured["prompt"].count("current-user-question") == 1
+    assert "old-assistant-0" in captured["prompt"]
 
 
 def test_chat_service_resolves_reddit_permalinks_from_comments(session) -> None:
