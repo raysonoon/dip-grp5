@@ -1,16 +1,22 @@
 import { useState, useRef } from "react";
-import { Link, Outlet } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import { Bot, Send, X } from "lucide-react";
 import { askChat, chatErrorMessage } from "../api/chat";
-import { Utensils } from "lucide-react";
+import ChatMessageContent from "./ChatMessageContent";
+import Footer from "./Footer";
+import Header from "./Header";
 
-const DISPLAY_FONT = "'Fraunces', serif";
+type ChatMessage = {
+  role: "user" | "bot";
+  text: string;
+  sources?: unknown[];
+};
 
 // -------------------------------------------------------------
 // 1. Floating Foodie Chatbot Component
 // -------------------------------------------------------------
-function FoodieChat() {
-  const [chatMessages, setChatMessages] = useState([
+export function FoodieChat() {
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       role: "bot",
       text: "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!",
@@ -32,7 +38,10 @@ function FoodieChat() {
 
     try {
       const response = await askChat(question);
-      setChatMessages((prev) => [...prev, { role: "bot", text: response.answer }]);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "bot", text: response.answer, sources: response.sources },
+      ]);
     } catch (error) {
       console.error("Chat request failed", error);
       setChatMessages((prev) => [
@@ -46,9 +55,9 @@ function FoodieChat() {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+    <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end gap-3">
       {chatOpen && (
-        <div className="w-[360px] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+        <div data-chat-window className="w-[calc(100vw-2rem)] sm:w-[360px] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
           {/* Chat Header (Retains "Foodie" name) */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card">
             <div className="flex items-center gap-3">
@@ -87,7 +96,11 @@ function FoodieChat() {
                       : "bg-card border border-border text-foreground rounded-bl-sm"
                   }`}
                 >
-                  {msg.text}
+                  {msg.role === "bot" ? (
+                    <ChatMessageContent answer={msg.text} sources={msg.sources} />
+                  ) : (
+                    msg.text
+                  )}
                 </div>
               </div>
             ))}
@@ -151,31 +164,9 @@ function FoodieChat() {
 // -------------------------------------------------------------
 export default function Layout() {
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground font-sans">
-      {/* Sticky Header Nav (position: sticky; top: 0) with "NTUmmy" brand name */}
-      <header className="sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
-          <Link to="/" className="flex items-center gap-2 text-xl font-bold tracking-tight text-foreground">
-           <div className="flex items-center gap-2.5">
-
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-
-              <Utensils className="w-4 h-4 text-primary-foreground" />
-
-            </div>
-
-            <span
-
-              className="text-lg font-bold text-foreground"
-
-              style={{ fontFamily: DISPLAY_FONT }}>
-             NTUmmy</span>
-           </div>
-          </Link>
-          <nav className="flex items-center gap-6 text-sm font-medium">
-          </nav>
-        </div>
-      </header>
+    <div className="min-h-screen supports-[height:100dvh]:min-h-dvh flex flex-col bg-background text-foreground font-sans">
+      {/* Sticky Header Nav */}
+      <Header />
 
       {/* Renders current active page view */}
       <main className="flex-1">
@@ -183,33 +174,7 @@ export default function Layout() {
       </main>
 
       {/* ── FOOTER ───────────────────────────────────── */}
-      <footer className="border-t border-border py-10">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
-              <Utensils className="w-3 h-3 text-primary-foreground" />
-            </div>
-            <span
-              className="text-sm font-bold"
-              style={{ fontFamily: DISPLAY_FONT }}
-            >
-              NTUmmy
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">Made by NTU students, for NTU students.</p>
-          <div className="flex gap-6 text-xs text-muted-foreground">
-            {["About", "Contribute", "Privacy"].map((l) => (
-              <a
-                key={l}
-                href="#"
-                className="hover:text-foreground transition-colors"
-              >
-                {l}
-              </a>
-            ))}
-          </div>
-        </div>
-      </footer>
+      <Footer />
 
       {/* Shared Floating Chatbot Widget */}
       <FoodieChat />

@@ -17,7 +17,6 @@ const DefaultIcon = L.icon({
 L.Marker.prototype.options.icon = DefaultIcon;
 
 const NTU_CENTER = [1.3483, 103.6831];
-const DISPLAY_FONT = "'Fraunces', serif";
 
 export default function VendorMap() {
   const [vendors, setVendors] = useState([]);
@@ -50,7 +49,7 @@ export default function VendorMap() {
             <Marker key={vendor.id} position={[lat, lng]}>
               <Popup>
                 <div className="min-w-[160px] font-sans">
-                  <strong className="text-base" style={{ fontFamily: DISPLAY_FONT }}>
+                  <strong className="text-base font-display">
                     {vendor.name}
                   </strong>
                   <br />
