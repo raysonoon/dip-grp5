@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Mail, Lock, AlertCircle, X } from "lucide-react";
+import { Mail, Lock, AlertCircle, X, Link, ArrowLeft } from "lucide-react";
 
 type AuthMode = "signin" | "signup";
 
@@ -67,26 +67,18 @@ export default function SignInPage() {
   };
 
   return (
-    /* Outer Backdrop: Clicking outside the card triggers handleDismiss */
-    <div
-      onClick={handleDismiss}
-      className="flex min-h-[calc(100vh-10rem)] items-center justify-center px-4 py-12"
-    >
-      {/* Form Card Container: Stops click propagation so clicking inside doesn't close */}
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-md rounded-2xl border border-border bg-card p-8 shadow-xl"
-      >
-        {/* Close Button */}
-        <button
-          type="button"
-          onClick={handleDismiss}
-          className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          aria-label="Close page"
-        >
-          <X className="h-5 w-5" />
-        </button>
-
+        <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center bg-black/10 px-4 py-12 backdrop-blur-[2px]">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 shadow-xl">
+          <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span>Back to Home</span>
+          </button>
+        </div>
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold text-foreground">
             {mode === "signin" ? "Welcome back" : "Create an account"}
