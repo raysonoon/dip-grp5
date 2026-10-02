@@ -11,7 +11,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
     >
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+          <div className="w-8 h-8 rounded-sm bg-primary flex items-center justify-center">
             <Utensils className="w-4 h-4 text-primary-foreground" />
           </div>
           <span className="text-lg font-bold text-foreground font-display">

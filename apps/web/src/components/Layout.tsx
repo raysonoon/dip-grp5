@@ -3,7 +3,7 @@ import { Outlet } from "react-router-dom";
 import { Bot, Send, X } from "lucide-react";
 import { askChat, chatErrorMessage } from "../api/chat";
 import ChatMessageContent from "./ChatMessageContent";
-import { Utensils } from "lucide-react";
+import Footer from "./Footer";
 import Header from "./Header";
 
 type ChatMessage = {
@@ -57,7 +57,7 @@ export function FoodieChat() {
   return (
     <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end gap-3">
       {chatOpen && (
-        <div className="w-[calc(100vw-2rem)] sm:w-[360px] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+        <div data-chat-window className="w-[calc(100vw-2rem)] sm:w-[360px] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
           {/* Chat Header (Retains "Foodie" name) */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card">
             <div className="flex items-center gap-3">
@@ -174,32 +174,7 @@ export default function Layout() {
       </main>
 
       {/* ── FOOTER ───────────────────────────────────── */}
-      <footer className="border-t border-border py-10">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
-              <Utensils className="w-3 h-3 text-primary-foreground" />
-            </div>
-            <span
-              className="text-sm font-bold font-display"
-            >
-              NTUmmy
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">Made by NTU students, for NTU students.</p>
-          <div className="flex gap-6 text-xs text-muted-foreground">
-            {["About", "Contribute", "Privacy"].map((l) => (
-              <a
-                key={l}
-                href="#"
-                className="hover:text-foreground transition-colors"
-              >
-                {l}
-              </a>
-            ))}
-          </div>
-        </div>
-      </footer>
+      <Footer />
 
       {/* Shared Floating Chatbot Widget */}
       <FoodieChat />
