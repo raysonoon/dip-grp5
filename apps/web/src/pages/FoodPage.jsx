@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 import { apiUrl } from "../api/client";
 import { fetchVendorFilters, fetchVendorPage } from "../api/vendors";
@@ -52,6 +52,86 @@ function getPageItems(totalPages, currentPage) {
   items.push(totalPages);
 
   return items;
+}
+
+function FilterSelect({ label, placeholder, value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    function closeOnOutsideClick(event) {
+      if (!containerRef.current?.contains(event.target)) setOpen(false);
+    }
+
+    function closeOnEscape(event) {
+      if (event.key === "Escape") setOpen(false);
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative w-full sm:w-auto">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={label}
+        className="flex w-full sm:w-auto items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground cursor-pointer"
+      >
+        <span className={`truncate ${value ? "text-foreground" : "text-muted-foreground"}`}>
+          {value || placeholder}
+        </span>
+        <ChevronDown
+          className={`w-4 h-4 flex-shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute z-20 mt-1 w-full max-h-60 overflow-auto rounded-xl border border-border bg-background shadow-lg"
+        >
+          <li
+            role="option"
+            aria-selected={value === ""}
+            onClick={() => {
+              onChange("");
+              setOpen(false);
+            }}
+            className={`px-3.5 py-2.5 text-sm cursor-pointer hover:bg-muted ${
+              value === "" ? "font-semibold text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            {placeholder}
+          </li>
+          {options.map((option) => (
+            <li
+              key={option}
+              role="option"
+              aria-selected={value === option}
+              onClick={() => {
+                onChange(option);
+                setOpen(false);
+              }}
+              className={`px-3.5 py-2.5 text-sm cursor-pointer hover:bg-muted ${
+                value === option ? "font-semibold text-foreground" : "text-foreground"
+              }`}
+            >
+              {option}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 export default function FoodPage() {
@@ -174,36 +254,26 @@ export default function FoodPage() {
           onChange={(event) => setSearchTerm(event.target.value)}
           className="w-full sm:flex-1 px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground"
         />
-        <select
+        <FilterSelect
+          label="location"
+          placeholder="All locations"
           value={selectedLocation}
-          onChange={(event) => {
-            setSelectedLocation(event.target.value);
+          options={locations}
+          onChange={(value) => {
+            setSelectedLocation(value);
             setOffset(0);
           }}
-          className="px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground"
-        >
-          <option value="">All locations</option>
-          {locations.map((location) => (
-            <option key={location} value={location}>
-              {location}
-            </option>
-          ))}
-        </select>
-        <select
+        />
+        <FilterSelect
+          label="category"
+          placeholder="All categories"
           value={selectedCategory}
-          onChange={(event) => {
-            setSelectedCategory(event.target.value);
+          options={categories}
+          onChange={(value) => {
+            setSelectedCategory(value);
             setOffset(0);
           }}
-          className="px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground"
-        >
-          <option value="">All categories</option>
-          {categories.map((category) => (
-            <option key={category} value={category}>
-              {category}
-            </option>
-          ))}
-        </select>
+        />
         {hasActiveFilters && (
           <button
             type="button"
@@ -213,7 +283,7 @@ export default function FoodPage() {
               setSelectedCategory("");
               setOffset(0);
             }}
-            className="px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm font-semibold cursor-pointer hover:bg-muted transition-colors"
+            className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm font-semibold cursor-pointer hover:bg-muted transition-colors"
           >
             Clear
           </button>
@@ -289,7 +359,8 @@ export default function FoodPage() {
           </div>
 
           {(hasPrevPage || hasNextPage) && (
-            <div className="flex justify-center items-center gap-2 mt-8">
+            <div className="mt-8 overflow-x-auto">
+              <div className="flex items-center gap-2 w-max mx-auto">
               <button
                 type="button"
                 disabled={!hasPrevPage}
@@ -336,6 +407,7 @@ export default function FoodPage() {
                 <span className="hidden sm:inline">Next</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
+              </div>
             </div>
           )}
         </>
