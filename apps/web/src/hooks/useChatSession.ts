@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { askChat, chatErrorMessage, trimChatHistory } from "../api/chat";
+import { chatErrorMessage, streamChat, trimChatHistory } from "../api/chat";
 
 const CHAT_GREETING = "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!";
 
@@ -56,27 +56,50 @@ export function useChatSession() {
     setIsGenerating(true);
 
     try {
-      const response = await askChat(question, {
+      let hasStreamMessage = false;
+      const response = await streamChat(question, {
         history: historyForRequest,
         sessionId: sessionIdRef.current,
         signal: controller.signal,
+        onDelta: (_delta: string, answer: string) => {
+          if (controller.signal.aborted || requestId !== requestIdRef.current) return;
+          const shouldAppend = !hasStreamMessage;
+          hasStreamMessage = true;
+          setMessages((previous) => {
+            if (shouldAppend) {
+              return [...previous, { role: "bot", text: answer, sources: [] }];
+            }
+            return previous.map((message, index) => (
+              index === previous.length - 1
+                ? { ...message, text: answer }
+                : message
+            ));
+          });
+        },
       });
       if (controller.signal.aborted || requestId !== requestIdRef.current) return;
       historyRef.current = trimChatHistory([
         ...historyRef.current,
         { role: "assistant", content: response.answer },
       ]);
-      setMessages((previous) => [
-        ...previous,
-        { role: "bot", text: response.answer, sources: response.sources },
-      ]);
+      setMessages((previous) => {
+        if (!hasStreamMessage) {
+          return [...previous, { role: "bot", text: response.answer, sources: response.sources }];
+        }
+        return previous.map((message, index) => (
+          index === previous.length - 1
+            ? { ...message, text: response.answer, sources: response.sources }
+            : message
+        ));
+      });
     } catch (error) {
       if (controller.signal.aborted || requestId !== requestIdRef.current) return;
       console.error("Chat request failed", error);
-      setMessages((previous) => [
-        ...previous,
-        { role: "bot", text: chatErrorMessage(error) },
-      ]);
+      setMessages((previous) => (
+        hasStreamMessage
+          ? previous
+          : [...previous, { role: "bot", text: chatErrorMessage(error) }]
+      ));
     } finally {
       if (requestId === requestIdRef.current) {
         activeControllerRef.current = null;

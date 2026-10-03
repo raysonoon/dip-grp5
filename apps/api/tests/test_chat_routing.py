@@ -25,6 +25,17 @@ class FakeEmbedder(Embedder):
         return [_vector(0.1) for _ in texts]
 
 
+class RecordingEmbedder(Embedder):
+    cache_key = ("test", "recording-chat-routing", DIMENSION)
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
+        return [_vector(0.1) for _ in texts]
+
+
 def _make_router(session):
     return IntentRouter(
         session,
@@ -114,6 +125,93 @@ def test_router_none_keeps_vector_only_behavior() -> None:
     assert response.search_type == "Vector"
     assert response.intent is None
     assert response.sources[0].source_type == "internal_review"
+
+
+def test_simple_greeting_skips_routing_and_retrieval() -> None:
+    class ExplodingRouter:
+        def classify(self, _question: str):
+            raise AssertionError("simple greetings must not invoke routing")
+
+    class ExplodingEmbedder(Embedder):
+        def embed(self, _texts: list[str]) -> list[list[float]]:
+            raise AssertionError("simple greetings must not invoke embeddings")
+
+    service = ChatService(
+        ExplodingEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "Hello!",
+        router=ExplodingRouter(),
+    )
+
+    response = service.answer("Hello!")
+
+    assert response.answer == "Hello!"
+    assert response.search_type == "Conversational"
+    assert response.sources == []
+
+
+def test_food_question_with_greeting_keeps_full_routing(session) -> None:
+    _seed_prompt(
+        session,
+        intent_key="Q-HELLO-FOOD",
+        question_text="Hello, what food is good at NTU?",
+        search_type="Vector",
+    )
+    embedder = RecordingEmbedder()
+    service = ChatService(
+        embedder,
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "Answer",
+        router=IntentRouter(session, embedder=embedder),
+        sql_store=PgSqlStore(session),
+    )
+
+    response = service.answer("Hello, can you recommend good food at NTU?")
+
+    assert response.search_type == "Vector"
+    assert embedder.calls
+
+
+def test_router_query_embedding_is_reused_for_vector_retrieval(session) -> None:
+    _seed_prompt(
+        session,
+        intent_key="Q-REUSE",
+        question_text="Which place has the best food?",
+        search_type="Vector",
+    )
+    embedder = RecordingEmbedder()
+    service = ChatService(
+        embedder,
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "Answer",
+        router=IntentRouter(session, embedder=embedder),
+        sql_store=PgSqlStore(session),
+    )
+
+    service.answer("What place has the best food around?")
+
+    assert len(embedder.calls) == 2
+    assert embedder.calls[0] == ["Which place has the best food?"]
+    assert embedder.calls[1] == ["What place has the best food around?"]
+
+
+def test_structural_count_skips_llm_filter_extraction(session) -> None:
+    filter_calls: list[str] = []
+    service = ChatService(
+        FakeEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "There are no vendors.",
+        router=_make_router(session),
+        sql_store=PgSqlStore(session),
+        filter_extractor_llm=lambda question: (
+            filter_calls.append(question) or StructuredFilter()
+        ),
+    )
+
+    response = service.answer("How many vendors are there?")
+
+    assert response.search_type == "SQL"
+    assert filter_calls == []
 
 
 def test_vector_path_filters_explicit_source_and_vendor_mentions(session) -> None:

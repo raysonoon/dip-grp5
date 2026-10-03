@@ -1,6 +1,7 @@
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,6 +20,17 @@ from app.services.structured_filters import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ChatGeneration:
+    """Everything needed to generate and attribute one chat response."""
+
+    prompt: str
+    sources: list[ChatSource]
+    search_type: str
+    intent: str | None
+
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are Foodie, a helpful assistant for the NTU Foodie Hub, powered by "
@@ -61,6 +73,27 @@ _DIRECT_REDDIT_STOP_WORDS = {
     "what",
     "with",
 }
+_SIMPLE_CONVERSATION = {
+    "good afternoon",
+    "good evening",
+    "good morning",
+    "hello",
+    "hey",
+    "hi",
+    "thank you",
+    "thanks",
+    "what can you do",
+    "who are you",
+    "你好",
+    "你是谁",
+    "你能做什么",
+    "谢谢",
+}
+
+
+def _is_simple_conversation(question: str) -> bool:
+    normalized = re.sub(r"[^\w\s']", "", question.casefold())
+    return " ".join(normalized.split()) in _SIMPLE_CONVERSATION
 
 
 def build_prompt(
@@ -201,6 +234,8 @@ class ChatService:
         model: str = settings.chat_model,
         top_k: int = settings.vector_top_k,
         generate: Callable[[str], str] | None = None,
+        generate_stream: Callable[[str], Iterator[str]] | None = None,
+        client: object | None = None,
         router: IntentRouter | None = None,
         sql_store: SqlStore | None = None,
         filter_extractor_llm: Callable[[str], StructuredFilter] | None = None,
@@ -211,11 +246,12 @@ class ChatService:
         self._model = model
         self._top_k = top_k
         self._generate_fn = generate
+        self._generate_stream_fn = generate_stream
         self._router = router
         self._sql_store = sql_store
         self._filter_extractor_llm = filter_extractor_llm
         self._session = session
-        self._client = None
+        self._client = client
 
     def answer(
         self,
@@ -223,6 +259,33 @@ class ChatService:
         *,
         history: list[ChatHistoryMessage] | None = None,
     ) -> ChatResponse:
+        generation = self._prepare_answer(question, history=history)
+        return ChatResponse(
+            answer=self._generate(generation.prompt),
+            sources=generation.sources,
+            search_type=generation.search_type,
+            intent=generation.intent,
+        )
+
+    def stream_answer(
+        self,
+        question: str,
+        *,
+        history: list[ChatHistoryMessage] | None = None,
+    ) -> Iterator[tuple[str, str | list[ChatSource] | None]]:
+        """Yield generated text deltas followed by the response sources."""
+        generation = self._prepare_answer(question, history=history)
+        for text in self._generate_stream(generation.prompt):
+            if text:
+                yield "delta", text
+        yield "sources", generation.sources
+
+    def _prepare_answer(
+        self,
+        question: str,
+        *,
+        history: list[ChatHistoryMessage] | None = None,
+    ) -> ChatGeneration:
         # The current question counts as one of the five retained user messages.
         # Append it while trimming, then remove the duplicate current-question
         # entry because prompts render it separately below.
@@ -233,40 +296,56 @@ class ChatService:
             ]
         )
         history = history_with_question[:-1]
+        if _is_simple_conversation(question):
+            return ChatGeneration(
+                prompt=build_prompt(question, EMPTY_CONTEXT, history=history),
+                sources=[],
+                search_type="Conversational",
+                intent=None,
+            )
         contextual_question = build_contextual_question(question, history)
         if self._router is None:
             logger.info("No intent router configured; using Vector path")
-            return self._answer_vector(
+            return self._prepare_vector(
                 question,
                 match=None,
                 history=history,
                 retrieval_question=contextual_question,
+                query_vector=None,
             )
 
         match = self._router.classify(contextual_question)
         logger.info("Executing chatbot answer via search_type=%s", match.search_type)
         if match.search_type == "SQL":
-            return self._answer_sql(question, match, history, contextual_question)
+            return self._prepare_sql(question, match, history, contextual_question)
         if match.search_type == "SQL + Vector":
-            return self._answer_hybrid(question, match, history, contextual_question)
-        return self._answer_vector(
+            return self._prepare_hybrid(
+                question,
+                match,
+                history,
+                contextual_question,
+                query_vector=match.query_vector,
+            )
+        return self._prepare_vector(
             question,
             match,
             history=history,
             retrieval_question=contextual_question,
+            query_vector=match.query_vector,
         )
 
-    def _answer_vector(
+    def _prepare_vector(
         self,
         question: str,
         match: IntentMatch | None,
         history: list[ChatHistoryMessage],
         retrieval_question: str,
-    ) -> ChatResponse:
+        query_vector: list[float] | None,
+    ) -> ChatGeneration:
         vector_filters = self._build_vector_filters(question)
         results = self._search_direct_reddit(retrieval_question, vector_filters)
         if not results:
-            query_vector = self._embedder.embed([retrieval_question])[0]
+            query_vector = query_vector or self._embedder.embed([retrieval_question])[0]
             results = self._store.search(
                 query_vector,
                 limit=self._top_k,
@@ -282,10 +361,9 @@ class ChatService:
             template=match.prompt_template if match else None,
             history=history,
         )
-        answer = self._generate(prompt)
         reddit_permalinks = self._resolve_reddit_permalinks(results)
-        return ChatResponse(
-            answer=answer,
+        return ChatGeneration(
+            prompt=prompt,
             sources=[
                 self._to_source(result, vendor_names, reddit_permalinks)
                 for result in results
@@ -294,13 +372,13 @@ class ChatService:
             intent=match.intent_key if match else None,
         )
 
-    def _answer_sql(
+    def _prepare_sql(
         self,
         question: str,
         match: IntentMatch,
         history: list[ChatHistoryMessage],
         retrieval_question: str,
-    ) -> ChatResponse:
+    ) -> ChatGeneration:
         filters = self._resolve_filters(question)
         logger.info("SQL path filters: %s", _describe_filters(filters))
         results = self._sql_store.search(filters)
@@ -309,11 +387,12 @@ class ChatService:
             logger.info(
                 "SQL list path returned no vendors; falling back to Vector search"
             )
-            return self._answer_vector(
+            return self._prepare_vector(
                 question,
                 match=None,
                 history=history,
                 retrieval_question=retrieval_question,
+                query_vector=match.query_vector,
             )
         context = format_sql_context(results)
         prompt = build_prompt(
@@ -322,26 +401,27 @@ class ChatService:
             template=match.prompt_template,
             history=history,
         )
-        answer = self._generate(prompt)
-        return ChatResponse(
-            answer=answer,
+        return ChatGeneration(
+            prompt=prompt,
             sources=[self._to_sql_source(result) for result in results],
             search_type="SQL",
             intent=match.intent_key,
         )
 
-    def _answer_hybrid(
+    def _prepare_hybrid(
         self,
         question: str,
         match: IntentMatch,
         history: list[ChatHistoryMessage],
         retrieval_question: str,
-    ) -> ChatResponse:
+        *,
+        query_vector: list[float] | None,
+    ) -> ChatGeneration:
         filters = self._resolve_filters(question)
         logger.info("Hybrid path filters: %s", _describe_filters(filters))
         vendor_ids = self._sql_store.resolve_vendor_ids(filters)
         logger.info("Hybrid path resolved %d vendor_id(s): %s", len(vendor_ids), vendor_ids)
-        query_vector = self._embedder.embed([retrieval_question])[0]
+        query_vector = query_vector or self._embedder.embed([retrieval_question])[0]
         results = self._store.search(
             query_vector,
             limit=self._top_k,
@@ -361,10 +441,9 @@ class ChatService:
             template=match.prompt_template,
             history=history,
         )
-        answer = self._generate(prompt)
         reddit_permalinks = self._resolve_reddit_permalinks(results)
-        return ChatResponse(
-            answer=answer,
+        return ChatGeneration(
+            prompt=prompt,
             sources=[
                 self._to_source(result, vendor_names, reddit_permalinks)
                 for result in results
@@ -375,7 +454,11 @@ class ChatService:
 
     def _resolve_filters(self, question: str) -> StructuredFilter:
         filters = extract_structured_filters(question)
-        if not filters.has_constraints and self._filter_extractor_llm is not None:
+        if (
+            filters.query_kind == "list"
+            and not filters.has_constraints
+            and self._filter_extractor_llm is not None
+        ):
             filters = extract_structured_filters_llm(
                 question,
                 self._filter_extractor_llm,
@@ -464,6 +547,31 @@ class ChatService:
             contents=prompt,
         )
         return response.text
+
+    def _generate_stream(self, prompt: str) -> Iterator[str]:
+        if self._generate_stream_fn is not None:
+            yield from self._generate_stream_fn(prompt)
+            return
+        if self._generate_fn is not None:
+            # Test/local injected generators may only expose the legacy callback.
+            yield self._generate_fn(prompt)
+            return
+        if self._client is None:
+            if settings.gemini_api_key is None:
+                raise RuntimeError(
+                    "GEMINI_API_KEY is not configured; cannot generate answers"
+                )
+            from google import genai
+
+            self._client = genai.Client(
+                api_key=settings.gemini_api_key.get_secret_value()
+            )
+        for chunk in self._client.models.generate_content_stream(
+            model=self._model,
+            contents=prompt,
+        ):
+            if chunk.text:
+                yield chunk.text
 
     @staticmethod
     def _to_source(

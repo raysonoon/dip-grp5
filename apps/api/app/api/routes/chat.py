@@ -1,16 +1,44 @@
-from fastapi import APIRouter
+import json
+from collections.abc import Iterator
 
-from app.api.dependencies import ChatServiceDep
-from app.schemas.chat import ChatRequest, ChatResponse
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+
+from app.api.dependencies import ChatServiceDep, CurrentUser
+from app.schemas.chat import ChatRequest
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-@router.post("", response_model=ChatResponse)
-def ask_chat(
+def _sse(event: str, data: object) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@router.post("/stream")
+def stream_chat(
     payload: ChatRequest,
     service: ChatServiceDep,
-) -> ChatResponse:
-    """Answer a question using vector retrieval over the knowledge base."""
-    return service.answer(payload.question, history=payload.history)
+    _current_user: CurrentUser,
+) -> StreamingResponse:
+    """Stream answer deltas and finish with the sources used by the answer."""
+
+    def events() -> Iterator[str]:
+        for event, data in service.stream_answer(
+            payload.question,
+            history=payload.history,
+        ):
+            if event == "sources":
+                sources = [source.model_dump(mode="json") for source in data]
+                yield _sse(event, sources)
+            else:
+                yield _sse(event, data)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

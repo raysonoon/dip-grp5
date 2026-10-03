@@ -42,6 +42,19 @@ class FakeChatService:
         self.history = history
         return self._response
 
+    def stream_answer(
+        self,
+        question: str,
+        *,
+        history: list[ChatHistoryMessage] | None = None,
+    ):
+        self.question = question
+        self.history = history
+        midpoint = len(self._response.answer) // 2
+        yield "delta", self._response.answer[:midpoint]
+        yield "delta", self._response.answer[midpoint:]
+        yield "sources", self._response.sources
+
 
 def _fake_response() -> ChatResponse:
     return ChatResponse(
@@ -58,12 +71,14 @@ def _fake_response() -> ChatResponse:
     )
 
 
-def test_chat_route_returns_answer_and_sources(client: TestClient) -> None:
+def test_chat_stream_route_returns_deltas_then_sources(client: TestClient) -> None:
     fake_service = FakeChatService(_fake_response())
     app.dependency_overrides[dependencies.get_chat_service] = lambda: fake_service
+    app.dependency_overrides[dependencies.get_current_user] = lambda: object()
     try:
         response = client.post(
-            "/chat",
+            "/chat/stream",
+            headers={"X-Dev-User-Id": "1"},
             json={
                 "session_id": "session-a",
                 "question": "What should I eat?",
@@ -74,9 +89,12 @@ def test_chat_route_returns_answer_and_sources(client: TestClient) -> None:
             },
         )
         assert response.status_code == 200
-        payload = response.json()
-        assert payload["answer"] == "Try the chicken rice at Demo Vendor 1."
-        assert payload["sources"][0]["vendor_name"] == "Demo Vendor 1"
+        assert response.headers["content-type"].startswith("text/event-stream")
+        blocks = response.text.strip().split("\n\n")
+        assert blocks[0].startswith("event: delta\n")
+        assert blocks[1].startswith("event: delta\n")
+        assert blocks[2].startswith("event: sources\n")
+        assert '"vendor_name": "Demo Vendor 1"' in blocks[2]
         assert fake_service.question == "What should I eat?"
         assert [message.content for message in fake_service.history] == [
             "I want noodles.",
@@ -87,18 +105,28 @@ def test_chat_route_returns_answer_and_sources(client: TestClient) -> None:
 
 
 def test_chat_route_rejects_blank_question(client: TestClient) -> None:
-    response = client.post(
-        "/chat",
-        json={"session_id": "session-a", "question": "   "},
-    )
-    assert response.status_code == 422
+    app.dependency_overrides[dependencies.get_current_user] = lambda: object()
+    try:
+        response = client.post(
+            "/chat/stream",
+            headers={"X-Dev-User-Id": "1"},
+            json={"session_id": "session-a", "question": "   "},
+        )
+        assert response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_chat_route_accepts_missing_session_id(client: TestClient) -> None:
     fake_service = FakeChatService(_fake_response())
     app.dependency_overrides[dependencies.get_chat_service] = lambda: fake_service
+    app.dependency_overrides[dependencies.get_current_user] = lambda: object()
     try:
-        response = client.post("/chat", json={"question": "What should I eat?"})
+        response = client.post(
+            "/chat/stream",
+            headers={"X-Dev-User-Id": "1"},
+            json={"question": "What should I eat?"},
+        )
         assert response.status_code == 200
     finally:
         app.dependency_overrides.clear()
@@ -125,6 +153,7 @@ def test_chat_request_accepts_null_and_normalizes_supplied_session_id() -> None:
 def test_chat_route_drops_oldest_messages_per_role(client: TestClient) -> None:
     fake_service = FakeChatService(_fake_response())
     app.dependency_overrides[dependencies.get_chat_service] = lambda: fake_service
+    app.dependency_overrides[dependencies.get_current_user] = lambda: object()
     history = []
     for index in range(7):
         history.extend(
@@ -135,7 +164,8 @@ def test_chat_route_drops_oldest_messages_per_role(client: TestClient) -> None:
         )
     try:
         response = client.post(
-            "/chat",
+            "/chat/stream",
+            headers={"X-Dev-User-Id": "1"},
             json={
                 "session_id": "session-a",
                 "question": "follow up",
@@ -150,6 +180,19 @@ def test_chat_route_drops_oldest_messages_per_role(client: TestClient) -> None:
         ]
     finally:
         app.dependency_overrides.clear()
+
+
+def test_legacy_chat_route_is_removed(client: TestClient) -> None:
+    response = client.post("/chat", json={"question": "What should I eat?"})
+    assert response.status_code == 404
+
+
+def test_chat_stream_requires_dev_user_header(client: TestClient) -> None:
+    response = client.post(
+        "/chat/stream",
+        json={"question": "What should I eat?"},
+    )
+    assert response.status_code == 401
 
 
 def test_chat_service_orchestrates_retrieval() -> None:
@@ -198,6 +241,30 @@ def test_chat_service_orchestrates_retrieval() -> None:
     assert "what is the best food?" in captured["prompt"]
     assert "great chicken rice" in captured["prompt"]
     assert "Demo Vendor 1" in captured["prompt"]
+
+
+def test_chat_service_streams_each_generated_chunk_before_sources() -> None:
+    captured: dict[str, str] = {}
+
+    def fake_stream(prompt: str):
+        captured["prompt"] = prompt
+        yield "Try "
+        yield "Demo Vendor 1."
+
+    service = ChatService(
+        FakeEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate_stream=fake_stream,
+    )
+
+    events = list(service.stream_answer("What should I eat?"))
+
+    assert events[:-1] == [
+        ("delta", "Try "),
+        ("delta", "Demo Vendor 1."),
+    ]
+    assert events[-1] == ("sources", [])
+    assert "What should I eat?" in captured["prompt"]
 
 
 def test_chat_service_uses_history_for_follow_up_prompt_and_retrieval() -> None:
