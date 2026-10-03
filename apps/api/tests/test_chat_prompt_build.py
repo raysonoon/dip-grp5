@@ -3,6 +3,7 @@ import pytest
 from app.services.chat import (
     DEFAULT_SYSTEM_PROMPT,
     EMPTY_CONTEXT,
+    build_contextual_question,
     build_prompt,
     format_conversation_history,
     format_context,
@@ -74,6 +75,27 @@ def test_format_conversation_history_keeps_five_messages_per_role() -> None:
     assert "assistant-1" not in rendered
     assert "user-2" in rendered
     assert "assistant-6" in rendered
+
+
+def test_contextual_question_prioritizes_current_and_keeps_two_recent_turns() -> None:
+    history = [
+        message
+        for index in range(3)
+        for message in (
+            ChatHistoryMessage(role="user", content=f"user-{index}"),
+            ChatHistoryMessage(role="assistant", content=f"assistant-{index}"),
+        )
+    ]
+
+    rendered = build_contextual_question("current question", history)
+
+    assert rendered.startswith(
+        "=== CURRENT QUESTION (use this to determine intent) ===\ncurrent question"
+    )
+    assert "user-0" not in rendered
+    assert "assistant-0" not in rendered
+    assert "--- TURN 1 ---\nUser: user-1\nFoodie: assistant-1" in rendered
+    assert "--- TURN 2 ---\nUser: user-2\nFoodie: assistant-2" in rendered
 
 
 def test_build_prompt_rejects_unknown_placeholders() -> None:

@@ -38,6 +38,7 @@ DEFAULT_SYSTEM_PROMPT = (
 
 EMPTY_CONTEXT = "(no context retrieved)"
 EMPTY_CONVERSATION = "(no earlier messages in this session)"
+MAX_CONTEXTUAL_TURNS = 2
 EXCERPT_CHARS = 200
 _DIRECT_REDDIT_STOP_WORDS = {
     "a",
@@ -101,11 +102,30 @@ def build_contextual_question(
     question: str,
     history: list[ChatHistoryMessage],
 ) -> str:
-    """Give routing and retrieval enough context to understand follow-ups."""
-    conversation_history = format_conversation_history(history)
-    if conversation_history == EMPTY_CONVERSATION:
+    """Prioritize the current question and add only recent turn context."""
+    turns: list[list[ChatHistoryMessage]] = []
+    current_turn: list[ChatHistoryMessage] = []
+    for message in trim_chat_history(history):
+        if message.role == "user" and current_turn:
+            turns.append(current_turn)
+            current_turn = []
+        current_turn.append(message)
+    if current_turn:
+        turns.append(current_turn)
+
+    recent_turns = turns[-MAX_CONTEXTUAL_TURNS:]
+    if not recent_turns:
         return question
-    return f"{conversation_history}\nUser: {question}"
+
+    sections = [
+        "=== CURRENT QUESTION (use this to determine intent) ===",
+        question,
+        "=== RECENT CONVERSATION (context for follow-up references only) ===",
+    ]
+    for index, turn in enumerate(recent_turns, start=1):
+        sections.append(f"--- TURN {index} ---")
+        sections.append(format_conversation_history(turn))
+    return "\n".join(sections)
 
 
 def format_context(
@@ -243,7 +263,7 @@ class ChatService:
         history: list[ChatHistoryMessage],
         retrieval_question: str,
     ) -> ChatResponse:
-        vector_filters = self._build_vector_filters(retrieval_question)
+        vector_filters = self._build_vector_filters(question)
         results = self._search_direct_reddit(retrieval_question, vector_filters)
         if not results:
             query_vector = self._embedder.embed([retrieval_question])[0]
@@ -281,7 +301,7 @@ class ChatService:
         history: list[ChatHistoryMessage],
         retrieval_question: str,
     ) -> ChatResponse:
-        filters = self._resolve_filters(retrieval_question)
+        filters = self._resolve_filters(question)
         logger.info("SQL path filters: %s", _describe_filters(filters))
         results = self._sql_store.search(filters)
         logger.info("SQL path returned %d vendor result(s)", len(results))
@@ -317,7 +337,7 @@ class ChatService:
         history: list[ChatHistoryMessage],
         retrieval_question: str,
     ) -> ChatResponse:
-        filters = self._resolve_filters(retrieval_question)
+        filters = self._resolve_filters(question)
         logger.info("Hybrid path filters: %s", _describe_filters(filters))
         vendor_ids = self._sql_store.resolve_vendor_ids(filters)
         logger.info("Hybrid path resolved %d vendor_id(s): %s", len(vendor_ids), vendor_ids)
@@ -326,7 +346,7 @@ class ChatService:
             query_vector,
             limit=self._top_k,
             filters={
-                **self._build_vector_filters(retrieval_question),
+                **self._build_vector_filters(question),
                 "vendor_ids": vendor_ids,
             },
         )

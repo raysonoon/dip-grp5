@@ -39,7 +39,7 @@ def trim_chat_history(
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    session_id: str = Field(min_length=1, max_length=100)
+    session_id: str | None = Field(default=None, min_length=1, max_length=100)
     question: str = Field(min_length=1, max_length=2000)
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=50)
 
@@ -53,7 +53,9 @@ class ChatRequest(BaseModel):
 
     @field_validator("session_id")
     @classmethod
-    def session_id_not_blank(cls, value: str) -> str:
+    def session_id_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         normalized = value.strip()
         if not normalized:
             raise ValueError("session_id cannot be empty")

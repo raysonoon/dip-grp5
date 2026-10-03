@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from app.api import dependencies
 from app.main import app
 from app.models import RedditComment
-from app.schemas.chat import ChatHistoryMessage, ChatResponse, ChatSource
+from app.schemas.chat import ChatHistoryMessage, ChatRequest, ChatResponse, ChatSource
 from app.services.chat import ChatService
 from app.services.embedding import Embedder
 from app.services.retrieval import (
@@ -92,6 +92,34 @@ def test_chat_route_rejects_blank_question(client: TestClient) -> None:
         json={"session_id": "session-a", "question": "   "},
     )
     assert response.status_code == 422
+
+
+def test_chat_route_accepts_missing_session_id(client: TestClient) -> None:
+    fake_service = FakeChatService(_fake_response())
+    app.dependency_overrides[dependencies.get_chat_service] = lambda: fake_service
+    try:
+        response = client.post("/chat", json={"question": "What should I eat?"})
+        assert response.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_chat_request_accepts_null_and_normalizes_supplied_session_id() -> None:
+    assert ChatRequest(question="What should I eat?").session_id is None
+    assert (
+        ChatRequest(
+            session_id=None,
+            question="What should I eat?",
+        ).session_id
+        is None
+    )
+    assert (
+        ChatRequest(
+            session_id="  session-a  ",
+            question="What should I eat?",
+        ).session_id
+        == "session-a"
+    )
 
 
 def test_chat_route_drops_oldest_messages_per_role(client: TestClient) -> None:
@@ -201,6 +229,35 @@ def test_chat_service_uses_history_for_follow_up_prompt_and_retrieval() -> None:
     assert "User: Tell me about Quad Cafe." in captured["prompt"]
     assert "Foodie: Quad Cafe is in" in captured["prompt"]
     assert "Question: What time does it close?" in captured["prompt"]
+
+
+def test_chat_service_builds_filters_from_current_question_only() -> None:
+    captured: dict[str, str] = {}
+
+    class CapturingFilterService(ChatService):
+        def _build_vector_filters(self, question: str) -> dict:
+            captured["filter_question"] = question
+            return {}
+
+    service = CapturingFilterService(
+        FakeEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda prompt: prompt,
+    )
+    history = [
+        ChatHistoryMessage(
+            role="user",
+            content="Show me Reddit reviews for Quad Cafe.",
+        ),
+        ChatHistoryMessage(
+            role="assistant",
+            content="Here are Reddit reviews for Quad Cafe.",
+        ),
+    ]
+
+    service.answer("Which places have halal food?", history=history)
+
+    assert captured["filter_question"] == "Which places have halal food?"
 
 
 def test_current_question_counts_toward_five_user_message_limit() -> None:
