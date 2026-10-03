@@ -80,6 +80,50 @@ GOOGLE_VENDOR_DIETARY_FIELD_MAP = (
     ("Halal", "halal"),
     ("Vegetarian", "vegetarian"),
 )
+CATEGORY_NORMALIZATION = {
+    "coffee": "Drinks",
+    "coffee shop": "Drinks",
+    "tea and coffee shop": "Drinks",
+    "bubble tea": "Drinks",
+    "bubble tea store": "Drinks",
+    "juice": "Drinks",
+    "juice shop": "Drinks",
+    "canteen": "Canteen",
+    "cafeteria": "Canteen",
+    "food court": "Canteen",
+    "fast food/takeout": "Fast food restaurant",
+    "fast food restaurant": "Fast food restaurant",
+    "cafe": "Cafe",
+}
+
+VENDOR_CATEGORY_OVERRIDES = {
+    "V005": "Restaurant",
+    "V018": "Canteen",
+    "V035": "Canteen",
+}
+
+
+def _normalize_vendor_category(
+    category: str | None,
+    directory_id: str | None = None,
+) -> str | None:
+    if directory_id is not None:
+        override = VENDOR_CATEGORY_OVERRIDES.get(directory_id)
+        if override is not None:
+            return override
+
+    if category is None:
+        return None
+
+    normalized = category.strip()
+
+    if not normalized:
+        return None
+
+    return CATEGORY_NORMALIZATION.get(
+        normalized.casefold(),
+        normalized,
+    )
 
 
 def _parse_nullable_bool(
@@ -254,7 +298,13 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
                     if vendor is None:
                         skip_new_vendor = True
                     continue
-                vendor_directory_data[target_field] = value
+                if target_field == "category":
+                    value = _normalize_vendor_category(
+                        value,
+                        directory_id,
+                    )
+
+                vendor_directory_data[target_field] = value    
 
             if skip_new_vendor:
                 print(
@@ -398,6 +448,20 @@ def seed_vendor_google_metadata(
                         f"vendor={directory_id}, column={source_column}"
                     )
                     continue
+
+                if target_field == "category":
+                    value = _normalize_vendor_category(
+                        value,
+                        directory_id,
+                )
+
+                if (
+                    target_field == "category"
+                    and vendor.category == "Drinks"
+                    and value == "Cafe"
+                ):
+                    value = vendor.category
+
                 if value is not None and _set_if_changed(
                     vendor,
                     target_field,
@@ -477,11 +541,12 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
         ).all()
     }
 
-    existing_review_ids = set(
-        session.scalars(
-            select(GoogleReview.external_review_id)
+    existing_reviews = {
+        review.external_review_id: review
+        for review in session.scalars(
+            select(GoogleReview)
         ).all()
-    )
+    }
 
     with GOOGLE_REVIEWS_CSV.open(
         newline="",
@@ -492,10 +557,18 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
         for row in reader:
             directory_id = row["ID"].strip()
             external_review_id = row["review_id"].strip()
+            maps_url = (row.get("review_link") or "").strip() or None
 
-            if external_review_id in existing_review_ids:
-                skipped_count += 1
-                continue
+            existing_review = existing_reviews.get(external_review_id)
+
+            if existing_review is not None:
+                 _set_if_changed(
+                    existing_review,
+                    "maps_url",
+                    maps_url,
+                )
+                 skipped_count += 1
+                 continue
 
             vendor = vendors_by_directory_id.get(directory_id)
 
@@ -521,10 +594,11 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
                 external_review_id=external_review_id,
                 rating=int(row["rating"]),
                 comment=(row["review_text"] or "").strip() or None,
+                maps_url=maps_url,
                 published_at=published_at,
             )
             session.add(google_review)
-            existing_review_ids.add(external_review_id)
+            existing_reviews[external_review_id] = google_review
             created_count += 1
 
     session.commit()
