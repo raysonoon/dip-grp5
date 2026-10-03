@@ -1,11 +1,12 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Mail, Lock, AlertCircle, X, Link, ArrowLeft } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { Mail, Lock, AlertCircle, ArrowLeft } from "lucide-react";
 
 type AuthMode = "signin" | "signup";
 
 export default function SignInPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -14,14 +15,25 @@ export default function SignInPage() {
   const [passwordError, setPasswordError] = useState("");
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
 
-  // Dismiss / Close Handler - returns user to previous page or home
-  const handleDismiss = () => {
-    if (window.history.length > 1) {
-      navigate(-1);
-    } else {
-      navigate("/");
+  const dismissTimerRef = useRef<number | null>(null);
+
+  const clearDismissTimer = () => {
+    if (dismissTimerRef.current !== null) {
+      window.clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
     }
   };
+
+  const returnRoute =
+    (location.state as { from?: string } | null)?.from ?? "/";
+
+  // Dismiss / Close Handler - returns user to the app page they were on
+  const handleDismiss = () => {
+    clearDismissTimer();
+    navigate(returnRoute);
+  };
+
+  useEffect(() => clearDismissTimer, []);
 
   const validateEmail = (value: string) => {
     if (!value.trim()) return "Email is required.";
@@ -53,13 +65,15 @@ export default function SignInPage() {
     console.log(`[Stub Submit] ${mode.toUpperCase()} attempt:`, { email, password });
 
     setSubmittedSuccess(true);
-    setTimeout(() => {
+    dismissTimerRef.current = window.setTimeout(() => {
+      dismissTimerRef.current = null;
       setSubmittedSuccess(false);
-      handleDismiss();
+      navigate(returnRoute);
     }, 1500);
   };
 
   const handleModeSwitch = (newMode: AuthMode) => {
+    clearDismissTimer();
     setMode(newMode);
     setEmailError("");
     setPasswordError("");
@@ -72,11 +86,11 @@ export default function SignInPage() {
           <div className="mb-6">
           <button
             type="button"
-            onClick={() => navigate("/")}
+            onClick={handleDismiss}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            <span>Back to Home</span>
+            <span>Back</span>
           </button>
         </div>
         <div className="mb-6 text-center">
@@ -94,7 +108,7 @@ export default function SignInPage() {
             <button
               type="button"
               onClick={() => handleModeSwitch("signin")}
-              className={`flex-1 rounded-lg py-2 transition-all ${
+              className={`flex-1 rounded-lg py-2 transition-all cursor-pointer ${
                 mode === "signin"
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -105,7 +119,7 @@ export default function SignInPage() {
             <button
               type="button"
               onClick={() => handleModeSwitch("signup")}
-              className={`flex-1 rounded-lg py-2 transition-all ${
+              className={`flex-1 rounded-lg py-2 transition-all cursor-pointer ${
                 mode === "signup"
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
