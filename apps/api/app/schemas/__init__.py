@@ -11,6 +11,7 @@ from app.schemas.review import (
 from app.schemas.chat import ChatRequest, ChatResponse, ChatSource
 from app.schemas.vendor import (
     VendorAverageRatingRead,
+    VendorCoordinates,
     VendorImageRead,
     VendorImageUpdate,
     VendorListItem,
@@ -32,6 +33,7 @@ __all__ = [
     "VendorImageRead",
     "VendorImageUpdate",
     "VendorAverageRatingRead",
+    "VendorCoordinates",
     "VendorListItem",
     "VendorListRead",
 ]

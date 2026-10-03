@@ -4,13 +4,12 @@ import Layout, { FoodieChat } from "./components/Layout";
 import Footer from "./components/Footer";
 import Header from "./components/Header";
 import { apiUrl } from "./api/client";
-import { fetchVendorReviews } from "./api/reviews";
+import { fetchReviews, fetchVendorReviews } from "./api/reviews.js";
 import { fetchVendors } from "./api/vendors";
 import SignInPage from "./pages/SignInPage";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
 import VendorMap from "./pages/VendorMap";
-import { fetchReviews } from "./api/reviews.js";
 import {
   Search,
   Star,
@@ -188,7 +187,11 @@ function HomePage() {
         const withTopReviews = await Promise.all(
           ranked.map(async (vendor) => {
             try {
-              const page = await fetchVendorReviews(vendor.id, controller.signal);
+              // Only the first review's comment is used, so one review is enough.
+              const page = await fetchVendorReviews(vendor.id, {
+                limit: 1,
+                signal: controller.signal,
+              });
               return { ...vendor, topReview: page.items[0]?.comment ?? null };
             } catch {
               return { ...vendor, topReview: null };

@@ -55,6 +55,25 @@ function parseVendorImage(value) {
   };
 }
 
+// The API returns GeoJSON: {"type": "Point", "coordinates": [lng, lat]}.
+// Vendors without coordinates come back as null; keep that as null so the map can skip them.
+function parseMapCoordinates(value) {
+  if (value === null || value === undefined) return null;
+  const point = objectValue(value, "vendor map_coordinates");
+  if (
+    point.type !== "Point" ||
+    !Array.isArray(point.coordinates) ||
+    point.coordinates.length !== 2
+  ) {
+    throw new Error("Invalid vendor map_coordinates in vendor API response");
+  }
+  const [lng, lat] = point.coordinates;
+  return {
+    lng: numberValue(lng, "vendor map_coordinates longitude"),
+    lat: numberValue(lat, "vendor map_coordinates latitude"),
+  };
+}
+
 export function parseVendor(value) {
   const vendor = objectValue(value, "vendor");
   if (!Array.isArray(vendor.images)) {
@@ -80,6 +99,7 @@ export function parseVendor(value) {
     created_at: stringValue(vendor.created_at, "vendor created_at"),
     updated_at: stringValue(vendor.updated_at, "vendor updated_at"),
     images: vendor.images.map(parseVendorImage),
+    map_coordinates: parseMapCoordinates(vendor.map_coordinates),
   };
 }
 
