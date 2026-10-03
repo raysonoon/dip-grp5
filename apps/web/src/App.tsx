@@ -6,6 +6,7 @@ import Header from "./components/Header";
 import { apiUrl } from "./api/client";
 import { fetchVendorReviews } from "./api/reviews";
 import { fetchVendors } from "./api/vendors";
+import SignInPage from "./pages/SignInPage";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
 import VendorMap from "./pages/VendorMap";
@@ -565,6 +566,7 @@ function App() {
       <Route element={<Layout />}>
         <Route path="/food" element={<FoodPage />} />
         <Route path="/vendors/:vendorId" element={<VendorsPage />} />
+        <Route path="signin" element={<SignInPage />} />
       </Route>
     </Routes>
   );

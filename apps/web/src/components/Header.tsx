@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Menu, Utensils, X } from "lucide-react";
 
 export default function Header({ fixed = false }: { fixed?: boolean }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
 
   return (
     <nav
@@ -20,9 +21,13 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
         </Link>
 
         <div className="hidden md:flex items-center gap-3">
-          <button className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <Link
+            to="/signin"
+            state={{ from: location.pathname }}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
             Sign In
-          </button>
+          </Link>
           <Link
             to="/food"
             className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity"
@@ -42,9 +47,13 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
 
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-border bg-background px-6 py-4 flex flex-col gap-4 text-sm">
-          <button className="text-sm text-muted-foreground hover:text-foreground transition-colors text-left">
+          <Link
+            to="/signin"
+            state={{ from: location.pathname }}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors text-left"
+          >
             Sign In
-          </button>
+          </Link>
           <Link
             to="/food"
             className="text-sm text-muted-foreground hover:text-foreground transition-colors"
