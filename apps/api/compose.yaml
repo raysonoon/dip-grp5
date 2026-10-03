@@ -2,7 +2,7 @@ name: dip-grp5
 
 services:
   db:
-    image: pgvector/pgvector:pg17
+    image: raulodev/postgres-postgis-pgvector:v17-3.5-0.8.2
     container_name: dip-grp5-postgres
     restart: unless-stopped
     environment:
