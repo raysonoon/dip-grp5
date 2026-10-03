@@ -1,3 +1,5 @@
 # 3/10/26
-- [ ] Brief starting full-stack app
-- [ ] Discuss deployment + Gemini API stuff
+- [x] Project timeline
+- [x] Brief starting full-stack app
+- [x] Discuss deployment + Gemini API stuff
+- [x] Chatbot UI
