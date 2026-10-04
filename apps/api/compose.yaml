@@ -2,7 +2,9 @@ name: dip-grp5
 
 services:
   db:
-    image: pgvector/pgvector:pg17
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
     container_name: dip-grp5-postgres
     restart: unless-stopped
     environment:
@@ -24,4 +26,3 @@ services:
 volumes:
   dip_pgdata:
     name: dip-grp5-pgdata
-

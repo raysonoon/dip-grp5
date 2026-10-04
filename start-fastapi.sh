@@ -19,6 +19,9 @@ echo "[1/7] Checking the project environment..."
 [ -f "$API_DIR/compose.yaml" ] || die "Cannot find apps/api/compose.yaml under: $SCRIPT_DIR"
 [ -x "$PYTHON_EXE" ] || die "The Python virtual environment is missing: $PYTHON_EXE"
 
+echo "      Installing Python dependencies..."
+"$PYTHON_EXE" -m pip install -r "$API_DIR/requirements.txt" || die "Failed to install Python dependencies."
+
 # Locate the Docker CLI (Apple Silicon installs it inside Docker.app)
 if ! command -v docker >/dev/null 2>&1; then
   if [ -x "/Applications/Docker.app/Contents/Resources/bin/docker" ]; then
@@ -62,6 +65,9 @@ for _ in $(seq 1 90); do
   sleep 2
 done
 [ "$ready" -eq 1 ] || die "PostgreSQL did not become ready within 90 seconds."
+
+echo "      Applying database init scripts..."
+$COMPOSE exec -T db sh -c 'set -e; for f in /docker-entrypoint-initdb.d/*.sql; do echo "Running $f"; psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -f "$f"; done' || die "Database init script failed."
 
 echo "[5/7] Applying migrations and confirming development data..."
 "$PYTHON_EXE" -m alembic upgrade head || die "Database migration failed."

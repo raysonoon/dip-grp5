@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
+from geoalchemy2.functions import ST_GeogFromText
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -36,6 +37,71 @@ DEMO_VENDORS = (
         "opening_hours": "10:00 - 22:00",
     },
 )
+# Demo vendor name -> (lat, lng).
+DEMO_VENDOR_COORDINATES: dict[str, tuple[float, float]] = {
+    "Demo Vendor 1": (1.3483, 103.6831),
+    "Demo Vendor 2": (1.3483, 103.6831),
+}
+# directory_id -> (lat, lng).
+# Approximate cluster points per building/area, not verified per vendor.
+VENDOR_COORDINATES: dict[str, tuple[float, float]] = {
+    "V001": (1.3477, 103.6800),
+    "V002": (1.3502, 103.6875),
+    "V003": (1.3481, 103.6796),
+    "V004": (1.3502, 103.6875),
+    "V005": (1.3505, 103.6870),
+    "V006": (1.3477, 103.6800),
+    "V007": (1.3477, 103.6800),
+    "V008": (1.3481, 103.6796),
+    "V009": (1.3477, 103.6800),
+    "V010": (1.3477, 103.6800),
+    "V011": (1.3477, 103.6800),
+    "V012": (1.3460, 103.6815),
+    "V013": (1.3466, 103.6822),
+    "V014": (1.3454, 103.6785),
+    "V015": (1.3454, 103.6785),
+    "V016": (1.3477, 103.6800),
+    "V017": (1.3481, 103.6796),
+    "V018": (1.3445, 103.6845),
+    "V019": (1.3440, 103.6790),
+    "V020": (1.3505, 103.6870),
+    "V021": (1.3510, 103.6880),
+    "V022": (1.3448, 103.6848),
+    "V023": (1.3450, 103.6850),
+    "V024": (1.3435, 103.6795),
+    "V025": (1.3500, 103.6790),
+    "V026": (1.3477, 103.6800),
+    "V027": (1.3502, 103.6875),
+    "V028": (1.3452, 103.6783),
+    "V029": (1.3466, 103.6822),
+    "V030": (1.3460, 103.6810),
+    "V031": (1.3466, 103.6822),
+    "V032": (1.3466, 103.6822),
+    "V033": (1.3481, 103.6796),
+    "V034": (1.3477, 103.6800),
+    "V035": (1.3502, 103.6875),
+    "V036": (1.3502, 103.6875),
+    "V037": (1.3481, 103.6796),
+    "V038": (1.3477, 103.6800),
+    "V039": (1.3477, 103.6800),
+    "V040": (1.3481, 103.6796),
+    "V041": (1.3470, 103.6910),
+    "V042": (1.3481, 103.6796),
+    "V043": (1.3477, 103.6800),
+    "V044": (1.3410, 103.6800),
+    "V045": (1.3466, 103.6822),
+    "V046": (1.3481, 103.6796),
+    "V047": (1.3481, 103.6796),
+    "V048": (1.3477, 103.6800),
+    "V049": (1.3477, 103.6800),
+    "V050": (1.3466, 103.6822),
+    "V051": (1.3477, 103.6800),
+    "V052": (1.3483, 103.6831),
+    "V053": (1.3477, 103.6800),
+    "V054": (1.3466, 103.6822),
+    "V055": (1.3481, 103.6796),
+    "V056": (1.3477, 103.6800),
+}
 NTU_VENDOR_CSV = (
     Path(__file__).resolve().parents[4]
     / "data"
@@ -400,6 +466,42 @@ def _delete_stale_ntu_vendors(
 
     session.commit()
     return deleted_count, skipped_count
+
+
+def seed_vendor_coordinates(session: Session) -> int:
+    """Backfill ``map_coordinates`` for vendors that do not have them yet.
+
+    Coordinates are approximate cluster points keyed by stable identity
+    (``directory_id`` for NTU vendors, name for demo vendors). Only rows whose
+    coordinate is currently ``None`` are filled, so re-seeding is idempotent.
+    The column is a Postgres geography type, so this is a no-op on other
+    dialects (e.g. the SQLite test database).
+    """
+    if session.get_bind().dialect.name != "postgresql":
+        return 0
+
+    updated = 0
+    for directory_id, (lat, lng) in VENDOR_COORDINATES.items():
+        vendor = session.scalar(
+            select(Vendor).where(Vendor.directory_id == directory_id)
+        )
+        if vendor is None or vendor.map_coordinates is not None:
+            continue
+        # WKT points are (longitude latitude), the reverse of the tuple above.
+        vendor.map_coordinates = ST_GeogFromText(f"POINT({lng} {lat})")
+        updated += 1
+
+    for name, (lat, lng) in DEMO_VENDOR_COORDINATES.items():
+        vendor = session.scalar(
+            select(Vendor).where(Vendor.name == name)
+        )
+        if vendor is None or vendor.map_coordinates is not None:
+            continue
+        vendor.map_coordinates = ST_GeogFromText(f"POINT({lng} {lat})")
+        updated += 1
+
+    session.commit()
+    return updated
 
 
 def seed_vendor_google_metadata(
@@ -828,6 +930,7 @@ def main() -> None:
         test_user, test_user_created = seed_development_user(session)
         vendors = seed_demo_vendors(session)
         ntu_vendors = seed_ntu_vendors(session)
+        coordinates_backfilled = seed_vendor_coordinates(session)
         (
             google_metadata_matched,
             google_metadata_missing,
@@ -906,6 +1009,7 @@ def main() -> None:
         f"created={knowledge_created}, skipped={knowledge_skipped}, "
         f"unresolved_vendor={knowledge_unresolved}"
     )
+    print(f"Vendor map coordinates: backfilled={coordinates_backfilled}")
 
 
 if __name__ == "__main__":

@@ -41,6 +41,13 @@ class VendorImageRead(BaseModel):
     created_at: datetime
 
 
+class VendorCoordinates(BaseModel):
+    """GeoJSON Point representation of a vendor's map coordinates."""
+
+    type: str = "Point"
+    coordinates: list[float]  # [longitude, latitude], per GeoJSON spec
+
+
 class VendorListItem(BaseModel):
     id: int
     name: str
@@ -58,6 +65,7 @@ class VendorListItem(BaseModel):
     average_rating: float | None
     review_count: int
     images: list[VendorImageRead]
+    map_coordinates: VendorCoordinates | None
 
 
 class VendorListRead(BaseModel):

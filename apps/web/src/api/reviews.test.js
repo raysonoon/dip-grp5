@@ -85,10 +85,13 @@ test("fetchVendorReviews is public, filters, and parses review details", async (
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (path, options) => {
-    assert.equal(path, "https://api.example.test/reviews?vendor_id=7");
+    assert.equal(
+      path,
+      "https://api.example.test/reviews?vendor_id=7&limit=10&offset=0",
+    );
     assert.equal(options.method, "GET");
     assert.equal(options.headers["X-Dev-User-Id"], undefined);
-    return jsonResponse({ items: [REVIEW_DETAIL], total: 1, limit: 20, offset: 0 });
+    return jsonResponse({ items: [REVIEW_DETAIL], total: 1, limit: 10, offset: 0 });
   };
 
   const page = await fetchVendorReviews(7);
@@ -99,6 +102,25 @@ test("fetchVendorReviews is public, filters, and parses review details", async (
     reviewImageUrl(42, 9),
     "https://api.example.test/reviews/42/images/9",
   );
+});
+
+test("fetchVendorReviews sends the requested limit and offset", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (path) => {
+    assert.equal(
+      path,
+      "https://api.example.test/reviews?vendor_id=7&limit=10&offset=20",
+    );
+    return jsonResponse({ items: [REVIEW_DETAIL], total: 21, limit: 10, offset: 20 });
+  };
+
+  const page = await fetchVendorReviews(7, { limit: 10, offset: 20 });
+
+  assert.equal(page.offset, 20);
+  assert.equal(page.total, 21);
 });
 
 test("review mutations use the test-user token and backend schemas", async (context) => {

@@ -14,6 +14,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
+from geoalchemy2.shape import to_shape
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
@@ -24,6 +25,7 @@ from app.core.image_upload import read_image_upload
 from app.models import Review, Vendor, VendorImage
 from app.schemas import (
     VendorAverageRatingRead,
+    VendorCoordinates,
     VendorImageRead,
     VendorImageUpdate,
     VendorListItem,
@@ -45,6 +47,18 @@ def _vendor_image_read(image: VendorImage) -> VendorImageRead:
         display_order=image.display_order,
         created_at=image.created_at,
     )
+
+
+def _vendor_coordinates(vendor: Vendor) -> VendorCoordinates | None:
+    """Serialize a vendor's PostGIS geography column as a GeoJSON Point.
+
+    Vendors without coordinates return None so the frontend can skip
+    rendering a map marker for them without erroring.
+    """
+    if vendor.map_coordinates is None:
+        return None
+    point = to_shape(vendor.map_coordinates)
+    return VendorCoordinates(type="Point", coordinates=[point.x, point.y])
 
 
 def _get_vendor(vendor_id: int, session: DbSession) -> Vendor:
@@ -156,6 +170,7 @@ def list_vendors(
                     )
                     for image in vendor.images
                 ],
+                map_coordinates=_vendor_coordinates(vendor),
             )
         )
 
