@@ -1,30 +1,25 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
-import { askChat, chatErrorMessage } from "./api/chat";
+import Layout, { FoodieChat } from "./components/Layout";
+import Footer from "./components/Footer";
+import Header from "./components/Header";
 import { apiUrl } from "./api/client";
-import { fetchVendorReviews } from "./api/reviews";
+import { fetchReviews, fetchVendorReviews } from "./api/reviews.js";
 import { fetchVendors } from "./api/vendors";
-import ChatMessageContent from "./components/ChatMessageContent";
+import SignInPage from "./pages/SignInPage";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
 import VendorMap from "./pages/VendorMap";
-import { fetchReviews } from "./api/reviews.js";
 import {
   Search,
   Star,
   MapPin,
-  Bot,
-  Send,
   ChevronRight,
   Clock,
-  Utensils,
   TrendingUp,
-  Menu,
-  X,
   //ThumbsUp,//
 } from "lucide-react";
 
-const DISPLAY_FONT = "'Fraunces', serif";
 const BODY_FONT = "'Plus Jakarta Sans', sans-serif";
 
 type Review = {
@@ -87,12 +82,6 @@ function computeTrendingScore(
   );
 }
 
-const SUGGESTED_QUESTIONS = [
-  "What's cheap near North Spine?",
-  "Best mala on campus?",
-  "What's open after 8pm?",
-];
-
 function StarRow({ rating, size = "sm" }: { rating: number; size?: "sm" | "md" }) {
   return (
     <div className="flex items-center gap-0.5">
@@ -114,19 +103,6 @@ function HomePage() {
   const [reviewsPaused, setReviewsPaused] = useState(false);
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<
-    { role: "user" | "bot"; text: string; sources?: unknown[] }[]
-  >([
-    {
-      role: "bot",
-      text: "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!",
-    },
-  ]);
-  const [chatInput, setChatInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
-  const chatRequestPending = useRef(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [reviewSlide, setReviewSlide] = useState(0);
@@ -211,7 +187,11 @@ function HomePage() {
         const withTopReviews = await Promise.all(
           ranked.map(async (vendor) => {
             try {
-              const page = await fetchVendorReviews(vendor.id, controller.signal);
+              // Only the first review's comment is used, so one review is enough.
+              const page = await fetchVendorReviews(vendor.id, {
+                limit: 1,
+                signal: controller.signal,
+              });
               return { ...vendor, topReview: page.items[0]?.comment ?? null };
             } catch {
               return { ...vendor, topReview: null };
@@ -238,92 +218,13 @@ function HomePage() {
     navigate(`/food?q=${encodeURIComponent(query)}`);
   }
 
-  async function sendMessage(text: string) {
-    const question = text.trim();
-    if (!question || chatRequestPending.current) return;
-
-    chatRequestPending.current = true;
-    setChatMessages((prev) => [...prev, { role: "user", text: question }]);
-    setChatInput("");
-    setIsTyping(true);
-
-    try {
-      const response = await askChat(question);
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "bot", text: response.answer, sources: response.sources },
-      ]);
-    } catch (error) {
-      console.error("Chat request failed", error);
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "bot", text: chatErrorMessage(error) },
-      ]);
-    } finally {
-      chatRequestPending.current = false;
-      setIsTyping(false);
-    }
-  }
-
   return (
     <div
       className="min-h-screen bg-background text-foreground overflow-x-hidden"
       style={{ fontFamily: BODY_FONT }}
     >
       {/* ── NAV ──────────────────────────────────────── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Utensils className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <span
-              className="text-lg font-bold text-foreground"
-              style={{ fontFamily: DISPLAY_FONT }}
-            >
-              NTU Foodie Guide
-            </span>
-          </div>
-
-          <div className="hidden md:flex items-center gap-3">
-            <button className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Sign In
-            </button>
-            <Link
-              to="/food"
-              className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity"
-            >
-              Discover
-            </Link>
-          </div>
-
-          <button
-            className="md:hidden text-muted-foreground p-1"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label="Toggle menu"
-          >
-            {mobileMenuOpen ? (
-              <X className="w-5 h-5" />
-            ) : (
-              <Menu className="w-5 h-5" />
-            )}
-          </button>
-        </div>
-
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-border bg-background px-6 py-4 flex flex-col gap-4 text-sm">
-            <Link
-              to="/food"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Discover
-            </Link>
-            <button className="w-full py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold">
-              Leave a Review
-            </button>
-          </div>
-        )}
-      </nav>
+      <Header fixed />
 
       {/* ── HERO ─────────────────────────────────────── */}
       <section className="relative min-h-screen flex items-center pt-16">
@@ -344,8 +245,7 @@ function HomePage() {
             </div>
 
             <h1
-              className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.05] mb-6"
-              style={{ fontFamily: DISPLAY_FONT }}
+              className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.05] mb-6 font-display"
             >
               Find Your Next
               <span className="block text-primary italic">Favourite Stall</span>
@@ -363,9 +263,9 @@ function HomePage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search stalls, dishes, canteens..."
+                  placeholder="Search for stalls, dishes, canteens..."
                   className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none flex-1"
-                />
+              />
               </div>
               <button
                 type="submit"
@@ -403,8 +303,7 @@ function HomePage() {
               ].map(([num, label]) => (
                 <div key={label}>
                   <div
-                    className="text-3xl font-bold text-foreground"
-                    style={{ fontFamily: DISPLAY_FONT }}
+                    className="text-3xl font-bold text-foreground font-display"
                   >
                     {num}
                   </div>
@@ -426,8 +325,7 @@ function HomePage() {
               Navigate Campus
             </p>
             <h2
-              className="text-3xl md:text-4xl font-bold mb-4"
-              style={{ fontFamily: DISPLAY_FONT }}
+              className="text-3xl md:text-4xl font-bold mb-4 font-display"
             >
               All Food Places in 1 Map
             </h2>
@@ -449,8 +347,7 @@ function HomePage() {
                 This Week's Picks
               </p>
               <h2
-                className="text-3xl md:text-4xl font-bold"
-                style={{ fontFamily: DISPLAY_FONT }}
+                className="text-3xl md:text-4xl font-bold font-display"
               >
                 Trending on Campus
               </h2>
@@ -474,7 +371,7 @@ function HomePage() {
                 return (
                   <Link
                     key={vendor.id}
-                    to={`/food/vendors/${vendor.id}`}
+                    to={`/vendors/${vendor.id}`}
                     className="group rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/25 transition-all duration-300 cursor-pointer flex flex-col"
                   >
                     <div className="relative h-44 overflow-hidden bg-muted">
@@ -549,8 +446,7 @@ function HomePage() {
           From the Community
         </p>
         <h2
-          className="text-3xl md:text-4xl font-bold"
-          style={{ fontFamily: DISPLAY_FONT }}
+          className="text-3xl md:text-4xl font-bold font-display"
         >
           What students are saying
         </h2>
@@ -586,7 +482,7 @@ function HomePage() {
             .map((review) => (
               <Link
                 key={review.id}
-                to={`/food/vendors/${review.vendor.id}`}
+                to={`/vendors/${review.vendor.id}`}
                 className="p-6 rounded-2xl border border-border bg-background flex flex-col hover:border-primary/40 transition-colors"
               >
                 <div className="flex items-center justify-between mb-4">
@@ -658,128 +554,10 @@ function HomePage() {
 </section>
 
       {/* ── FLOATING CHATBOT WIDGET ───────────────────── */}
-      <div className="fixed bottom-6 right-6 z-50">
-        {chatOpen ? (
-          <div className="w-80 sm:w-96 rounded-2xl bg-card border border-border shadow-2xl flex flex-col overflow-hidden transition-all">
-            {/* Header */}
-            <div className="p-4 bg-primary text-primary-foreground flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Bot className="w-5 h-5" />
-                <span className="font-bold text-sm">NTU Foodie Assistant</span>
-              </div>
-              <button
-                onClick={() => setChatOpen(false)}
-                className="p-1 hover:bg-black/10 rounded-lg transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Messages */}
-            <div className="p-4 h-80 overflow-y-auto flex flex-col gap-3 bg-background">
-              {chatMessages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[82%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground rounded-br-sm"
-                        : "bg-card border border-border text-foreground rounded-bl-sm"
-                    }`}
-                  >
-                    {msg.role === "bot" ? (
-                      <ChatMessageContent answer={msg.text} sources={msg.sources} />
-                    ) : (
-                      msg.text
-                    )}
-                  </div>
-                </div>
-              ))}
-              {isTyping && (
-                <div className="self-start text-xs text-muted-foreground italic flex items-center gap-1">
-                  <Clock className="w-3 h-3 animate-spin" /> Thinking...
-                </div>
-              )}
-            </div>
-
-            {/* Quick Prompts */}
-            <div className="px-3 py-2 bg-card border-t border-border flex flex-wrap gap-1">
-              {SUGGESTED_QUESTIONS.map((q) => (
-                <button
-                  key={q}
-                  onClick={() => sendMessage(q)}
-                  className="text-[10px] px-2 py-1 rounded-md bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-
-            {/* Input */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                sendMessage(chatInput);
-              }}
-              className="p-3 bg-card border-t border-border flex gap-2"
-            >
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask about canteens or food..."
-                className="flex-1 bg-background text-xs px-3 py-2 rounded-lg border border-border outline-none focus:border-primary/40"
-              />
-              <button
-                type="submit"
-                disabled={isTyping}
-                className="p-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            </form>
-          </div>
-        ) : (
-          <button
-            onClick={() => setChatOpen(true)}
-            className="p-4 rounded-full bg-primary text-primary-foreground shadow-xl hover:scale-105 transition-transform flex items-center gap-2 font-semibold text-sm"
-          >
-            <Bot className="w-5 h-5" />
-            <span>Ask Foodie</span>
-          </button>
-        )}
-      </div>
+      <FoodieChat />
 
       {/* ── FOOTER ───────────────────────────────────── */}
-      <footer className="border-t border-border py-10">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
-              <Utensils className="w-3 h-3 text-primary-foreground" />
-            </div>
-            <span
-              className="text-sm font-bold"
-              style={{ fontFamily: DISPLAY_FONT }}
-            >
-              NTU Foodie Guide
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">Made by NTU students, for NTU students.</p>
-          <div className="flex gap-6 text-xs text-muted-foreground">
-            {["About", "Contribute", "Privacy"].map((l) => (
-              <a
-                key={l}
-                href="#"
-                className="hover:text-foreground transition-colors"
-              >
-                {l}
-              </a>
-            ))}
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }
@@ -788,9 +566,11 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
-      <Route path="/food" element={<FoodPage />} />
-      <Route path="/vendors/:vendorId" element={<VendorsPage />} />
-      <Route path="/food/vendors/:vendorId" element={<VendorsPage />} />
+      <Route element={<Layout />}>
+        <Route path="/food" element={<FoodPage />} />
+        <Route path="/vendors/:vendorId" element={<VendorsPage />} />
+        <Route path="signin" element={<SignInPage />} />
+      </Route>
     </Routes>
   );
 }

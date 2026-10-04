@@ -14,6 +14,10 @@ echo [1/7] Checking the project environment...
 if not exist "%API_DIR%\compose.yaml" goto missing_project
 if not exist "%PYTHON_EXE%" goto missing_python
 
+echo       Installing Python dependencies...
+"%PYTHON_EXE%" -m pip install -r "%API_DIR%\requirements.txt"
+if errorlevel 1 goto pip_failed
+
 for /f "delims=" %%D in ('where docker.exe 2^>nul') do if not defined DOCKER_EXE set "DOCKER_EXE=%%D"
 if not defined DOCKER_EXE if exist "%LOCALAPPDATA%\Programs\DockerDesktop\resources\bin\docker.exe" set "DOCKER_EXE=%LOCALAPPDATA%\Programs\DockerDesktop\resources\bin\docker.exe"
 if not defined DOCKER_EXE if exist "%ProgramFiles%\Docker\Docker\resources\bin\docker.exe" set "DOCKER_EXE=%ProgramFiles%\Docker\Docker\resources\bin\docker.exe"
@@ -37,7 +41,7 @@ goto docker_timeout
 :docker_ready
 echo [3/7] Starting PostgreSQL and pgvector...
 pushd "%API_DIR%"
-"%DOCKER_EXE%" compose up -d
+"%DOCKER_EXE%" compose up -d --build
 if errorlevel 1 goto compose_failed
 
 echo [4/7] Waiting for PostgreSQL...
@@ -48,15 +52,20 @@ for /l %%I in (1,1,90) do (
 goto database_timeout
 
 :database_ready
+echo       Applying database init scripts...
+"%DOCKER_EXE%" compose exec -T db sh -c "set -e; for f in /docker-entrypoint-initdb.d/*.sql; do psql -U $POSTGRES_USER -d $POSTGRES_DB -v ON_ERROR_STOP=1 -f $f; done"
+if errorlevel 1 goto init_failed
+
 echo [5/7] Applying migrations and confirming development data...
 "%PYTHON_EXE%" -m alembic upgrade head
 if errorlevel 1 goto migration_failed
 "%PYTHON_EXE%" -m app.db.seed
 if errorlevel 1 goto seed_failed
 
-echo [6/7] Synchronizing chatbot knowledge...
-"%PYTHON_EXE%" -m app.db.reindex
-if errorlevel 1 echo       [WARNING] Chatbot knowledge sync failed; the API will still start.
+echo [6/7] Chatbot knowledge base (optional)...
+echo       Skipped automatically. To (re)build the RAG knowledge base, run:
+echo         python -m app.db.reindex
+echo       (from apps\api; requires GEMINI_API_KEY in apps\api\.env).
 
 echo [7/7] Starting FastAPI...
 call :api_is_ready
@@ -80,6 +89,11 @@ exit /b 0
 :api_is_ready
 "%PYTHON_EXE%" -c "import json, sys, urllib.request; document = json.load(urllib.request.urlopen('%OPENAPI_URL%', timeout=2)); sys.exit(0 if document.get('info', {}).get('title') == 'NTU Foodie Hub API' else 1)" >nul 2>&1
 exit /b %errorlevel%
+
+:pip_failed
+echo.
+echo [ERROR] Failed to install Python dependencies.
+goto stop_with_error
 
 :missing_project
 echo.
@@ -117,6 +131,11 @@ goto stop_with_error_popd
 :database_timeout
 echo.
 echo [ERROR] PostgreSQL did not become ready within 90 seconds.
+goto stop_with_error_popd
+
+:init_failed
+echo.
+echo [ERROR] A database init script failed.
 goto stop_with_error_popd
 
 :migration_failed

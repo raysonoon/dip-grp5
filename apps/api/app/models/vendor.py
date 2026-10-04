@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from geoalchemy2 import Geometry
+from geoalchemy2 import Geography
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -119,7 +119,17 @@ class Vendor(Base):
         Numeric(2, 1),
         nullable=True,
     )
-
+    # PostGIS geography on Postgres. The test suite builds tables on SQLite,
+    # which has no geography type, so it gets a plain text column instead.
+    # The GiST index is created by the Alembic migration, not by create_all().
+    map_coordinates: Mapped[str | None] = mapped_column(
+        Geography(
+            geometry_type="POINT",
+            srid=4326,
+            spatial_index=False,
+        ).with_variant(Text(), "sqlite"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -154,14 +164,6 @@ class Vendor(Base):
 
     phone_number: Mapped[str | None] = mapped_column(
         String(50),
-        nullable=True,
-    )
-
-    map_coordinates: Mapped[object | None] = mapped_column(
-        Geometry("POINT", srid=4326).with_variant(
-            Text(),
-            "sqlite",
-        ),
         nullable=True,
     )
 

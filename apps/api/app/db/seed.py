@@ -1,5 +1,5 @@
 import csv
-import re
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -16,10 +16,12 @@ from app.db.session import SessionLocal
 from app.models import (
     ChatbotPrompt,
     GoogleReview,
+    RedditComment,
     Review,
     User,
     Vendor,
 )
+from app.models.knowledge import KnowledgeChunk
 
 
 DEMO_VENDORS = (
@@ -37,6 +39,11 @@ DEMO_VENDORS = (
     },
 )
 
+# Demo vendor name -> (lat, lng).
+DEMO_VENDOR_COORDINATES: dict[str, tuple[float, float]] = {
+    "Demo Vendor 1": (1.3483, 103.6831),
+    "Demo Vendor 2": (1.3483, 103.6831),
+}
 
 NTU_VENDOR_CSV = (
     Path(__file__).resolve().parents[4]
@@ -58,6 +65,11 @@ GOOGLE_RATINGS_CSV = (
     / "ntu_food_places_final.csv"
 )
 
+KNOWLEDGE_CHUNKS_CSV = (
+    Path(__file__).resolve().parents[4]
+    / "data"
+    / "knowledge_chunks.csv"
+)
 
 MOJIBAKE_MARKERS = (
     "\ufffd",
@@ -70,7 +82,6 @@ MOJIBAKE_MARKERS = (
 
 GOOGLE_VENDOR_CORE_FIELD_MAP = (
     ("name", "name"),
-    ("address", "location"),
     ("Level / unit", "unit_code"),
     ("main_category", "category"),
     ("Opening hours", "opening_hours"),
@@ -90,10 +101,50 @@ GOOGLE_VENDOR_DIETARY_FIELD_MAP = (
     ("Vegetarian", "vegetarian"),
 )
 
+CATEGORY_NORMALIZATION = {
+    "coffee": "Drinks",
+    "coffee shop": "Drinks",
+    "tea and coffee shop": "Drinks",
+    "bubble tea": "Drinks",
+    "bubble tea store": "Drinks",
+    "juice": "Drinks",
+    "juice shop": "Drinks",
+    "canteen": "Canteen",
+    "cafeteria": "Canteen",
+    "food court": "Canteen",
+    "fast food/takeout": "Fast food restaurant",
+    "fast food restaurant": "Fast food restaurant",
+    "cafe": "Cafe",
+}
 
-GOOGLE_MAPS_COORDINATES_PATTERN = re.compile(
-    r"!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)"
-)
+VENDOR_CATEGORY_OVERRIDES = {
+    "V005": "Restaurant",
+    "V018": "Canteen",
+    "V035": "Canteen",
+}
+
+
+def _normalize_vendor_category(
+    category: str | None,
+    directory_id: str | None = None,
+) -> str | None:
+    if directory_id is not None:
+        override = VENDOR_CATEGORY_OVERRIDES.get(directory_id)
+        if override is not None:
+            return override
+
+    if category is None:
+        return None
+
+    normalized = category.strip()
+
+    if not normalized:
+        return None
+
+    return CATEGORY_NORMALIZATION.get(
+        normalized.casefold(),
+        normalized,
+    )
 
 
 def _parse_nullable_bool(
@@ -302,6 +353,7 @@ def seed_ntu_vendors(
     session: Session,
 ) -> list[tuple[Vendor, bool]]:
     results: list[tuple[Vendor, bool]] = []
+    seen_directory_ids: set[str] = set()
 
     with NTU_VENDOR_CSV.open(
         newline="",
@@ -311,7 +363,7 @@ def seed_ntu_vendors(
 
         for row in reader:
             directory_id = row["id"].strip()
-
+            seen_directory_ids.add(directory_id)
             vendor = session.scalar(
                 select(Vendor).where(
                     Vendor.directory_id == directory_id
@@ -323,7 +375,8 @@ def seed_ntu_vendors(
 
             for source_column, target_field in (
                 ("name", "name"),
-                ("location", "unit_code"),
+                ("location", "location"),
+                ("unit_number", "unit_code"),
                 ("category", "category"),
                 ("opening_hours", "opening_hours"),
                 ("price_range", "price_range"),
@@ -352,6 +405,12 @@ def seed_ntu_vendors(
 
                     continue
 
+                if target_field == "category":
+                    value = _normalize_vendor_category(
+                        value,
+                        directory_id,
+                    )
+
                 vendor_directory_data[target_field] = value
 
             if skip_new_vendor:
@@ -377,13 +436,11 @@ def seed_ntu_vendors(
             if vendor is not None:
                 for field, value in vendor_directory_data.items():
                     _set_if_changed(vendor, field, value)
-
                 if (
                     vendor.location is None
                     and "unit_code" in vendor_directory_data
                 ):
                     vendor.location = vendor_directory_data["unit_code"]
-
                 session.commit()
                 session.refresh(vendor)
                 results.append((vendor, False))
@@ -391,7 +448,6 @@ def seed_ntu_vendors(
 
             vendor = Vendor(
                 directory_id=directory_id,
-                location=vendor_directory_data.get("unit_code"),
                 **vendor_directory_data,
             )
 
@@ -401,7 +457,64 @@ def seed_ntu_vendors(
 
             results.append((vendor, True))
 
+    session.commit()
+
+    deleted_count, skipped_count = _delete_stale_ntu_vendors(
+        session,
+        seen_directory_ids,
+    )
+    if deleted_count or skipped_count:
+        print(
+            "Stale NTU vendors: "
+            f"deleted={deleted_count}, "
+            f"skipped_with_content={skipped_count}"
+        )
+
     return results
+
+
+def _delete_stale_ntu_vendors(
+    session: Session,
+    seen_directory_ids: set[str],
+) -> tuple[int, int]:
+    """Delete vendors whose directory_id is no longer in the directory CSV.
+
+    Vendors with internal reviews or Google reviews are kept because those
+    foreign keys use ON DELETE RESTRICT. Reddit comments are detached via
+    ON DELETE SET NULL and vendor images are removed via ON DELETE CASCADE.
+    """
+    stale_vendors = session.scalars(
+        select(Vendor).where(
+            Vendor.directory_id.is_not(None),
+            Vendor.directory_id.not_in(seen_directory_ids),
+        )
+    ).all()
+
+    deleted_count = 0
+    skipped_count = 0
+    for vendor in stale_vendors:
+        has_reviews = session.scalar(
+            select(Review.id)
+            .where(Review.vendor_id == vendor.id)
+            .limit(1)
+        ) is not None
+        has_google_reviews = session.scalar(
+            select(GoogleReview.id)
+            .where(GoogleReview.vendor_id == vendor.id)
+            .limit(1)
+        ) is not None
+        if has_reviews or has_google_reviews:
+            print(
+                f"Skipping stale vendor {vendor.directory_id}: "
+                "still referenced by reviews or Google reviews"
+            )
+            skipped_count += 1
+            continue
+        session.delete(vendor)
+        deleted_count += 1
+
+    session.commit()
+    return deleted_count, skipped_count
 
 
 def seed_vendor_google_metadata(
@@ -462,6 +575,18 @@ def seed_vendor_google_metadata(
                     )
                     continue
 
+                if target_field == "category":
+                    value = _normalize_vendor_category(
+                        value,
+                        directory_id,
+                    )
+
+                    if (
+                        vendor.category == "Drinks"
+                        and value == "Cafe"
+                    ):
+                        value = vendor.category
+
                 if value is not None and _set_if_changed(
                     vendor,
                     target_field,
@@ -486,7 +611,6 @@ def seed_vendor_google_metadata(
                         f"column={source_column}"
                     )
                     continue
-
                 if value is not None and _set_if_changed(
                     vendor,
                     target_field,
@@ -494,17 +618,15 @@ def seed_vendor_google_metadata(
                 ):
                     changed_field_count += 1
 
-            # Parse latitude/longitude from the Google Maps link.
+            # Parse latitude/longitude from the CSV map_coordinates column.
             #
-            # Example:
-            # !3d1.3473036!4d103.6806168
-            #
-            # The returned WKT is:
+            # The column format is "(lat, lng)", e.g.
+            # "(1.3473036, 103.6806168)". The returned WKT is:
             # POINT(103.6806168 1.3473036)
             #
             # PostGIS uses X=longitude and Y=latitude.
-            maps_link = row.get("link") or ""
-            coordinates = _parse_google_maps_coordinates(maps_link)
+            raw_coordinates = row.get("map_coordinates") or ""
+            coordinates = _parse_map_coordinates(raw_coordinates)
 
             if coordinates is not None:
                 latitude, longitude = coordinates
@@ -627,11 +749,12 @@ def seed_google_reviews(
         ).all()
     }
 
-    existing_review_ids = set(
-        session.scalars(
-            select(GoogleReview.external_review_id)
+    existing_reviews = {
+        review.external_review_id: review
+        for review in session.scalars(
+            select(GoogleReview)
         ).all()
-    )
+    }
 
     with GOOGLE_REVIEWS_CSV.open(
         newline="",
@@ -642,8 +765,16 @@ def seed_google_reviews(
         for row in reader:
             directory_id = row["ID"].strip()
             external_review_id = row["review_id"].strip()
+            maps_url = (row.get("review_link") or "").strip() or None
 
-            if external_review_id in existing_review_ids:
+            existing_review = existing_reviews.get(external_review_id)
+
+            if existing_review is not None:
+                _set_if_changed(
+                    existing_review,
+                    "maps_url",
+                    maps_url,
+                )
                 skipped_count += 1
                 continue
 
@@ -671,11 +802,12 @@ def seed_google_reviews(
                 external_review_id=external_review_id,
                 rating=int(row["rating"]),
                 comment=(row["review_text"] or "").strip() or None,
+                maps_url=maps_url,
                 published_at=published_at,
             )
 
             session.add(google_review)
-            existing_review_ids.add(external_review_id)
+            existing_reviews[external_review_id] = google_review
             created_count += 1
 
     session.commit()
@@ -831,25 +963,139 @@ def seed_chatbot_questions(
     return created_count, updated_count
 
 
-def _parse_google_maps_coordinates(
-    link: str | None,
+def _parse_embedding(raw_value: str) -> list[float]:
+    """Parse a pgvector text form like ``[0.1,-0.2,...]`` into floats."""
+    stripped = raw_value.strip()
+    if not stripped.startswith("[") or not stripped.endswith("]"):
+        raise ValueError(f"Invalid embedding vector: {raw_value!r}")
+    inner = stripped[1:-1].strip()
+    if not inner:
+        return []
+    return [float(token) for token in inner.split(",")]
+
+
+def _parse_knowledge_chunk_metadata(raw_value: str) -> dict | None:
+    """Parse a CSV metadata field into a dict, or ``None`` when blank."""
+    stripped = raw_value.strip()
+    if not stripped:
+        return None
+    return json.loads(stripped)
+
+
+def _parse_nullable_str(raw_value: str) -> str | None:
+    stripped = raw_value.strip()
+    return stripped or None
+
+
+def seed_knowledge_chunks(session: Session) -> tuple[int, int, int]:
+    """Seed ``knowledge_chunks`` from an exported CSV (skip guard + by-source_id).
+
+    Imports Google review and Reddit chunks only. ``vendor_id`` is resolved at
+    import time from the already-seeded ``GoogleReview`` / ``RedditComment``
+    rows so it stays correct even when local ``vendors.id`` values differ.
+
+    Returns ``(created, skipped, unresolved_vendor)``. Skipping happens when the
+    table is already populated, the CSV is absent, or a row duplicates an
+    existing ``(source_type, source_id)`` key.
+    """
+    existing_count = session.scalar(select(KnowledgeChunk.id).limit(1))
+    if existing_count is not None:
+        print(
+            "Knowledge chunks already populated; skipping CSV seed "
+            "(run python -m app.db.reindex --force to rebuild)."
+        )
+        return 0, 0, 0
+
+    if not KNOWLEDGE_CHUNKS_CSV.exists():
+        print(
+            "Knowledge chunks CSV not found; skipping seed. "
+            f"Expected at {KNOWLEDGE_CHUNKS_CSV} (run python -m app.db.reindex "
+            "or generate the CSV to enable chatbot knowledge)."
+        )
+        return 0, 0, 0
+
+    google_vendor_ids = {
+        review.external_review_id: review.vendor_id
+        for review in session.scalars(select(GoogleReview)).all()
+    }
+    reddit_vendor_ids = {
+        comment.reddit_comment_id: comment.vendor_id
+        for comment in session.scalars(select(RedditComment)).all()
+    }
+
+    existing_keys = set(
+        session.execute(
+            select(KnowledgeChunk.source_type, KnowledgeChunk.source_id)
+        ).all()
+    )
+
+    created_count = 0
+    skipped_count = 0
+    unresolved_vendor_count = 0
+
+    with KNOWLEDGE_CHUNKS_CSV.open(newline="", encoding="utf-8-sig") as file:
+        for row in csv.DictReader(file):
+            source_type = row["source_type"].strip()
+            source_id = _parse_nullable_str(row["source_id"])
+            if (source_type, source_id) in existing_keys:
+                skipped_count += 1
+                continue
+
+            if source_type == "google_review":
+                vendor_id = google_vendor_ids.get(source_id)
+            elif source_type == "reddit":
+                vendor_id = reddit_vendor_ids.get(source_id)
+            else:
+                vendor_id = None
+
+            if vendor_id is None:
+                unresolved_vendor_count += 1
+
+            session.add(
+                KnowledgeChunk(
+                    source_type=source_type,
+                    source_id=source_id,
+                    vendor_id=vendor_id,
+                    content=row["content"],
+                    embedding=_parse_embedding(row["embedding"]),
+                    metadata_json=_parse_knowledge_chunk_metadata(
+                        row["metadata"]
+                    ),
+                )
+            )
+            existing_keys.add((source_type, source_id))
+            created_count += 1
+
+    session.commit()
+    return created_count, skipped_count, unresolved_vendor_count
+
+
+def _parse_map_coordinates(
+    value: str | None,
 ) -> tuple[float, float] | None:
-    """
-    Parse latitude/longitude from a Google Maps URL.
-
-    Expected pattern:
-        !3d<latitude>!4d<longitude>
-    """
-    if not link:
+    """Parse ``(lat, lng)`` from the CSV map_coordinates column."""
+    if not value:
         return None
 
-    match = GOOGLE_MAPS_COORDINATES_PATTERN.search(link)
+    stripped = value.strip()
 
-    if match is None:
+    if not (
+        stripped.startswith("(")
+        and stripped.endswith(")")
+    ):
         return None
 
-    latitude = float(match.group(1))
-    longitude = float(match.group(2))
+    inner = stripped[1:-1].strip()
+    parts = [part.strip() for part in inner.split(",")]
+
+    if len(parts) != 2:
+        return None
+
+    try:
+        latitude = float(parts[0])
+        longitude = float(parts[1])
+    except ValueError:
+        return None
 
     if not -90 <= latitude <= 90:
         return None
@@ -883,6 +1129,38 @@ def _make_map_coordinates(
     )
 
 
+def seed_demo_vendor_coordinates(session: Session) -> int:
+    """Backfill ``map_coordinates`` for demo vendors that lack them."""
+    if session.get_bind().dialect.name != "postgresql":
+        return 0
+
+    updated = 0
+
+    for name, (lat, lng) in DEMO_VENDOR_COORDINATES.items():
+        vendor = session.scalar(
+            select(Vendor).where(Vendor.name == name)
+        )
+
+        if vendor is None:
+            continue
+
+        map_value = _make_map_coordinates(
+            session,
+            lat,
+            lng,
+        )
+
+        if _set_map_coordinates_if_changed(
+            session,
+            vendor,
+            map_value,
+        ):
+            updated += 1
+
+    session.commit()
+    return updated
+
+
 def main() -> None:
     with SessionLocal() as session:
         admin, admin_created = seed_development_admin(session)
@@ -890,6 +1168,7 @@ def main() -> None:
 
         vendors = seed_demo_vendors(session)
         ntu_vendors = seed_ntu_vendors(session)
+        demo_coords_backfilled = seed_demo_vendor_coordinates(session)
 
         (
             google_metadata_matched,
@@ -918,6 +1197,11 @@ def main() -> None:
             reddit_skipped,
             reddit_ignored,
         ) = seed_reddit_comments(session)
+        (
+            knowledge_created,
+            knowledge_skipped,
+            knowledge_unresolved,
+        ) = seed_knowledge_chunks(session)
 
     admin_action = "Created" if admin_created else "Confirmed"
     user_action = "Created" if test_user_created else "Confirmed"
@@ -984,6 +1268,12 @@ def main() -> None:
         f"skipped={reddit_skipped}, "
         f"ignored={reddit_ignored}"
     )
+    print(
+        "Knowledge chunks: "
+        f"created={knowledge_created}, skipped={knowledge_skipped}, "
+        f"unresolved_vendor={knowledge_unresolved}"
+    )
+    print(f"Vendor map coordinates: demo_backfilled={demo_coords_backfilled}")
 
 
 if __name__ == "__main__":
