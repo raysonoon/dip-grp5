@@ -66,9 +66,6 @@ for _ in $(seq 1 90); do
 done
 [ "$ready" -eq 1 ] || die "PostgreSQL did not become ready within 90 seconds."
 
-echo "      Applying database init scripts..."
-$COMPOSE exec -T db sh -c 'set -e; for f in /docker-entrypoint-initdb.d/*.sql; do echo "Running $f"; psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -f "$f"; done' || die "Database init script failed."
-
 echo "[5/7] Applying migrations and confirming development data..."
 "$PYTHON_EXE" -m alembic upgrade head || die "Database migration failed."
 "$PYTHON_EXE" -m app.db.seed || die "Development data setup failed."
