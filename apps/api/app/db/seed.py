@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from geoalchemy2.functions import ST_GeogFromText
-from sqlalchemy import select
+from geoalchemy2.elements import WKTElement
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -16,6 +16,7 @@ from app.db.session import SessionLocal
 from app.models import (
     ChatbotPrompt,
     GoogleReview,
+    RedditComment,
     Review,
     User,
     Vendor,
@@ -37,71 +38,13 @@ DEMO_VENDORS = (
         "opening_hours": "10:00 - 22:00",
     },
 )
+
 # Demo vendor name -> (lat, lng).
 DEMO_VENDOR_COORDINATES: dict[str, tuple[float, float]] = {
     "Demo Vendor 1": (1.3483, 103.6831),
     "Demo Vendor 2": (1.3483, 103.6831),
 }
-# directory_id -> (lat, lng).
-# Approximate cluster points per building/area, not verified per vendor.
-VENDOR_COORDINATES: dict[str, tuple[float, float]] = {
-    "V001": (1.3477, 103.6800),
-    "V002": (1.3502, 103.6875),
-    "V003": (1.3481, 103.6796),
-    "V004": (1.3502, 103.6875),
-    "V005": (1.3505, 103.6870),
-    "V006": (1.3477, 103.6800),
-    "V007": (1.3477, 103.6800),
-    "V008": (1.3481, 103.6796),
-    "V009": (1.3477, 103.6800),
-    "V010": (1.3477, 103.6800),
-    "V011": (1.3477, 103.6800),
-    "V012": (1.3460, 103.6815),
-    "V013": (1.3466, 103.6822),
-    "V014": (1.3454, 103.6785),
-    "V015": (1.3454, 103.6785),
-    "V016": (1.3477, 103.6800),
-    "V017": (1.3481, 103.6796),
-    "V018": (1.3445, 103.6845),
-    "V019": (1.3440, 103.6790),
-    "V020": (1.3505, 103.6870),
-    "V021": (1.3510, 103.6880),
-    "V022": (1.3448, 103.6848),
-    "V023": (1.3450, 103.6850),
-    "V024": (1.3435, 103.6795),
-    "V025": (1.3500, 103.6790),
-    "V026": (1.3477, 103.6800),
-    "V027": (1.3502, 103.6875),
-    "V028": (1.3452, 103.6783),
-    "V029": (1.3466, 103.6822),
-    "V030": (1.3460, 103.6810),
-    "V031": (1.3466, 103.6822),
-    "V032": (1.3466, 103.6822),
-    "V033": (1.3481, 103.6796),
-    "V034": (1.3477, 103.6800),
-    "V035": (1.3502, 103.6875),
-    "V036": (1.3502, 103.6875),
-    "V037": (1.3481, 103.6796),
-    "V038": (1.3477, 103.6800),
-    "V039": (1.3477, 103.6800),
-    "V040": (1.3481, 103.6796),
-    "V041": (1.3470, 103.6910),
-    "V042": (1.3481, 103.6796),
-    "V043": (1.3477, 103.6800),
-    "V044": (1.3410, 103.6800),
-    "V045": (1.3466, 103.6822),
-    "V046": (1.3481, 103.6796),
-    "V047": (1.3481, 103.6796),
-    "V048": (1.3477, 103.6800),
-    "V049": (1.3477, 103.6800),
-    "V050": (1.3466, 103.6822),
-    "V051": (1.3477, 103.6800),
-    "V052": (1.3483, 103.6831),
-    "V053": (1.3477, 103.6800),
-    "V054": (1.3466, 103.6822),
-    "V055": (1.3481, 103.6796),
-    "V056": (1.3477, 103.6800),
-}
+
 NTU_VENDOR_CSV = (
     Path(__file__).resolve().parents[4]
     / "data"
@@ -135,6 +78,8 @@ MOJIBAKE_MARKERS = (
     "\u00e2",
     "\u00f0\u0178",
 )
+
+
 GOOGLE_VENDOR_CORE_FIELD_MAP = (
     ("name", "name"),
     ("Level / unit", "unit_code"),
@@ -142,10 +87,20 @@ GOOGLE_VENDOR_CORE_FIELD_MAP = (
     ("Opening hours", "opening_hours"),
     ("price_range", "price_range"),
 )
+
+
+GOOGLE_VENDOR_METADATA_FIELD_MAP = (
+    ("address", "address"),
+    ("website", "website_url"),
+    ("phone", "phone_number"),
+)
+
+
 GOOGLE_VENDOR_DIETARY_FIELD_MAP = (
     ("Halal", "halal"),
     ("Vegetarian", "vegetarian"),
 )
+
 CATEGORY_NORMALIZATION = {
     "coffee": "Drinks",
     "coffee shop": "Drinks",
@@ -199,12 +154,16 @@ def _parse_nullable_bool(
     directory_id: str,
 ) -> bool | None:
     normalized = raw_value.strip().lower()
+
     if normalized in {"", "null"}:
         return None
+
     if normalized == "true":
         return True
+
     if normalized == "false":
         return False
+
     raise ValueError(
         f"Invalid {column_name} value for vendor {directory_id}: "
         f"{raw_value!r}"
@@ -213,32 +172,83 @@ def _parse_nullable_bool(
 
 def _safe_csv_text(raw_value: str) -> tuple[str | None, bool]:
     """Return normalized text and whether it was rejected as mojibake."""
-    normalized = " ".join(raw_value.split())
+    normalized = raw_value.strip()
+
     if not normalized:
         return None, False
+
     if any(marker in normalized for marker in MOJIBAKE_MARKERS):
         return None, True
+
     return normalized, False
 
 
 def _set_if_changed(entity: object, field: str, value: object) -> bool:
     current_value = getattr(entity, field)
+
     if isinstance(current_value, datetime) and isinstance(value, datetime):
         normalized_current = (
             current_value.replace(tzinfo=timezone.utc)
             if current_value.tzinfo is None
             else current_value.astimezone(timezone.utc)
         )
+
         normalized_value = (
             value.replace(tzinfo=timezone.utc)
             if value.tzinfo is None
             else value.astimezone(timezone.utc)
         )
+
         if normalized_current == normalized_value:
             return False
+
     elif current_value == value:
         return False
+
     setattr(entity, field, value)
+    return True
+
+
+def _set_map_coordinates_if_changed(
+    session: Session,
+    vendor: Vendor,
+    value: object,
+) -> bool:
+    if vendor.map_coordinates is None:
+        vendor.map_coordinates = value
+        return True
+
+    if (
+        session.bind is not None
+        and session.bind.dialect.name == "sqlite"
+    ):
+        if vendor.map_coordinates == value:
+            return False
+
+        vendor.map_coordinates = value
+        return True
+
+    # PostgreSQL/PostGIS comparison.
+    current_wkt = session.scalar(
+        text(
+            """
+            SELECT ST_AsText(map_coordinates)
+            FROM vendors
+            WHERE id = :vendor_id
+            """
+        ),
+        {"vendor_id": vendor.id},
+    )
+
+    if isinstance(value, WKTElement):
+        new_wkt = value.data
+    else:
+        new_wkt = str(value)
+
+    if current_wkt == new_wkt:
+        return False
+
+    vendor.map_coordinates = value
     return True
 
 
@@ -252,23 +262,31 @@ def _seed_user(
 ) -> tuple[User, bool]:
     normalized_email = email_address.strip()
     canonical_email = normalized_email.lower()
+
     existing_user = session.scalar(
-        select(User).where(User.email_canonical == canonical_email)
+        select(User).where(
+            User.email_canonical == canonical_email
+        )
     )
 
     if existing_user is not None:
         changed = False
+
         if existing_user.display_name != display_name:
             existing_user.display_name = display_name
             changed = True
+
         if existing_user.email_address != normalized_email:
             existing_user.email_address = normalized_email
             changed = True
+
         if existing_user.role != role:
             existing_user.role = role
             changed = True
+
         if changed:
             session.commit()
+
         return existing_user, False
 
     user = User(
@@ -277,9 +295,11 @@ def _seed_user(
         password_hash=hash_password(password),
         role=role,
     )
+
     session.add(user)
     session.commit()
     session.refresh(user)
+
     return user, True
 
 
@@ -303,13 +323,18 @@ def seed_development_user(session: Session) -> tuple[User, bool]:
     )
 
 
-def seed_demo_vendors(session: Session) -> list[tuple[Vendor, bool]]:
+def seed_demo_vendors(
+    session: Session,
+) -> list[tuple[Vendor, bool]]:
     results: list[tuple[Vendor, bool]] = []
 
     for vendor_data in DEMO_VENDORS:
         vendor = session.scalar(
-            select(Vendor).where(Vendor.name == vendor_data["name"]).limit(1)
+            select(Vendor)
+            .where(Vendor.name == vendor_data["name"])
+            .limit(1)
         )
+
         if vendor is not None:
             results.append((vendor, False))
             continue
@@ -318,16 +343,22 @@ def seed_demo_vendors(session: Session) -> list[tuple[Vendor, bool]]:
         session.add(vendor)
         session.commit()
         session.refresh(vendor)
+
         results.append((vendor, True))
 
     return results
 
 
-def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
+def seed_ntu_vendors(
+    session: Session,
+) -> list[tuple[Vendor, bool]]:
     results: list[tuple[Vendor, bool]] = []
     seen_directory_ids: set[str] = set()
 
-    with NTU_VENDOR_CSV.open(newline="", encoding="utf-8-sig") as file:
+    with NTU_VENDOR_CSV.open(
+        newline="",
+        encoding="utf-8-sig",
+    ) as file:
         reader = csv.DictReader(file)
 
         for row in reader:
@@ -341,6 +372,7 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
 
             vendor_directory_data: dict[str, object] = {}
             skip_new_vendor = False
+
             for source_column, target_field in (
                 ("name", "name"),
                 ("location", "location"),
@@ -348,33 +380,43 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
                 ("category", "category"),
                 ("opening_hours", "opening_hours"),
                 ("price_range", "price_range"),
+                ("website", "website_url"),
+                ("phone", "phone_number"),
             ):
                 value, is_mojibake = _safe_csv_text(
                     row.get(source_column) or ""
                 )
+
                 if is_mojibake:
                     print(
                         "Skipping mojibake directory field: "
-                        f"vendor={directory_id}, column={source_column}"
+                        f"vendor={directory_id}, "
+                        f"column={source_column}"
                     )
+
                     if vendor is None and target_field == "name":
                         skip_new_vendor = True
+
                     continue
+
                 if target_field == "name" and value is None:
                     if vendor is None:
                         skip_new_vendor = True
+
                     continue
+
                 if target_field == "category":
                     value = _normalize_vendor_category(
                         value,
                         directory_id,
                     )
 
-                vendor_directory_data[target_field] = value    
+                vendor_directory_data[target_field] = value
 
             if skip_new_vendor:
                 print(
-                    f"Skipping vendor {directory_id}: safe name not available"
+                    f"Skipping vendor {directory_id}: "
+                    "safe name not available"
                 )
                 continue
 
@@ -394,6 +436,11 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
             if vendor is not None:
                 for field, value in vendor_directory_data.items():
                     _set_if_changed(vendor, field, value)
+                if (
+                    vendor.location is None
+                    and "unit_code" in vendor_directory_data
+                ):
+                    vendor.location = vendor_directory_data["unit_code"]
                 session.commit()
                 session.refresh(vendor)
                 results.append((vendor, False))
@@ -403,9 +450,11 @@ def seed_ntu_vendors(session: Session) -> list[tuple[Vendor, bool]]:
                 directory_id=directory_id,
                 **vendor_directory_data,
             )
+
             session.add(vendor)
             session.commit()
             session.refresh(vendor)
+
             results.append((vendor, True))
 
     session.commit()
@@ -468,50 +517,16 @@ def _delete_stale_ntu_vendors(
     return deleted_count, skipped_count
 
 
-def seed_vendor_coordinates(session: Session) -> int:
-    """Backfill ``map_coordinates`` for vendors that do not have them yet.
-
-    Coordinates are approximate cluster points keyed by stable identity
-    (``directory_id`` for NTU vendors, name for demo vendors). Only rows whose
-    coordinate is currently ``None`` are filled, so re-seeding is idempotent.
-    The column is a Postgres geography type, so this is a no-op on other
-    dialects (e.g. the SQLite test database).
-    """
-    if session.get_bind().dialect.name != "postgresql":
-        return 0
-
-    updated = 0
-    for directory_id, (lat, lng) in VENDOR_COORDINATES.items():
-        vendor = session.scalar(
-            select(Vendor).where(Vendor.directory_id == directory_id)
-        )
-        if vendor is None or vendor.map_coordinates is not None:
-            continue
-        # WKT points are (longitude latitude), the reverse of the tuple above.
-        vendor.map_coordinates = ST_GeogFromText(f"POINT({lng} {lat})")
-        updated += 1
-
-    for name, (lat, lng) in DEMO_VENDOR_COORDINATES.items():
-        vendor = session.scalar(
-            select(Vendor).where(Vendor.name == name)
-        )
-        if vendor is None or vendor.map_coordinates is not None:
-            continue
-        vendor.map_coordinates = ST_GeogFromText(f"POINT({lng} {lat})")
-        updated += 1
-
-    session.commit()
-    return updated
-
-
 def seed_vendor_google_metadata(
     session: Session,
 ) -> tuple[int, int, int, int, int]:
     """Merge safe vendor fields from ntu_food_places_final.csv.
 
     Blank and mojibake values do not overwrite existing data.
-    The return value contains matched vendors, missing vendors, changed fields,
-    rejected mojibake fields, and skipped ambiguous dietary fields.
+
+    The return value contains matched vendors, missing vendors,
+    changed fields, rejected mojibake fields, and skipped
+    ambiguous dietary fields.
     """
     matched_vendor_count = 0
     missing_vendor_count = 0
@@ -522,7 +537,9 @@ def seed_vendor_google_metadata(
     vendors_by_directory_id = {
         vendor.directory_id: vendor
         for vendor in session.scalars(
-            select(Vendor).where(Vendor.directory_id.is_not(None))
+            select(Vendor).where(
+                Vendor.directory_id.is_not(None)
+            )
         ).all()
     }
 
@@ -533,21 +550,28 @@ def seed_vendor_google_metadata(
         for row in csv.DictReader(file):
             directory_id = row["ID"].strip()
             vendor = vendors_by_directory_id.get(directory_id)
+
             if vendor is None:
                 missing_vendor_count += 1
                 continue
 
             matched_vendor_count += 1
 
-            for source_column, target_field in GOOGLE_VENDOR_CORE_FIELD_MAP:
+            # Core vendor metadata.
+            for (
+                source_column,
+                target_field,
+            ) in GOOGLE_VENDOR_CORE_FIELD_MAP:
                 value, is_mojibake = _safe_csv_text(
                     row.get(source_column) or ""
                 )
+
                 if is_mojibake:
                     skipped_mojibake_count += 1
                     print(
                         "Skipping mojibake vendor field: "
-                        f"vendor={directory_id}, column={source_column}"
+                        f"vendor={directory_id}, "
+                        f"column={source_column}"
                     )
                     continue
 
@@ -555,14 +579,13 @@ def seed_vendor_google_metadata(
                     value = _normalize_vendor_category(
                         value,
                         directory_id,
-                )
+                    )
 
-                if (
-                    target_field == "category"
-                    and vendor.category == "Drinks"
-                    and value == "Cafe"
-                ):
-                    value = vendor.category
+                    if (
+                        vendor.category == "Drinks"
+                        and value == "Cafe"
+                    ):
+                        value = vendor.category
 
                 if value is not None and _set_if_changed(
                     vendor,
@@ -571,17 +594,74 @@ def seed_vendor_google_metadata(
                 ):
                     changed_field_count += 1
 
-            for source_column, target_field in GOOGLE_VENDOR_DIETARY_FIELD_MAP:
+            # Address, website and phone metadata.
+            for (
+                source_column,
+                target_field,
+            ) in GOOGLE_VENDOR_METADATA_FIELD_MAP:
                 value, is_mojibake = _safe_csv_text(
                     row.get(source_column) or ""
                 )
+
                 if is_mojibake:
                     skipped_mojibake_count += 1
                     print(
                         "Skipping mojibake vendor field: "
-                        f"vendor={directory_id}, column={source_column}"
+                        f"vendor={directory_id}, "
+                        f"column={source_column}"
                     )
                     continue
+                if value is not None and _set_if_changed(
+                    vendor,
+                    target_field,
+                    value,
+                ):
+                    changed_field_count += 1
+
+            # Parse latitude/longitude from the CSV map_coordinates column.
+            #
+            # The column format is "(lat, lng)", e.g.
+            # "(1.3473036, 103.6806168)". The returned WKT is:
+            # POINT(103.6806168 1.3473036)
+            #
+            # PostGIS uses X=longitude and Y=latitude.
+            raw_coordinates = row.get("map_coordinates") or ""
+            coordinates = _parse_map_coordinates(raw_coordinates)
+
+            if coordinates is not None:
+                latitude, longitude = coordinates
+
+                map_value = _make_map_coordinates(
+                    session,
+                    latitude,
+                    longitude,
+                )
+
+                if _set_map_coordinates_if_changed(
+                    session,
+                    vendor,
+                    map_value,
+                ):
+                    changed_field_count += 1
+
+            # Dietary metadata.
+            for (
+                source_column,
+                target_field,
+            ) in GOOGLE_VENDOR_DIETARY_FIELD_MAP:
+                value, is_mojibake = _safe_csv_text(
+                    row.get(source_column) or ""
+                )
+
+                if is_mojibake:
+                    skipped_mojibake_count += 1
+                    print(
+                        "Skipping mojibake vendor field: "
+                        f"vendor={directory_id}, "
+                        f"column={source_column}"
+                    )
+                    continue
+
                 if value is None or value.casefold() in {
                     "not stated",
                     "unknown",
@@ -590,30 +670,51 @@ def seed_vendor_google_metadata(
                     continue
 
                 normalized_value = value.casefold()
+
                 if normalized_value in {"yes", "true"}:
                     parsed_value = True
+
                 elif normalized_value in {"no", "false"}:
                     parsed_value = False
-                elif target_field == "halal" and "halal" in normalized_value:
-                    parsed_value = True
-                elif target_field == "vegetarian" and (
-                    "vegetarian" in normalized_value
-                    or "meat-free" in normalized_value
+
+                elif (
+                    target_field == "halal"
+                    and "halal" in normalized_value
                 ):
                     parsed_value = True
+
+                elif (
+                    target_field == "vegetarian"
+                    and (
+                        "vegetarian" in normalized_value
+                        or "meat-free" in normalized_value
+                    )
+                ):
+                    parsed_value = True
+
                 else:
                     skipped_ambiguous_count += 1
                     continue
 
-                if _set_if_changed(vendor, target_field, parsed_value):
+                if _set_if_changed(
+                    vendor,
+                    target_field,
+                    parsed_value,
+                ):
                     changed_field_count += 1
 
+            # Google rating.
             rating_raw = (row.get("rating") or "").strip()
+
             if rating_raw:
                 rating_value = Decimal(rating_raw)
+
                 normalized_rating = (
-                    None if rating_value == 0 else rating_value
+                    None
+                    if rating_value == 0
+                    else rating_value
                 )
+
                 if _set_if_changed(
                     vendor,
                     "average_google_rating",
@@ -622,6 +723,7 @@ def seed_vendor_google_metadata(
                     changed_field_count += 1
 
     session.commit()
+
     return (
         matched_vendor_count,
         missing_vendor_count,
@@ -631,7 +733,9 @@ def seed_vendor_google_metadata(
     )
 
 
-def seed_google_reviews(session: Session) -> tuple[int, int, int]:
+def seed_google_reviews(
+    session: Session,
+) -> tuple[int, int, int]:
     created_count = 0
     skipped_count = 0
     missing_vendor_count = 0
@@ -639,7 +743,9 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
     vendors_by_directory_id = {
         vendor.directory_id: vendor
         for vendor in session.scalars(
-            select(Vendor).where(Vendor.directory_id.is_not(None))
+            select(Vendor).where(
+                Vendor.directory_id.is_not(None)
+            )
         ).all()
     }
 
@@ -664,13 +770,13 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
             existing_review = existing_reviews.get(external_review_id)
 
             if existing_review is not None:
-                 _set_if_changed(
+                _set_if_changed(
                     existing_review,
                     "maps_url",
                     maps_url,
                 )
-                 skipped_count += 1
-                 continue
+                skipped_count += 1
+                continue
 
             vendor = vendors_by_directory_id.get(directory_id)
 
@@ -699,30 +805,55 @@ def seed_google_reviews(session: Session) -> tuple[int, int, int]:
                 maps_url=maps_url,
                 published_at=published_at,
             )
+
             session.add(google_review)
             existing_reviews[external_review_id] = google_review
             created_count += 1
 
     session.commit()
 
-    return created_count, skipped_count, missing_vendor_count
+    return (
+        created_count,
+        skipped_count,
+        missing_vendor_count,
+    )
 
 
 DEMO_REVIEWS = (
-    ("Demo Vendor 1", 4.0, "Great chicken rice, generous portion and fast service."),
-    ("Demo Vendor 1", 3.5, "Decent halal options but a bit pricey."),
-    ("Demo Vendor 2", 5.0, "Best noodles on campus, definitely worth trying."),
-    ("Demo Vendor 2", 2.5, "Food was average and the queue was long."),
+    (
+        "Demo Vendor 1",
+        4.0,
+        "Great chicken rice, generous portion and fast service.",
+    ),
+    (
+        "Demo Vendor 1",
+        3.5,
+        "Decent halal options but a bit pricey.",
+    ),
+    (
+        "Demo Vendor 2",
+        5.0,
+        "Best noodles on campus, definitely worth trying.",
+    ),
+    (
+        "Demo Vendor 2",
+        2.5,
+        "Food was average and the queue was long.",
+    ),
 )
 
 
-def seed_demo_reviews(session: Session) -> tuple[int, int]:
+def seed_demo_reviews(
+    session: Session,
+) -> tuple[int, int]:
     """Seed a few app reviews with comments so internal chunks have content."""
     test_user = session.scalar(
         select(User).where(
-            User.email_canonical == settings.seed_test_email_address.strip().lower()
+            User.email_canonical
+            == settings.seed_test_email_address.strip().lower()
         )
     )
+
     if test_user is None:
         return 0, 0
 
@@ -730,18 +861,23 @@ def seed_demo_reviews(session: Session) -> tuple[int, int]:
         vendor.name: vendor
         for vendor in session.scalars(
             select(Vendor).where(
-                Vendor.name.in_([name for name, _, _ in DEMO_REVIEWS])
+                Vendor.name.in_(
+                    [name for name, _, _ in DEMO_REVIEWS]
+                )
             )
         ).all()
     }
 
     created_count = 0
     skipped_count = 0
+
     for name, rating, comment in DEMO_REVIEWS:
         vendor = vendors.get(name)
+
         if vendor is None:
             skipped_count += 1
             continue
+
         existing = session.scalar(
             select(Review).where(
                 Review.user_id == test_user.id,
@@ -749,9 +885,11 @@ def seed_demo_reviews(session: Session) -> tuple[int, int]:
                 Review.comment == comment,
             )
         )
+
         if existing is not None:
             skipped_count += 1
             continue
+
         session.add(
             Review(
                 user_id=test_user.id,
@@ -760,13 +898,17 @@ def seed_demo_reviews(session: Session) -> tuple[int, int]:
                 comment=comment,
             )
         )
+
         created_count += 1
 
     session.commit()
+
     return created_count, skipped_count
 
 
-def seed_chatbot_questions(session: Session) -> tuple[int, int]:
+def seed_chatbot_questions(
+    session: Session,
+) -> tuple[int, int]:
     """Insert or refresh the curated workbook questions without prompts."""
     created_count = 0
     updated_count = 0
@@ -777,15 +919,15 @@ def seed_chatbot_questions(session: Session) -> tuple[int, int]:
         search_type,
         question_scope,
         source_file,
-    ) in (
-        CHATBOT_QUESTION_ROWS
-    ):
+    ) in CHATBOT_QUESTION_ROWS:
         intent_key = question_id.lower()
+
         existing = session.scalar(
             select(ChatbotPrompt).where(
                 ChatbotPrompt.intent_key == intent_key
             )
         )
+
         if existing is None:
             session.add(
                 ChatbotPrompt(
@@ -797,10 +939,12 @@ def seed_chatbot_questions(session: Session) -> tuple[int, int]:
                     prompt_template=None,
                 )
             )
+
             created_count += 1
             continue
 
         changed = False
+
         for field, value in (
             ("question_scope", question_scope),
             ("question_text", question_text),
@@ -810,10 +954,12 @@ def seed_chatbot_questions(session: Session) -> tuple[int, int]:
             if getattr(existing, field) != value:
                 setattr(existing, field, value)
                 changed = True
+
         if changed:
             updated_count += 1
 
     session.commit()
+
     return created_count, updated_count
 
 
@@ -924,13 +1070,106 @@ def seed_knowledge_chunks(session: Session) -> tuple[int, int, int]:
     return created_count, skipped_count, unresolved_vendor_count
 
 
+def _parse_map_coordinates(
+    value: str | None,
+) -> tuple[float, float] | None:
+    """Parse ``(lat, lng)`` from the CSV map_coordinates column."""
+    if not value:
+        return None
+
+    stripped = value.strip()
+
+    if not (
+        stripped.startswith("(")
+        and stripped.endswith(")")
+    ):
+        return None
+
+    inner = stripped[1:-1].strip()
+    parts = [part.strip() for part in inner.split(",")]
+
+    if len(parts) != 2:
+        return None
+
+    try:
+        latitude = float(parts[0])
+        longitude = float(parts[1])
+    except ValueError:
+        return None
+
+    if not -90 <= latitude <= 90:
+        return None
+
+    if not -180 <= longitude <= 180:
+        return None
+
+    return latitude, longitude
+
+
+def _make_map_coordinates(
+    session: Session,
+    latitude: float,
+    longitude: float,
+) -> object:
+    """
+    Return a PostGIS WKTElement for PostgreSQL,
+    or a plain WKT string for SQLite tests.
+    """
+    wkt = f"POINT({longitude} {latitude})"
+
+    if (
+        session.bind is not None
+        and session.bind.dialect.name == "sqlite"
+    ):
+        return wkt
+
+    return WKTElement(
+        wkt,
+        srid=4326,
+    )
+
+
+def seed_demo_vendor_coordinates(session: Session) -> int:
+    """Backfill ``map_coordinates`` for demo vendors that lack them."""
+    if session.get_bind().dialect.name != "postgresql":
+        return 0
+
+    updated = 0
+
+    for name, (lat, lng) in DEMO_VENDOR_COORDINATES.items():
+        vendor = session.scalar(
+            select(Vendor).where(Vendor.name == name)
+        )
+
+        if vendor is None:
+            continue
+
+        map_value = _make_map_coordinates(
+            session,
+            lat,
+            lng,
+        )
+
+        if _set_map_coordinates_if_changed(
+            session,
+            vendor,
+            map_value,
+        ):
+            updated += 1
+
+    session.commit()
+    return updated
+
+
 def main() -> None:
     with SessionLocal() as session:
         admin, admin_created = seed_development_admin(session)
         test_user, test_user_created = seed_development_user(session)
+
         vendors = seed_demo_vendors(session)
         ntu_vendors = seed_ntu_vendors(session)
-        coordinates_backfilled = seed_vendor_coordinates(session)
+        demo_coords_backfilled = seed_demo_vendor_coordinates(session)
+
         (
             google_metadata_matched,
             google_metadata_missing,
@@ -938,13 +1177,21 @@ def main() -> None:
             google_metadata_mojibake_skipped,
             google_metadata_ambiguous_skipped,
         ) = seed_vendor_google_metadata(session)
+
         (
             google_reviews_created,
             google_reviews_skipped,
             google_reviews_missing,
         ) = seed_google_reviews(session)
-        chatbot_created, chatbot_updated = seed_chatbot_questions(session)
-        reviews_created, reviews_skipped = seed_demo_reviews(session)
+
+        chatbot_created, chatbot_updated = seed_chatbot_questions(
+            session
+        )
+
+        reviews_created, reviews_skipped = seed_demo_reviews(
+            session
+        )
+
         (
             reddit_created,
             reddit_skipped,
@@ -958,30 +1205,41 @@ def main() -> None:
 
     admin_action = "Created" if admin_created else "Confirmed"
     user_action = "Created" if test_user_created else "Confirmed"
+
     print(
         f"{admin_action} local administrator account: "
-        f"{admin.display_name} <{admin.email_address}> (id={admin.id})"
+        f"{admin.display_name} <{admin.email_address}> "
+        f"(id={admin.id})"
     )
+
     print(
         f"{user_action} local test account: "
         f"{test_user.display_name} <{test_user.email_address}> "
         f"(id={test_user.id})"
     )
+
     for vendor, created in vendors:
         action = "Created" if created else "Confirmed"
-        print(f"{action} demo vendor: {vendor.name} (id={vendor.id})")
+        print(
+            f"{action} demo vendor: "
+            f"{vendor.name} (id={vendor.id})"
+        )
+
     for vendor, created in ntu_vendors:
         action = "Created" if created else "Confirmed"
         print(
-            f"{action} NTU vendor: {vendor.directory_id} - "
+            f"{action} NTU vendor: "
+            f"{vendor.directory_id} - "
             f"{vendor.name} (id={vendor.id})"
-    )
+        )
+
     print(
         "Google reviews: "
         f"created={google_reviews_created}, "
         f"skipped={google_reviews_skipped}, "
         f"missing_vendor={google_reviews_missing}"
     )
+
     print(
         "Vendor Google metadata: "
         f"matched={google_metadata_matched}, "
@@ -990,18 +1248,24 @@ def main() -> None:
         f"mojibake_skipped={google_metadata_mojibake_skipped}, "
         f"ambiguous_skipped={google_metadata_ambiguous_skipped}"
     )
+
     print(
         "Chatbot workbook questions: "
-        f"created={chatbot_created}, updated={chatbot_updated}, "
+        f"created={chatbot_created}, "
+        f"updated={chatbot_updated}, "
         f"total={len(CHATBOT_QUESTION_ROWS)}"
     )
+
     print(
         "Demo app reviews: "
-        f"created={reviews_created}, skipped={reviews_skipped}"
+        f"created={reviews_created}, "
+        f"skipped={reviews_skipped}"
     )
+
     print(
         "Reddit comments: "
-        f"created={reddit_created}, skipped={reddit_skipped}, "
+        f"created={reddit_created}, "
+        f"skipped={reddit_skipped}, "
         f"ignored={reddit_ignored}"
     )
     print(
@@ -1009,7 +1273,7 @@ def main() -> None:
         f"created={knowledge_created}, skipped={knowledge_skipped}, "
         f"unresolved_vendor={knowledge_unresolved}"
     )
-    print(f"Vendor map coordinates: backfilled={coordinates_backfilled}")
+    print(f"Vendor map coordinates: demo_backfilled={demo_coords_backfilled}")
 
 
 if __name__ == "__main__":

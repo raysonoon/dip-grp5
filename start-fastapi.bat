@@ -41,7 +41,7 @@ goto docker_timeout
 :docker_ready
 echo [3/7] Starting PostgreSQL and pgvector...
 pushd "%API_DIR%"
-"%DOCKER_EXE%" compose up -d
+"%DOCKER_EXE%" compose up -d --build
 if errorlevel 1 goto compose_failed
 
 echo [4/7] Waiting for PostgreSQL...
@@ -52,10 +52,6 @@ for /l %%I in (1,1,90) do (
 goto database_timeout
 
 :database_ready
-echo       Applying database init scripts...
-"%DOCKER_EXE%" compose exec -T db sh -c "set -e; for f in /docker-entrypoint-initdb.d/*.sql; do psql -U $POSTGRES_USER -d $POSTGRES_DB -v ON_ERROR_STOP=1 -f $f; done"
-if errorlevel 1 goto init_failed
-
 echo [5/7] Applying migrations and confirming development data...
 "%PYTHON_EXE%" -m alembic upgrade head
 if errorlevel 1 goto migration_failed
@@ -131,11 +127,6 @@ goto stop_with_error_popd
 :database_timeout
 echo.
 echo [ERROR] PostgreSQL did not become ready within 90 seconds.
-goto stop_with_error_popd
-
-:init_failed
-echo.
-echo [ERROR] A database init script failed.
 goto stop_with_error_popd
 
 :migration_failed

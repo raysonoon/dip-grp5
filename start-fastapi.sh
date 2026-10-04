@@ -56,7 +56,7 @@ fi
 cd "$API_DIR"
 
 echo "[3/7] Starting PostgreSQL and pgvector..."
-$COMPOSE up -d || die "Docker Compose could not start the database."
+$COMPOSE up -d --build || die "Docker Compose could not start the database."
 
 echo "[4/7] Waiting for PostgreSQL..."
 ready=0
@@ -65,9 +65,6 @@ for _ in $(seq 1 90); do
   sleep 2
 done
 [ "$ready" -eq 1 ] || die "PostgreSQL did not become ready within 90 seconds."
-
-echo "      Applying database init scripts..."
-$COMPOSE exec -T db sh -c 'set -e; for f in /docker-entrypoint-initdb.d/*.sql; do echo "Running $f"; psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -f "$f"; done' || die "Database init script failed."
 
 echo "[5/7] Applying migrations and confirming development data..."
 "$PYTHON_EXE" -m alembic upgrade head || die "Database migration failed."
