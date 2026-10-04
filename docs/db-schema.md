@@ -52,16 +52,29 @@ Food stalls displayed to users.
 | `directory_id` | varchar(10) | yes | Unique external directory id |
 | `name` | varchar(200) | no | |
 | `location` | varchar(255) | yes | |
+| `unit_code` | varchar(50) | yes | Stall / unit number |
 | `category` | varchar(100) | yes | |
 | `opening_hours` | varchar(255) | yes | |
+| `price_range` | varchar(20) | yes | e.g. `$1-10` |
+| `halal` | boolean | yes | |
+| `vegetarian` | boolean | yes | |
 | `average_google_rating` | numeric(2,1) | yes | `0` to `5` |
+| `average_rating` | numeric(2,1) | yes | From community reviews, `0` to `5` |
+| `map_coordinates` | geography(Point, 4326) | yes | PostGIS point, longitude/latitude |
 | `created_at` | timestamptz | no | Defaults to `now()` |
 | `updated_at` | timestamptz | no | Defaults to `now()`, updates on change |
+| `search_document` | text | no | Computed `lower(trim(name unit_code category location))` |
+| `website_url` | text | yes | |
+| `phone_number` | varchar(50) | yes | |
+| `address` | text | yes | |
 
 Constraints / indexes:
 
 - `uq_vendors_directory_id`: unique on `directory_id`
 - `average_google_rating_range`: `average_google_rating IS NULL OR average_google_rating BETWEEN 0 AND 5`
+- `average_rating_range`: `average_rating IS NULL OR average_rating BETWEEN 0 AND 5`
+- `ix_vendors_search_document_fts`: GIN index on `to_tsvector('simple', search_document)`
+- `ix_vendors_search_document_trgm`: GIN index on `search_document` using `gin_trgm_ops`
 
 ## `vendor_images`
 
@@ -72,6 +85,8 @@ Ordered image metadata for a vendor.
 | `id` | integer (identity PK) | no | |
 | `vendor_id` | integer (FK `vendors.id`) | no | On delete `CASCADE` |
 | `image_url` | text | no | URL only, no binary upload |
+| `mime_type` | varchar(20) | no | `image/jpeg` or `image/png` |
+| `file_size_bytes` | integer | no | `0` to `5242880` (5 MB) |
 | `display_order` | smallint | no | Ordering; first image is the thumbnail |
 | `created_at` | timestamptz | no | Defaults to `now()` |
 

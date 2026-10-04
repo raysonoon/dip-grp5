@@ -60,9 +60,6 @@ dip-grp5/
     │   │       └── review_knowledge.py
     │   ├── alembic/               # Database migrations
     │   │   └── versions/
-    │   ├── docker/
-    │   │   └── init/
-    │   │       └── 01-enable-vector.sql  # Enables the pgvector extension
     │   ├── tests/                 # Pytest suite (incl. vector integration tests)
     │   ├── uploads/               # Local image files (vendor/review images)
     │   ├── alembic.ini
