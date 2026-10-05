@@ -7,6 +7,8 @@ from app.schemas.review import (
     ReviewUpdate,
     ReviewUserRead,
     ReviewVendorRead,
+    ReviewVoteRead,
+    ReviewVoteRequest,
 )
 from app.schemas.chat import ChatRequest, ChatResponse, ChatSource
 from app.schemas.vendor import (
@@ -30,6 +32,8 @@ __all__ = [
     "ReviewUpdate",
     "ReviewUserRead",
     "ReviewVendorRead",
+    "ReviewVoteRead",
+    "ReviewVoteRequest",
     "VendorImageRead",
     "VendorImageUpdate",
     "VendorAverageRatingRead",

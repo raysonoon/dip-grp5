@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -57,6 +58,18 @@ class ReviewUpdate(BaseModel):
         return self
 
 
+class ReviewVoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    vote: Literal["up", "down"]
+
+
+class ReviewVoteRead(BaseModel):
+    upvote_count: int
+    downvote_count: int
+    current_user_vote: Literal["up", "down"] | None    
+    
+
 class ReviewRead(BaseModel):
     id: int
     user_id: int
@@ -66,6 +79,9 @@ class ReviewRead(BaseModel):
     created_at: datetime
     updated_at: datetime | None
     is_edited: bool
+    upvote_count: int
+    downvote_count: int
+    current_user_vote: Literal["up", "down"] | None
 
 
 class ReviewUserRead(BaseModel):
@@ -98,6 +114,9 @@ class ReviewDetailRead(BaseModel):
     created_at: datetime
     updated_at: datetime | None
     is_edited: bool
+    upvote_count: int
+    downvote_count: int
+    current_user_vote: Literal["up", "down"] | None
     user: ReviewUserRead
     vendor: ReviewVendorRead
     images: list[ReviewImageRead]

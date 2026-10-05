@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Numeric, insert
+from sqlalchemy import Numeric, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.core import image_storage
 from app.models import (
     Review,
     ReviewImage,
+    ReviewVote,
     User,
     Vendor,
     VendorImage,
@@ -342,3 +343,129 @@ def test_review_delete_checks_ownership_and_removes_images(
         headers={"X-Dev-User-Id": str(author.id)},
     )
     assert missing.status_code == 404
+
+
+def test_review_vote_requires_authentication(
+    client: TestClient,
+    session: Session,
+) -> None:
+    _, _, _, review = _seed_records(session)
+
+    response = client.post(
+        f"/reviews/{review.id}/vote",
+        json={"vote": "up"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Missing X-Dev-User-Id header"
+
+
+def test_review_vote_can_be_added_retracted_and_switched(
+    client: TestClient,
+    session: Session,
+) -> None:
+    author, _, _, review = _seed_records(session)
+    headers = {"X-Dev-User-Id": str(author.id)}
+
+    upvote = client.post(
+        f"/reviews/{review.id}/vote",
+        headers=headers,
+        json={"vote": "up"},
+    )
+
+    assert upvote.status_code == 200
+    assert upvote.json() == {
+        "upvote_count": 1,
+        "downvote_count": 0,
+        "current_user_vote": "up",
+    }
+
+    retract = client.post(
+        f"/reviews/{review.id}/vote",
+        headers=headers,
+        json={"vote": "up"},
+    )
+
+    assert retract.status_code == 200
+    assert retract.json() == {
+        "upvote_count": 0,
+        "downvote_count": 0,
+        "current_user_vote": None,
+    }
+
+    downvote = client.post(
+        f"/reviews/{review.id}/vote",
+        headers=headers,
+        json={"vote": "down"},
+    )
+
+    assert downvote.status_code == 200
+    assert downvote.json() == {
+        "upvote_count": 0,
+        "downvote_count": 1,
+        "current_user_vote": "down",
+    }
+
+    switch_to_up = client.post(
+        f"/reviews/{review.id}/vote",
+        headers=headers,
+        json={"vote": "up"},
+    )
+
+    assert switch_to_up.status_code == 200
+    assert switch_to_up.json() == {
+        "upvote_count": 1,
+        "downvote_count": 0,
+        "current_user_vote": "up",
+    }
+
+    votes = session.scalars(
+        select(ReviewVote).where(
+            ReviewVote.review_id == review.id,
+            ReviewVote.user_id == author.id,
+        )
+    ).all()
+
+    assert len(votes) == 1
+    assert votes[0].vote_type == "up"
+
+
+def test_review_votes_are_independent_and_do_not_change_rating(
+    client: TestClient,
+    session: Session,
+) -> None:
+    author, other_user, vendor, review = _seed_records(session)
+    session.refresh(vendor)
+    original_average_rating = vendor.average_rating
+
+    first_vote = client.post(
+        f"/reviews/{review.id}/vote",
+        headers={"X-Dev-User-Id": str(author.id)},
+        json={"vote": "up"},
+    )
+    assert first_vote.status_code == 200
+
+    second_vote = client.post(
+        f"/reviews/{review.id}/vote",
+        headers={"X-Dev-User-Id": str(other_user.id)},
+        json={"vote": "up"},
+    )
+    assert second_vote.status_code == 200
+    assert second_vote.json()["upvote_count"] == 2
+    assert second_vote.json()["downvote_count"] == 0
+
+    authenticated_get = client.get(
+        f"/reviews/{review.id}",
+        headers={"X-Dev-User-Id": str(author.id)},
+    )
+    assert authenticated_get.status_code == 200
+    assert authenticated_get.json()["upvote_count"] == 2
+    assert authenticated_get.json()["current_user_vote"] == "up"
+
+    public_get = client.get(f"/reviews/{review.id}")
+    assert public_get.status_code == 200
+    assert public_get.json()["upvote_count"] == 2
+    assert public_get.json()["current_user_vote"] is None
+
+    session.refresh(vendor)
+    assert vendor.average_rating == original_average_rating
