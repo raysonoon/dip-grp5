@@ -33,16 +33,18 @@ GOOGLE_VENDOR_COLUMNS = (
     "is_permanently_closed",
     "link",
     "query",
+    "map_coordinates",
 )
 
 
 def _write_vendor_csv(path: Path) -> None:
     path.write_text(
         "id,name,location,unit_number,category,opening_hours,price_range,"
-        "halal,vegetarian\n"
-        "V001,Existing Vendor,North Spine,NS3-01-07,Cafe,Daily,$1-10,TRUE,FALSE\n"
+        "halal,vegetarian,website,phone\n"
+        "V001,Existing Vendor,North Spine,NS3-01-07,Cafe,Daily,$1-10,"
+        "TRUE,FALSE,https://old-vendor.example,61234567\n"
         "V002,Unknown Halal,South Spine,SS1-02-03,Food Court,Weekdays,$10-20,"
-        "null,TRUE\n",
+        "null,TRUE,https://new-vendor.example,61234567\n",
         encoding="utf-8",
     )
 
@@ -79,9 +81,11 @@ def test_seed_ntu_vendors_populates_metadata_for_new_and_existing_rows(
     results = seed.seed_ntu_vendors(session)
 
     assert [created for _, created in results] == [False, True]
+
     refreshed_existing = session.scalar(
         select(Vendor).where(Vendor.directory_id == "V001")
     )
+
     assert refreshed_existing is not None
     assert refreshed_existing.name == "Existing Vendor"
     assert refreshed_existing.location == "North Spine"
@@ -92,15 +96,28 @@ def test_seed_ntu_vendors_populates_metadata_for_new_and_existing_rows(
     assert refreshed_existing.halal is True
     assert refreshed_existing.vegetarian is False
 
+    # New fields from fnb-directory-v2.csv
+    assert refreshed_existing.website_url == (
+        "https://old-vendor.example"
+    )
+    assert refreshed_existing.phone_number == "61234567"
+
     unknown_halal = session.scalar(
         select(Vendor).where(Vendor.directory_id == "V002")
     )
+
     assert unknown_halal is not None
     assert unknown_halal.location == "South Spine"
     assert unknown_halal.unit_code == "SS1-02-03"
     assert unknown_halal.price_range == "$10-20"
     assert unknown_halal.halal is None
     assert unknown_halal.vegetarian is True
+
+    # New vendor fields
+    assert unknown_halal.website_url == (
+        "https://new-vendor.example"
+    )
+    assert unknown_halal.phone_number == "61234567"
 
 
 def test_seed_ntu_vendors_rejects_invalid_boolean_metadata(
@@ -138,6 +155,7 @@ def test_seed_ntu_vendors_preserves_existing_mojibake_fields(
         encoding="utf-8",
     )
     monkeypatch.setattr(seed, "NTU_VENDOR_CSV", csv_path)
+
     existing = Vendor(
         directory_id="V001",
         name="Geláre",
@@ -162,6 +180,7 @@ def test_seed_ntu_vendors_refreshes_directory_metadata(
     csv_path = tmp_path / "vendors.csv"
     _write_vendor_csv(csv_path)
     monkeypatch.setattr(seed, "NTU_VENDOR_CSV", csv_path)
+
     existing = Vendor(
         directory_id="V001",
         name="Stale Vendor",
@@ -249,6 +268,7 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
     tmp_path: Path,
 ) -> None:
     csv_path = tmp_path / "google-vendors.csv"
+
     _write_google_vendor_csv(
         csv_path,
         [
@@ -266,17 +286,25 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
                 "rating": "4.8",
                 "reviews": "123",
                 "price_range": "$1-10",
-                "address": "1 Test Street, Singapore",
+                "address": (
+                    "50 Nanyang Ave, NS3-01-23 North Spine Plaza, "
+                    "Singapore 639798"
+                ),
                 "main_category": "Restaurant",
                 "categories": '["Restaurant", "Cafe"]',
-                "website": "https://example.com/vendor",
-                "phone": "6123 4567",
+                "website": "https://www.chichasanchen.com.sg/",
+                "phone": "88570172",
                 "hours": '[{"day": "Monday", "times": ["9 am-6 pm"]}]',
                 "status": "Open",
                 "is_temporarily_closed": "false",
                 "is_permanently_closed": "false",
-                "link": "https://maps.example.com/vendor",
+                "link": (
+                    "https://www.google.com/maps/place/"
+                    "CHICHA+San+Chen/"
+                    "data=!8m2!3d1.3467033!4d103.6806362"
+                ),
                 "query": "updated vendor ntu",
+                "map_coordinates": "(1.3467033, 103.6806362)",
             },
             {
                 "ID": "V002",
@@ -289,9 +317,10 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
             },
         ],
     )
+
     monkeypatch.setattr(seed, "GOOGLE_RATINGS_CSV", csv_path)
 
-    safe_vendor = Vendor(
+    existing_vendor = Vendor(
         directory_id="V001",
         name="Directory Vendor",
         unit_code="Directory Unit",
@@ -300,7 +329,12 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
         price_range="$20-30",
         halal=True,
         vegetarian=False,
+        website_url="https://old.example",
+        phone_number="60000000",
+        address="Old address",
+        map_coordinates="POINT(103.6800000 1.3400000)",
     )
+
     mojibake_vendor = Vendor(
         directory_id="V002",
         name="Geláre",
@@ -308,7 +342,8 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
         category="Desserts / café",
         halal=True,
     )
-    session.add_all([safe_vendor, mojibake_vendor])
+
+    session.add_all([existing_vendor, mojibake_vendor])
     session.commit()
 
     result = seed.seed_vendor_google_metadata(session)
@@ -319,15 +354,28 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
     assert result[3] == 1
     assert result[4] == 0
 
-    assert safe_vendor.name == "Updated Vendor on Google"
-    assert safe_vendor.location is None
-    assert safe_vendor.unit_code == "NS3-01-01"
-    assert safe_vendor.category == "Restaurant"
-    assert safe_vendor.opening_hours == "Daily: 9am to 6pm"
-    assert safe_vendor.price_range == "$1-10"
-    assert safe_vendor.halal is False
-    assert safe_vendor.vegetarian is True
-    assert float(safe_vendor.average_google_rating) == 4.8
+    # Existing vendor gets updated Google metadata.
+    assert existing_vendor.name == "Updated Vendor on Google"
+    assert existing_vendor.location is None
+    assert existing_vendor.unit_code == "NS3-01-01"
+    assert existing_vendor.category == "Restaurant"
+    assert existing_vendor.opening_hours == "Daily: 9am to 6pm"
+    assert existing_vendor.price_range == "$1-10"
+    assert existing_vendor.halal is False
+    assert existing_vendor.vegetarian is True
+    assert float(existing_vendor.average_google_rating) == 4.8
+
+    assert existing_vendor.website_url == (
+        "https://www.chichasanchen.com.sg/"
+    )
+    assert existing_vendor.phone_number == "88570172"
+    assert existing_vendor.address == (
+        "50 Nanyang Ave, NS3-01-23 North Spine Plaza, "
+        "Singapore 639798"
+    )
+    assert existing_vendor.map_coordinates == (
+        "POINT(103.6806362 1.3467033)"
+    )
 
     assert mojibake_vendor.name == "Gelare @ NTU"
     assert mojibake_vendor.location == "NS3-01-19"
@@ -337,6 +385,25 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
 
     second_result = seed.seed_vendor_google_metadata(session)
     assert second_result[2] == 0
+
+
+def test_parse_map_coordinates() -> None:
+    assert seed._parse_map_coordinates(
+        "(1.3467033, 103.6806362)"
+    ) == (1.3467033, 103.6806362)
+
+    assert seed._parse_map_coordinates(" (1.0, 2.0) ") == (1.0, 2.0)
+
+
+def test_parse_map_coordinates_rejects_invalid_values() -> None:
+    assert seed._parse_map_coordinates("") is None
+    assert seed._parse_map_coordinates("   ") is None
+    assert seed._parse_map_coordinates("1.0, 2.0") is None
+    assert seed._parse_map_coordinates("(1.0)") is None
+    assert seed._parse_map_coordinates("(1.0, 2.0, 3.0)") is None
+    assert seed._parse_map_coordinates("(999.0, 2.0)") is None
+    assert seed._parse_map_coordinates("(1.0, 999.0)") is None
+    assert seed._parse_map_coordinates("(abc, def)") is None
 
 
 def test_seed_google_reviews_imports_and_backfills_maps_url(

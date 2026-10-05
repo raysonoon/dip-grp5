@@ -23,6 +23,19 @@ END_PAGE = 7
 
 OUTPUT_FILE = "ntu_food_stalls.csv"
 
+# ============================================================
+# GOOGLE MAPS COORDINATES
+# ============================================================
+
+COORDINATES_INPUT_FILE = "google_reviews/ntu_food_places_final.csv"
+COORDINATES_OUTPUT_FILE = "google_reviews/ntu_food_places_final.csv"
+
+# Google Maps usually stores coordinates as:
+# !3d<latitude>!4d<longitude>
+GOOGLE_MAPS_COORDINATES_PATTERN = re.compile(
+    r"!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)"
+)
+
 
 # ============================================================
 # HELPER FUNCTIONS
@@ -87,6 +100,150 @@ def normalise_url(url):
         return "https://www.ntu.edu.sg" + url
 
     return url
+
+def extract_map_coordinates(link):
+    """
+    Extract latitude and longitude from a Google Maps URL.
+
+    Google Maps links usually contain:
+        !3d<latitude>!4d<longitude>
+
+    Returns:
+        (latitude, longitude) if valid
+        None if coordinates cannot be found
+    """
+
+    if not link:
+        return None
+
+    link = str(link)
+
+    match = GOOGLE_MAPS_COORDINATES_PATTERN.search(link)
+
+    if not match:
+        return None
+
+    latitude = float(match.group(1))
+    longitude = float(match.group(2))
+
+    # Validate coordinate ranges
+    if not -90 <= latitude <= 90:
+        return None
+
+    if not -180 <= longitude <= 180:
+        return None
+
+    return latitude, longitude
+
+def scrape_map_coordinates(
+    input_file=COORDINATES_INPUT_FILE,
+    output_file=COORDINATES_OUTPUT_FILE,
+):
+    """
+    Read Google Maps links from ntu_food_places_final.csv,
+    extract latitude/longitude, and write them back to the CSV.
+
+    The coordinates are stored as:
+        POINT(longitude latitude)
+
+    which matches the PostGIS POINT format.
+    """
+
+    print()
+    print("=" * 70)
+    print("SCRAPING GOOGLE MAPS COORDINATES")
+    print("=" * 70)
+
+    # --------------------------------------------------------
+    # Read CSV
+    # --------------------------------------------------------
+
+    df = pd.read_csv(input_file)
+
+    if "link" not in df.columns:
+        raise ValueError(
+            "Column 'link' was not found in "
+            f"{input_file}"
+        )
+
+    # --------------------------------------------------------
+    # Extract coordinates
+    # --------------------------------------------------------
+
+    coordinates = []
+
+    for index, row in df.iterrows():
+
+        name = row.get("name", "")
+
+        link = row.get("link")
+
+        result = extract_map_coordinates(link)
+
+        if result is None:
+
+            print(
+                f"[{index + 1}/{len(df)}] "
+                f"{name}: coordinates not found"
+            )
+
+            coordinates.append(None)
+
+            continue
+
+        latitude, longitude = result
+
+        # ----------------------------------------------------
+        # Store as PostGIS-compatible POINT
+        #
+        # IMPORTANT:
+        # lat, lng
+        # ----------------------------------------------------
+
+        coordinates_value = (
+            f"({latitude}, {longitude})"
+        )
+
+        coordinates.append(coordinates_value)
+
+        print(
+            f"[{index + 1}/{len(df)}] "
+            f"{name}: "
+            f"({latitude}, {longitude})"
+        )
+
+    # --------------------------------------------------------
+    # Add/update column
+    # --------------------------------------------------------
+
+    df["map_coordinates"] = coordinates
+
+    # --------------------------------------------------------
+    # Save CSV
+    # --------------------------------------------------------
+
+    df.to_csv(
+        output_file,
+        index=False,
+        encoding="utf-8-sig"
+    )
+
+    # --------------------------------------------------------
+    # Summary
+    # --------------------------------------------------------
+
+    successful = df["map_coordinates"].notna().sum()
+    missing = df["map_coordinates"].isna().sum()
+
+    print()
+    print("=" * 70)
+    print("COORDINATE SCRAPING COMPLETE")
+    print("=" * 70)
+
+    print(f"Total vendors:       {len(df)}")
+    print(f"Coordinates found:   {successful}")
+    print(f"Coordinates missing: {missing}")
+    print(f"Output file:         {output_file}")
 
 
 # ============================================================
@@ -618,6 +775,12 @@ def main():
             ]
         ].to_string(index=False)
     )
+
+    # ========================================================
+    # SCRAPE GOOGLE MAPS COORDINATES
+    # ========================================================
+
+    scrape_map_coordinates()
 
 
 # ============================================================

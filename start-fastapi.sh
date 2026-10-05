@@ -19,6 +19,9 @@ echo "[1/7] Checking the project environment..."
 [ -f "$API_DIR/compose.yaml" ] || die "Cannot find apps/api/compose.yaml under: $SCRIPT_DIR"
 [ -x "$PYTHON_EXE" ] || die "The Python virtual environment is missing: $PYTHON_EXE"
 
+echo "      Installing Python dependencies..."
+"$PYTHON_EXE" -m pip install -r "$API_DIR/requirements.txt" || die "Failed to install Python dependencies."
+
 # Locate the Docker CLI (Apple Silicon installs it inside Docker.app)
 if ! command -v docker >/dev/null 2>&1; then
   if [ -x "/Applications/Docker.app/Contents/Resources/bin/docker" ]; then
@@ -53,7 +56,7 @@ fi
 cd "$API_DIR"
 
 echo "[3/7] Starting PostgreSQL and pgvector..."
-$COMPOSE up -d || die "Docker Compose could not start the database."
+$COMPOSE up -d --build || die "Docker Compose could not start the database."
 
 echo "[4/7] Waiting for PostgreSQL..."
 ready=0

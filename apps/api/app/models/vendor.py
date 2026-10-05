@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from geoalchemy2 import Geography
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -58,25 +59,75 @@ class Vendor(Base):
         ).ddl_if(dialect="postgresql"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
+    id: Mapped[int] = mapped_column(
+        Integer,
+        Identity(),
+        primary_key=True,
+    )
+
     directory_id: Mapped[str | None] = mapped_column(
         String(10),
         nullable=True,
     )
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
-    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    unit_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    category: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    opening_hours: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    price_range: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    halal: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    vegetarian: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    name: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
+    )
+
+    location: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    unit_code: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    category: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    opening_hours: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    price_range: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+    )
+
+    halal: Mapped[bool | None] = mapped_column(
+        Boolean,
+        nullable=True,
+    )
+
+    vegetarian: Mapped[bool | None] = mapped_column(
+        Boolean,
+        nullable=True,
+    )
+
     average_google_rating: Mapped[float | None] = mapped_column(
         Numeric(2, 1),
         nullable=True,
     )
+
     average_rating: Mapped[float | None] = mapped_column(
         Numeric(2, 1),
+        nullable=True,
+    )
+    # PostGIS geography on Postgres. The test suite builds tables on SQLite,
+    # which has no geography type, so it gets a plain text column instead.
+    # The GiST index is created by the Alembic migration, not by create_all().
+    map_coordinates: Mapped[str | None] = mapped_column(
+        Geography(
+            geometry_type="POINT",
+            srid=4326,
+            spatial_index=False,
+        ).with_variant(Text(), "sqlite"),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -84,12 +135,14 @@ class Vendor(Base):
         nullable=False,
         server_default=func.now(),
     )
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
     )
+
     search_document: Mapped[str] = mapped_column(
         Text,
         Computed(
@@ -104,15 +157,33 @@ class Vendor(Base):
         nullable=False,
     )
 
-    reviews: Mapped[list["Review"]] = relationship(back_populates="vendor")
+    website_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    phone_number: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    address: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    reviews: Mapped[list["Review"]] = relationship(
+        back_populates="vendor",
+    )
+
     google_reviews: Mapped[list["GoogleReview"]] = relationship(
-        back_populates="vendor"
+        back_populates="vendor",
     )
 
     reddit_comments: Mapped[list["RedditComment"]] = relationship(
-        back_populates="vendor"
+        back_populates="vendor",
     )
-    
+
     images: Mapped[list["VendorImage"]] = relationship(
         back_populates="vendor",
         cascade="all, delete-orphan",
@@ -123,6 +194,7 @@ class Vendor(Base):
 
 class VendorImage(Base):
     __tablename__ = "vendor_images"
+
     __table_args__ = (
         CheckConstraint(
             "display_order >= 1",
@@ -133,23 +205,50 @@ class VendorImage(Base):
             "display_order",
             name="uq_vendor_images_vendor_display_order",
         ),
-        Index("ix_vendor_images_vendor_id", "vendor_id"),
+        Index(
+            "ix_vendor_images_vendor_id",
+            "vendor_id",
+        ),
     )
 
-    id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
+    id: Mapped[int] = mapped_column(
+        Integer,
+        Identity(),
+        primary_key=True,
+    )
+
     vendor_id: Mapped[int] = mapped_column(
         ForeignKey("vendors.id", ondelete="CASCADE"),
         nullable=False,
     )
-    image_url: Mapped[str] = mapped_column(Text, nullable=False)
-    mime_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    display_order: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+
+    image_url: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    mime_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    file_size_bytes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    display_order: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
     )
 
-    vendor: Mapped[Vendor] = relationship(back_populates="images")
+    vendor: Mapped[Vendor] = relationship(
+        back_populates="images",
+    )
 

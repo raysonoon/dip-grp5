@@ -14,6 +14,10 @@ echo [1/7] Checking the project environment...
 if not exist "%API_DIR%\compose.yaml" goto missing_project
 if not exist "%PYTHON_EXE%" goto missing_python
 
+echo       Installing Python dependencies...
+"%PYTHON_EXE%" -m pip install -r "%API_DIR%\requirements.txt"
+if errorlevel 1 goto pip_failed
+
 for /f "delims=" %%D in ('where docker.exe 2^>nul') do if not defined DOCKER_EXE set "DOCKER_EXE=%%D"
 if not defined DOCKER_EXE if exist "%LOCALAPPDATA%\Programs\DockerDesktop\resources\bin\docker.exe" set "DOCKER_EXE=%LOCALAPPDATA%\Programs\DockerDesktop\resources\bin\docker.exe"
 if not defined DOCKER_EXE if exist "%ProgramFiles%\Docker\Docker\resources\bin\docker.exe" set "DOCKER_EXE=%ProgramFiles%\Docker\Docker\resources\bin\docker.exe"
@@ -37,7 +41,7 @@ goto docker_timeout
 :docker_ready
 echo [3/7] Starting PostgreSQL and pgvector...
 pushd "%API_DIR%"
-"%DOCKER_EXE%" compose up -d
+"%DOCKER_EXE%" compose up -d --build
 if errorlevel 1 goto compose_failed
 
 echo [4/7] Waiting for PostgreSQL...
@@ -81,6 +85,11 @@ exit /b 0
 :api_is_ready
 "%PYTHON_EXE%" -c "import json, sys, urllib.request; document = json.load(urllib.request.urlopen('%OPENAPI_URL%', timeout=2)); sys.exit(0 if document.get('info', {}).get('title') == 'NTU Foodie Hub API' else 1)" >nul 2>&1
 exit /b %errorlevel%
+
+:pip_failed
+echo.
+echo [ERROR] Failed to install Python dependencies.
+goto stop_with_error
 
 :missing_project
 echo.

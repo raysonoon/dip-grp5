@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { DEV_USER_ID } from "../api/client";
@@ -17,7 +17,7 @@ import { fetchVendorById } from "../api/vendors";
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png"];
-const DISPLAY_FONT = "'Fraunces', serif";
+const REVIEWS_PAGE_LIMIT = 10;
 
 function displayError(error) {
   return error instanceof Error ? error.message : "Something went wrong";
@@ -177,10 +177,16 @@ export default function VendorsPage() {
   const [vendor, setVendor] = useState(null);
   const [vendorError, setVendorError] = useState("");
   const [isVendorLoading, setIsVendorLoading] = useState(isValidVendorId);
+
   const [reviews, setReviews] = useState([]);
+  const [reviewOffset, setReviewOffset] = useState(0);
+  const [reviewTotal, setReviewTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(isValidVendorId);
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
+  // Bumped to re-fetch the current page of reviews without reloading the vendor.
+  const [reviewsReload, setReviewsReload] = useState(0);
+
   const [actionError, setActionError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [busyReviewId, setBusyReviewId] = useState(null);
@@ -194,39 +200,6 @@ export default function VendorsPage() {
   const [comment, setComment] = useState("");
   const [newFiles, setNewFiles] = useState([]);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
-  const reviewRequestRef = useRef(null);
-  const reviewRequestIdRef = useRef(0);
-
-  const refreshReviews = useCallback(
-    async ({ reset = false } = {}) => {
-      if (!isValidVendorId) return;
-
-      const requestId = reviewRequestIdRef.current + 1;
-      reviewRequestIdRef.current = requestId;
-      reviewRequestRef.current?.abort();
-      const controller = new AbortController();
-      reviewRequestRef.current = controller;
-
-      setIsLoading(true);
-      setLoadError("");
-      if (reset) setReviews([]);
-
-      try {
-        const page = await fetchVendorReviews(numericVendorId, controller.signal);
-        if (requestId === reviewRequestIdRef.current) setReviews(page.items);
-      } catch (error) {
-        if (requestId === reviewRequestIdRef.current && error.name !== "AbortError") {
-          setLoadError(displayError(error));
-        }
-      } finally {
-        if (requestId === reviewRequestIdRef.current) {
-          setIsLoading(false);
-          if (reviewRequestRef.current === controller) reviewRequestRef.current = null;
-        }
-      }
-    },
-    [isValidVendorId, numericVendorId]
-  );
 
   useEffect(() => {
     if (!isValidVendorId) {
@@ -250,11 +223,56 @@ export default function VendorsPage() {
     return () => controller.abort();
   }, [isValidVendorId, numericVendorId, loadAttempt]);
 
+  // Load one page of reviews — follows the same pattern as FoodPage.jsx's vendor pagination.
   useEffect(() => {
+    if (!isValidVendorId) {
+      setReviews([]);
+      setIsLoading(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+
+    setIsLoading(true);
+    setLoadError("");
+
+    fetchVendorReviews(numericVendorId, {
+      limit: REVIEWS_PAGE_LIMIT,
+      offset: reviewOffset,
+      signal: controller.signal,
+    })
+      .then((page) => {
+        setReviews(page.items);
+        setReviewTotal(page.total);
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") {
+          setLoadError(displayError(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [isValidVendorId, numericVendorId, reviewOffset, loadAttempt, reviewsReload]);
+
+  // After creating/deleting a review, jump back to page 1 and refetch.
+  // After editing a review or its images, refetch the current page in place.
+  const refreshReviews = useCallback(({ reset = false } = {}) => {
+    if (reset && reviewOffset !== 0) {
+      setReviewOffset(0);
+    } else {
+      setReviewsReload((count) => count + 1);
+    }
+  }, [reviewOffset]);
+
+  const changeReviewPage = (nextOffset) => {
     setActionError("");
-    refreshReviews({ reset: true });
-    return () => reviewRequestRef.current?.abort();
-  }, [refreshReviews, loadAttempt]);
+    setReviewOffset(nextOffset);
+  };
 
   const addNewFiles = (files) => setNewFiles((prev) => [...prev, ...files]);
   const removeNewFile = (index) => setNewFiles((prev) => prev.filter((_, i) => i !== index));
@@ -304,7 +322,7 @@ export default function VendorsPage() {
       setComment("");
       setRating(5);
       setNewFiles([]);
-      await refreshReviews({ reset: true });
+      refreshReviews({ reset: true });
     } catch (error) {
       setActionError(displayError(error));
     } finally {
@@ -340,7 +358,7 @@ export default function VendorsPage() {
       }
       setEditingReviewId(null);
       setEditNewFiles([]);
-      await refreshReviews({ reset: true });
+      refreshReviews({ reset: false });
     } catch (error) {
       setActionError(displayError(error));
     } finally {
@@ -352,7 +370,7 @@ export default function VendorsPage() {
     setActionError("");
     try {
       await deleteReviewImage(reviewId, imageId);
-      await refreshReviews({ reset: true });
+      refreshReviews({ reset: false });
     } catch (error) {
       setActionError(displayError(error));
     }
@@ -385,10 +403,10 @@ export default function VendorsPage() {
       await reorderReviewImage(review.id, current.id, freeOrder);
       await reorderReviewImage(review.id, swapWith.id, current.display_order);
       await reorderReviewImage(review.id, current.id, swapWith.display_order);
-      await refreshReviews({ reset: true });
+      refreshReviews({ reset: false });
     } catch (error) {
       setActionError(displayError(error));
-      await refreshReviews({ reset: true });
+      refreshReviews({ reset: false });
     } finally {
       setReorderingReviewId(null);
     }
@@ -407,7 +425,7 @@ export default function VendorsPage() {
       await deleteReview(reviewId);
       if (editingReviewId === reviewId) setEditingReviewId(null);
       setDeleteTargetId(null);
-      await refreshReviews({ reset: true });
+      refreshReviews({ reset: true });
     } catch (error) {
       setActionError(displayError(error));
       setDeleteTargetId(null);
@@ -446,6 +464,11 @@ export default function VendorsPage() {
   const category = vendor.category;
   const displayedRating = vendor.average_rating ?? vendor.average_google_rating;
 
+  const hasPrevReviewsPage = reviewOffset > 0;
+  const hasNextReviewsPage = reviewOffset + REVIEWS_PAGE_LIMIT < reviewTotal;
+  const totalReviewPages = Math.max(1, Math.ceil(reviewTotal / REVIEWS_PAGE_LIMIT));
+  const currentReviewPage = Math.floor(reviewOffset / REVIEWS_PAGE_LIMIT) + 1;
+
   return (
     <div className="max-w-3xl mx-auto px-6 py-10">
       <Link to="/food" className="text-primary hover:underline text-sm font-medium">
@@ -453,7 +476,7 @@ export default function VendorsPage() {
       </Link>
 
       <div className="mt-4 mb-6">
-        <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: DISPLAY_FONT }}>
+        <h1 className="text-2xl font-bold text-foreground font-display">
           {vendor.name}
         </h1>
         <p className="text-muted-foreground mt-1">
@@ -499,7 +522,9 @@ export default function VendorsPage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-bold text-foreground mb-3">Student Reviews</h2>
+        <h2 className="text-lg font-bold text-foreground mb-3">
+          Student Reviews {reviewTotal > 0 ? `(${reviewTotal})` : ""}
+        </h2>
         {isLoading && <p className="text-muted-foreground">Loading reviews...</p>}
         {!isLoading && loadError && (
           <div role="alert" className="text-destructive">
@@ -682,6 +707,50 @@ export default function VendorsPage() {
             </article>
           );
         })}
+
+        {!isLoading && !loadError && reviews.length > 0 && (hasPrevReviewsPage || hasNextReviewsPage) && (
+          <div className="flex justify-center items-center gap-3 mt-8">
+            <button
+              type="button"
+              disabled={!hasPrevReviewsPage}
+              onClick={() => changeReviewPage(Math.max(0, reviewOffset - REVIEWS_PAGE_LIMIT))}
+              className={`px-4 py-2 rounded-lg border border-border text-sm font-semibold ${
+                hasPrevReviewsPage ? "cursor-pointer" : "cursor-default opacity-40"
+              }`}
+            >
+              Previous
+            </button>
+
+            <div className="flex gap-1.5 min-w-0 overflow-x-auto">
+              {Array.from({ length: totalReviewPages }, (_, i) => i + 1).map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  onClick={() => changeReviewPage((pageNumber - 1) * REVIEWS_PAGE_LIMIT)}
+                  aria-current={pageNumber === currentReviewPage ? "page" : undefined}
+                  className={`w-8 h-8 shrink-0 rounded-lg text-sm font-semibold ${
+                    pageNumber === currentReviewPage
+                      ? "bg-primary text-primary-foreground cursor-default"
+                      : "border border-border cursor-pointer hover:bg-muted"
+                  }`}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              disabled={!hasNextReviewsPage}
+              onClick={() => changeReviewPage(reviewOffset + REVIEWS_PAGE_LIMIT)}
+              className={`px-4 py-2 rounded-lg border border-border text-sm font-semibold ${
+                hasNextReviewsPage ? "cursor-pointer" : "cursor-default opacity-40"
+              }`}
+            >
+              Next
+            </button>
+          </div>
+        )}
       </section>
 
       {deleteTargetId !== null && (
@@ -716,7 +785,6 @@ export default function VendorsPage() {
           </div>
         </div>
       )}
-
     </div>
   );
 }

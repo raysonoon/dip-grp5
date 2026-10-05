@@ -1,6 +1,5 @@
 import {
   apiClient,
-  API_BASE_URL,
   DEV_USER_TOKEN,
   ApiAuthConfigurationError,
   ApiError,
@@ -105,6 +104,7 @@ export function parseReviewList(value) {
   };
 }
 
+// Latest reviews across all vendors (homepage).
 export async function fetchReviews(limit = 15, offset = 0, signal) {
   const payload = await apiClient.get(
     `/reviews?limit=${limit}&offset=${offset}`,
@@ -113,8 +113,14 @@ export async function fetchReviews(limit = 15, offset = 0, signal) {
   return parseReviewList(payload);
 }
 
-export async function fetchVendorReviews(vendorId, signal) {
-  const payload = await apiClient.get(`/reviews?vendor_id=${vendorId}`, { auth: false, signal });
+// One page of a single vendor's reviews.
+export async function fetchVendorReviews(vendorId, { limit = 10, offset = 0, signal } = {}) {
+  const params = new URLSearchParams({
+    vendor_id: String(vendorId),
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const payload = await apiClient.get(`/reviews?${params.toString()}`, { auth: false, signal });
   return parseReviewList(payload);
 }
 

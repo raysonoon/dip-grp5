@@ -1,4 +1,5 @@
-import { Children, useEffect, useMemo, useRef, useState } from "react";
+import { Children, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ExternalLink, Quote } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Link } from "react-router-dom";
@@ -35,6 +36,9 @@ function redditUrl(permalink) {
 function CitationPopover({ source, citationNumber, showVendorLink }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
+  const buttonRef = useRef(null);
+  const tooltipRef = useRef(null);
+  const [placement, setPlacement] = useState(null);
   const externalUrl = source.source_type === "reddit"
     ? redditUrl(source.permalink)
     : null;
@@ -43,7 +47,12 @@ function CitationPopover({ source, citationNumber, showVendorLink }) {
     if (!open) return undefined;
 
     function closeOnOutsideClick(event) {
-      if (!containerRef.current?.contains(event.target)) setOpen(false);
+      if (
+        !containerRef.current?.contains(event.target) &&
+        !tooltipRef.current?.contains(event.target)
+      ) {
+        setOpen(false);
+      }
     }
 
     function closeOnEscape(event) {
@@ -55,6 +64,69 @@ function CitationPopover({ source, citationNumber, showVendorLink }) {
     return () => {
       document.removeEventListener("pointerdown", closeOnOutsideClick);
       document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  function positionTooltip() {
+    const button = buttonRef.current;
+    const tooltip = tooltipRef.current;
+    if (!button || !tooltip) return;
+
+    const chatWindow = button.closest("[data-chat-window]");
+    const chatRect = chatWindow?.getBoundingClientRect() ?? null;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    const maxWidth = chatRect
+      ? Math.min(256, chatRect.width - 32)
+      : Math.min(256, viewportWidth - 32);
+
+    tooltip.style.maxWidth = `${maxWidth}px`;
+
+    const tooltipHeight = tooltip.offsetHeight;
+    const tooltipWidth = tooltip.offsetWidth;
+    const buttonRect = button.getBoundingClientRect();
+    const gap = 8;
+
+    const bounds = chatRect
+      ? { left: chatRect.left, right: chatRect.right, top: chatRect.top, bottom: chatRect.bottom }
+      : { left: 0, right: viewportWidth, top: 0, bottom: viewportHeight };
+
+    const spaceAbove = buttonRect.top - bounds.top - gap;
+    const spaceBelow = bounds.bottom - buttonRect.bottom - gap;
+    const flipBelow = spaceAbove < tooltipHeight && spaceBelow >= spaceAbove;
+
+    let rawTop;
+    if (flipBelow) {
+      rawTop = buttonRect.bottom + gap;
+    } else {
+      rawTop = buttonRect.top - tooltipHeight - gap;
+    }
+    const top = Math.max(
+      bounds.top + gap,
+      Math.min(rawTop, bounds.bottom - tooltipHeight - gap)
+    );
+
+    const left = Math.min(
+      Math.max(bounds.left + gap, buttonRect.left),
+      bounds.right - tooltipWidth - gap
+    );
+
+    setPlacement({ top, left, maxWidth });
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+
+    positionTooltip();
+    function closeOnScroll() {
+      setOpen(false);
+    }
+    window.addEventListener("scroll", closeOnScroll, true);
+    window.addEventListener("resize", positionTooltip);
+    return () => {
+      window.removeEventListener("scroll", closeOnScroll, true);
+      window.removeEventListener("resize", positionTooltip);
     };
   }, [open]);
 
@@ -71,6 +143,7 @@ function CitationPopover({ source, citationNumber, showVendorLink }) {
         </Link>
       )}
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((current) => !current)}
         className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20 focus:outline-none focus:ring-2 focus:ring-primary/40"
@@ -79,44 +152,48 @@ function CitationPopover({ source, citationNumber, showVendorLink }) {
       >
         <Quote className="h-3 w-3" aria-hidden="true" />
       </button>
-      {open && (
-        <span
-          role="tooltip"
-          className="absolute bottom-full left-0 z-50 mb-2 block w-64 rounded-xl border border-border bg-card p-3 text-left text-xs font-normal leading-relaxed text-foreground shadow-xl"
-        >
-          <span className="mb-1 block font-semibold text-primary">
-            {SOURCE_LABELS[source.source_type] ?? source.source_type}
-          </span>
-          {source.vendor_name && (
-            source.vendor_id != null ? (
-              <Link
-                to={`/vendors/${source.vendor_id}`}
+      {open &&
+        createPortal(
+          <span
+            ref={tooltipRef}
+            role="tooltip"
+            className="fixed z-50 block rounded-xl border border-border bg-card p-3 text-left text-xs font-normal leading-relaxed text-foreground shadow-xl"
+            style={placement ? { top: placement.top, left: placement.left } : undefined}
+          >
+            <span className="mb-1 block font-semibold text-primary">
+              {SOURCE_LABELS[source.source_type] ?? source.source_type}
+            </span>
+            {source.vendor_name && (
+              source.vendor_id != null ? (
+                <Link
+                  to={`/vendors/${source.vendor_id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mb-2 block font-semibold text-foreground hover:text-primary"
+                >
+                  {source.vendor_name}
+                </Link>
+              ) : (
+                <span className="mb-2 block font-semibold">{source.vendor_name}</span>
+              )
+            )}
+            {source.excerpt && (
+              <span className="block text-muted-foreground">{source.excerpt}</span>
+            )}
+            {externalUrl && (
+              <a
+                href={externalUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="mb-2 block font-semibold text-foreground hover:text-primary"
+                className="mt-2 inline-flex items-center gap-1 font-semibold text-primary hover:underline"
               >
-                {source.vendor_name}
-              </Link>
-            ) : (
-              <span className="mb-2 block font-semibold">{source.vendor_name}</span>
-            )
-          )}
-          {source.excerpt && (
-            <span className="block text-muted-foreground">{source.excerpt}</span>
-          )}
-          {externalUrl && (
-            <a
-              href={externalUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-1 font-semibold text-primary hover:underline"
-            >
-              Open Reddit comment
-              <ExternalLink className="h-3 w-3" aria-hidden="true" />
-            </a>
-          )}
-        </span>
-      )}
+                Open Reddit comment
+                <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              </a>
+            )}
+          </span>,
+          document.body
+        )}
     </span>
   );
 }
