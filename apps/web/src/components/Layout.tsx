@@ -3,20 +3,13 @@ import { Outlet } from "react-router-dom";
 import { Bot, RotateCcw, Send, Square, X } from "lucide-react";
 import ChatMessageContent from "./ChatMessageContent";
 import { useChatSession } from "../hooks/useChatSession";
-import ChatMessageContent from "./ChatMessageContent";
 import Footer from "./Footer";
 import Header from "./Header";
-
-type ChatMessage = {
-  role: "user" | "bot";
-  text: string;
-  sources?: unknown[];
-};
 
 // -------------------------------------------------------------
 // 1. Floating Foodie Chatbot Component
 // -------------------------------------------------------------
-function FoodieChat() {
+export function FoodieChat() {
   const {
     input: chatInput,
     isGenerating: isTyping,
@@ -147,7 +140,7 @@ function FoodieChat() {
       <button
         type="button"
         onClick={() => setChatOpen((o) => !o)}
-        className="flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-primary text-primary-foreground font-semibold text-sm shadow-lg hover:opacity-90 transition-opacity"
+        className="flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-primary text-primary-foreground font-semibold text-sm shadow-lg cursor-pointer hover:opacity-90 transition-opacity"
         aria-label="Open Foodie chatbot"
       >
         {chatOpen ? <X className="w-4 h-4" /> : <Bot className="w-4 h-4" />}

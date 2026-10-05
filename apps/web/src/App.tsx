@@ -10,8 +10,6 @@ import SignInPage from "./pages/SignInPage";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
 import VendorMap from "./pages/VendorMap";
-import { useChatSession } from "./hooks/useChatSession";
-import { fetchReviews } from "./api/reviews.js";
 import {
   Search,
   Star,
@@ -19,10 +17,6 @@ import {
   ChevronRight,
   Clock,
   TrendingUp,
-  Menu,
-  RotateCcw,
-  Square,
-  X,
   //ThumbsUp,//
 } from "lucide-react";
 
@@ -109,17 +103,6 @@ function HomePage() {
   const [reviewsPaused, setReviewsPaused] = useState(false);
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const {
-    input: chatInput,
-    isGenerating: isTyping,
-    messages: chatMessages,
-    sendMessage,
-    setInput: setChatInput,
-    startNewSession: startNewChat,
-    stopResponse,
-  } = useChatSession();
-  const [chatOpen, setChatOpen] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [reviewSlide, setReviewSlide] = useState(0);
