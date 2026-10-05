@@ -100,6 +100,8 @@ export function parseVendor(value) {
     updated_at: stringValue(vendor.updated_at, "vendor updated_at"),
     images: vendor.images.map(parseVendorImage),
     map_coordinates: parseMapCoordinates(vendor.map_coordinates),
+    // Only present on /vendors/nearby responses (metres, computed by PostGIS).
+    distance_m: nullableNumber(vendor.distance_m ?? null, "vendor distance_m"),
   };
 }
 
@@ -161,6 +163,33 @@ export async function fetchVendorFilters(signal) {
   };
 }
 
+// Vendors within maxDistanceM of a point, each with distance_m computed by PostGIS.
+export async function fetchNearbyVendors({
+  lat,
+  lng,
+  maxDistanceM = 2000,
+  minRating = 0,
+  limit = 100,
+  signal,
+} = {}) {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lng: String(lng),
+    max_distance_m: String(maxDistanceM),
+    min_rating: String(minRating),
+    limit: String(limit),
+  });
+
+  const payload = await apiClient.get(
+    `/vendors/nearby?${params.toString()}`,
+    { auth: false, signal },
+  );
+  const page = objectValue(payload, "nearby vendor list");
+  if (!Array.isArray(page.items)) {
+    throw new Error("Invalid items in vendor API response");
+  }
+  return page.items.map(parseVendor);
+}
 
 export async function fetchVendors(query = "", signal) {
   const vendors = [];
