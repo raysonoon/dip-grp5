@@ -55,8 +55,8 @@ export function useChatSession() {
     setInput("");
     setIsGenerating(true);
 
+    let hasStreamMessage = false;
     try {
-      let hasStreamMessage = false;
       const response = await streamChat(question, {
         history: historyForRequest,
         sessionId: sessionIdRef.current,
