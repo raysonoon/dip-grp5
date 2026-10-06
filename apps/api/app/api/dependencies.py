@@ -186,7 +186,30 @@ def get_current_user(
     return user
 
 
+def get_optional_current_user(
+    session: DbSession,
+    x_dev_user_id: Annotated[
+        int | None,
+        Header(alias="X-Dev-User-Id"),
+    ] = None,
+) -> User | None:
+    """Resolve the development user when the header is present."""
+    if x_dev_user_id is None:
+        return None
+
+    if not settings.dev_auth_enabled:
+        return None
+
+    return session.get(User, x_dev_user_id)
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+OptionalCurrentUser = Annotated[
+    User | None,
+    Depends(get_optional_current_user),
+]
 
 
 def get_current_admin(current_user: CurrentUser) -> User:

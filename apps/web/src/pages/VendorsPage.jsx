@@ -11,6 +11,7 @@ import {
   reviewImageUrl,
   updateReview,
   uploadReviewImage,
+  voteReview,
 } from "../api/reviews";
 import { fetchVendorById } from "../api/vendors";
 
@@ -190,6 +191,7 @@ export default function VendorsPage() {
   const [actionError, setActionError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [busyReviewId, setBusyReviewId] = useState(null);
+  const [votingReviewId, setVotingReviewId] = useState(null);
   const [reorderingReviewId, setReorderingReviewId] = useState(null);
   const [deletingReviewId, setDeletingReviewId] = useState(null);
   const [editingReviewId, setEditingReviewId] = useState(null);
@@ -272,6 +274,34 @@ export default function VendorsPage() {
   const changeReviewPage = (nextOffset) => {
     setActionError("");
     setReviewOffset(nextOffset);
+  };
+
+  const handleVoteReview = async (reviewId, vote) => {
+    if (votingReviewId === reviewId) return;
+
+    setVotingReviewId(reviewId);
+    setActionError("");
+
+    try {
+      const result = await voteReview(reviewId, vote);
+
+      setReviews((currentReviews) =>
+        currentReviews.map((review) =>
+          review.id === reviewId
+            ? {
+                ...review,
+                upvote_count: result.upvote_count,
+                downvote_count: result.downvote_count,
+                current_user_vote: result.current_user_vote,
+              }
+            : review,
+        ),
+      );
+    } catch (error) {
+      setActionError(displayError(error));
+    } finally {
+      setVotingReviewId(null);
+    }
   };
 
   const addNewFiles = (files) => setNewFiles((prev) => [...prev, ...files]);
@@ -677,6 +707,50 @@ export default function VendorsPage() {
                       className="w-[120px] h-[90px] object-cover rounded-lg"
                     />
                   ))}
+                </div>
+              )}
+              
+              {!isEditing && (
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <span className="text-sm text-muted-foreground">
+                    Helpful?
+                  </span>
+
+                  <button
+                    type="button"
+                    disabled={votingReviewId === review.id}
+                    onClick={() => handleVoteReview(review.id, "up")}
+                    aria-pressed={review.current_user_vote === "up"}
+                    className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${
+                      review.current_user_vote === "up"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border hover:bg-muted"
+                    } ${
+                      votingReviewId === review.id
+                        ? "cursor-wait opacity-60"
+                        : "cursor-pointer"
+                    }`}
+                  >
+                    👍 {review.upvote_count}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={votingReviewId === review.id}
+                    onClick={() => handleVoteReview(review.id, "down")}
+                    aria-pressed={review.current_user_vote === "down"}
+                    className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${
+                      review.current_user_vote === "down"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border hover:bg-muted"
+                    } ${
+                      votingReviewId === review.id
+                        ? "cursor-wait opacity-60"
+                        : "cursor-pointer"
+                    }`}
+                  >
+                    👎 {review.downvote_count}
+                  </button>
                 </div>
               )}
 

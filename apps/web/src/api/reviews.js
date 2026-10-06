@@ -85,6 +85,14 @@ export function parseReviewDetail(value) {
     created_at: stringValue(review.created_at, "review.created_at"),
     updated_at: nullableString(review.updated_at, "review.updated_at"),
     is_edited: review.is_edited,
+
+    upvote_count: numberValue(review.upvote_count, "review.upvote_count"),
+    downvote_count: numberValue(review.downvote_count, "review.downvote_count"),
+    current_user_vote: nullableString(
+      review.current_user_vote,
+      "review.current_user_vote",
+    ),
+
     user: parseReviewUser(review.user),
     vendor: parseReviewVendor(review.vendor),
     images: review.images.map(parseReviewImage),
@@ -108,7 +116,7 @@ export function parseReviewList(value) {
 export async function fetchReviews(limit = 15, offset = 0, signal) {
   const payload = await apiClient.get(
     `/reviews?limit=${limit}&offset=${offset}`,
-    { auth: false, signal },
+    { auth: DEV_USER_TOKEN !== null, signal },
   );
   return parseReviewList(payload);
 }
@@ -120,7 +128,10 @@ export async function fetchVendorReviews(vendorId, { limit = 10, offset = 0, sig
     limit: String(limit),
     offset: String(offset),
   });
-  const payload = await apiClient.get(`/reviews?${params.toString()}`, { auth: false, signal });
+  const payload = await apiClient.get(
+    `/reviews?${params.toString()}`,
+    { auth: DEV_USER_TOKEN !== null, signal },
+  );
   return parseReviewList(payload);
 }
 
@@ -134,6 +145,30 @@ export function updateReview(reviewId, review) {
 
 export function deleteReview(reviewId) {
   return apiClient.delete(`/reviews/${reviewId}`);
+}
+
+export async function voteReview(reviewId, vote) {
+  const payload = await apiClient.post(
+    `/reviews/${reviewId}/vote`,
+    { vote },
+  );
+
+  const result = objectValue(payload, "review vote");
+
+  return {
+    upvote_count: numberValue(
+      result.upvote_count,
+      "review vote upvote_count",
+    ),
+    downvote_count: numberValue(
+      result.downvote_count,
+      "review vote downvote_count",
+    ),
+    current_user_vote: nullableString(
+      result.current_user_vote,
+      "review vote current_user_vote",
+    ),
+  };
 }
 
 export function reviewImageUrl(reviewId, imageId) {

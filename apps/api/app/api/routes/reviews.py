@@ -19,10 +19,11 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
-from app.api.dependencies import CurrentUser, DbSession, ReviewKnowledgeSyncDep
+from app.api.dependencies import CurrentUser, DbSession, OptionalCurrentUser, ReviewKnowledgeSyncDep
 from app.core.image_storage import get_storage
 from app.core.image_upload import read_image_upload
 from app.models import Review, ReviewImage, Vendor
+from app.models.review_vote import ReviewVote
 from app.schemas import (
     ReviewCreate,
     ReviewDetailRead,
@@ -32,6 +33,8 @@ from app.schemas import (
     ReviewUpdate,
     ReviewUserRead,
     ReviewVendorRead,
+    ReviewVoteRead,
+    ReviewVoteRequest,
 )
 from app.services.review_knowledge import KnowledgeSyncError
 
@@ -40,6 +43,43 @@ router = APIRouter(prefix="/reviews", tags=["reviews"])
 logger = logging.getLogger(__name__)
 
 MAX_REVIEW_IMAGES = 5
+
+
+def _review_vote_counts(
+    session: DbSession,
+    review_id: int,
+) -> tuple[int, int]:
+    upvote_count = session.scalar(
+        select(func.count(ReviewVote.id)).where(
+            ReviewVote.review_id == review_id,
+            ReviewVote.vote_type == "up",
+        )
+    )
+
+    downvote_count = session.scalar(
+        select(func.count(ReviewVote.id)).where(
+            ReviewVote.review_id == review_id,
+            ReviewVote.vote_type == "down",
+        )
+    )
+
+    return upvote_count or 0, downvote_count or 0
+
+
+def _review_current_user_vote(
+    session: DbSession,
+    review_id: int,
+    current_user,
+) -> str | None:
+    if current_user is None:
+        return None
+
+    return session.scalar(
+        select(ReviewVote.vote_type).where(
+            ReviewVote.review_id == review_id,
+            ReviewVote.user_id == current_user.id,
+        )
+    )
 
 
 def _review_image_read(image: ReviewImage) -> ReviewImageRead:
@@ -52,7 +92,15 @@ def _review_image_read(image: ReviewImage) -> ReviewImageRead:
     )
 
 
-def _review_detail(review: Review) -> ReviewDetailRead:
+def _review_detail(
+    review: Review,
+    session: DbSession,
+    current_user=None,
+) -> ReviewDetailRead:
+    upvote_count, downvote_count = _review_vote_counts(
+        session,
+        review.id,
+    )
     return ReviewDetailRead(
         id=review.id,
         rating=review.rating_half_steps / 2,
@@ -60,6 +108,13 @@ def _review_detail(review: Review) -> ReviewDetailRead:
         created_at=review.created_at,
         updated_at=review.updated_at,
         is_edited=review.updated_at is not None,
+        upvote_count=upvote_count,
+        downvote_count=downvote_count,
+        current_user_vote=_review_current_user_vote(
+            session,
+            review.id,
+            current_user,
+        ),
         user=ReviewUserRead(
             id=review.user.id,
             display_name=review.user.display_name,
@@ -84,7 +139,14 @@ def _review_detail(review: Review) -> ReviewDetailRead:
     )
 
 
-def _review_read(review: Review) -> ReviewRead:
+def _review_read(
+    review: Review,
+    session: DbSession,
+) -> ReviewRead:
+    upvote_count, downvote_count = _review_vote_counts(
+        session,
+        review.id,
+    )
     return ReviewRead(
         id=review.id,
         user_id=review.user_id,
@@ -94,6 +156,9 @@ def _review_read(review: Review) -> ReviewRead:
         created_at=review.created_at,
         updated_at=review.updated_at,
         is_edited=review.updated_at is not None,
+        upvote_count=upvote_count,
+        downvote_count=downvote_count,
+        current_user_vote=None,
     )
 
 
@@ -118,6 +183,7 @@ def _sync_review_knowledge_best_effort(
 @router.get("", response_model=ReviewListRead)
 def list_reviews(
     session: DbSession,
+    current_user: OptionalCurrentUser,
     vendor_id: Annotated[int | None, Query(gt=0)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -143,7 +209,7 @@ def list_reviews(
     ).all()
 
     return ReviewListRead(
-        items=[_review_detail(review) for review in reviews],
+        items=[_review_detail(review, session, current_user) for review in reviews],
         total=total or 0,
         limit=limit,
         offset=offset,
@@ -452,10 +518,67 @@ def delete_review_image(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/{review_id}/vote", response_model=ReviewVoteRead)
+def vote_review(
+    review_id: Annotated[int, Path(gt=0)],
+    vote_data: ReviewVoteRequest,
+    session: DbSession,
+    current_user: CurrentUser,
+) -> ReviewVoteRead:
+    review = session.get(Review, review_id)
+
+    if review is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Review not found",
+        )
+
+    existing_vote = session.scalar(
+        select(ReviewVote).where(
+            ReviewVote.review_id == review_id,
+            ReviewVote.user_id == current_user.id,
+        )
+    )
+
+    current_user_vote: str | None
+
+    if existing_vote is None:
+        session.add(
+            ReviewVote(
+                review_id=review_id,
+                user_id=current_user.id,
+                vote_type=vote_data.vote,
+            )
+        )
+        current_user_vote = vote_data.vote
+
+    elif existing_vote.vote_type == vote_data.vote:
+        session.delete(existing_vote)
+        current_user_vote = None
+
+    else:
+        existing_vote.vote_type = vote_data.vote
+        current_user_vote = vote_data.vote
+
+    session.commit()
+
+    upvote_count, downvote_count = _review_vote_counts(
+        session,
+        review_id,
+    )
+
+    return ReviewVoteRead(
+        upvote_count=upvote_count,
+        downvote_count=downvote_count,
+        current_user_vote=current_user_vote,
+    )
+
+
 @router.get("/{review_id}", response_model=ReviewDetailRead)
 def get_review(
     review_id: Annotated[int, Path(gt=0)],
     session: DbSession,
+    current_user: OptionalCurrentUser,
 ) -> ReviewDetailRead:
     review = session.scalar(
         select(Review)
@@ -472,7 +595,7 @@ def get_review(
             detail="Review not found",
         )
 
-    return _review_detail(review)
+    return _review_detail(review, session, current_user)
 
 
 @router.patch("/{review_id}", response_model=ReviewRead)
@@ -511,7 +634,7 @@ def update_review(
 
     session.commit()
     session.refresh(review)
-    response = _review_read(review)
+    response = _review_read(review, session)
     background_tasks.add_task(
         _sync_review_knowledge_best_effort,
         session,
@@ -590,7 +713,7 @@ def create_review(
     session.flush()
     session.commit()
     session.refresh(review)
-    response = _review_read(review)
+    response = _review_read(review, session)
     background_tasks.add_task(
         _sync_review_knowledge_best_effort,
         session,
