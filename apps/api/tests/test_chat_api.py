@@ -280,6 +280,7 @@ def test_chat_service_uses_history_for_follow_up_prompt_and_retrieval() -> None:
         CapturingEmbedder(),
         FakeKnowledgeStore(items=[]),
         generate=lambda prompt: captured.setdefault("prompt", prompt),
+        rewrite_llm=lambda _question, _history: "What time does Quad Cafe close?",
     )
     history = [
         ChatHistoryMessage(role="user", content="Tell me about Quad Cafe."),
@@ -291,8 +292,9 @@ def test_chat_service_uses_history_for_follow_up_prompt_and_retrieval() -> None:
 
     service.answer("What time does it close?", history=history)
 
-    assert "Quad Cafe" in embedded[0]
-    assert "What time does it close?" in embedded[0]
+    # Retrieval uses the resolved standalone question, not the history block.
+    assert embedded[0] == "What time does Quad Cafe close?"
+    # The prompt still carries the raw history and the raw current question.
     assert "User: Tell me about Quad Cafe." in captured["prompt"]
     assert "Foodie: Quad Cafe is in" in captured["prompt"]
     assert "Question: What time does it close?" in captured["prompt"]

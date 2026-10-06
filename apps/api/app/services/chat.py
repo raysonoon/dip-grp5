@@ -80,21 +80,38 @@ _SIMPLE_CONVERSATION = {
     "hello",
     "hey",
     "hi",
+    "how are you",
+    "how is it going",
+    "how's it going",
     "thank you",
     "thanks",
     "what can you do",
+    "what's up",
     "who are you",
     "你好",
+    "你好吗",
     "你是谁",
     "你能做什么",
     "谢谢",
 }
 
+# Referential cues that signal a follow-up depends on earlier conversation
+# turns (pronouns, demonstratives, "what about ..."). Only these questions are
+# rewritten into a standalone question before routing/retrieval.
+_REFERENTIAL_HINTS = re.compile(
+    r"\b(it|its|they|them|their|that|this|those|these|the one|there|"
+    r"what about|and the|that place|that stall)\b",
+    re.IGNORECASE,
+)
+
+_PARENTHETICAL_RE = re.compile(r"\([^)]*\)")
 
 def _is_simple_conversation(question: str) -> bool:
     normalized = re.sub(r"[^\w\s']", "", question.casefold())
     return " ".join(normalized.split()) in _SIMPLE_CONVERSATION
 
+def _is_referential(question: str) -> bool:
+    return bool(_REFERENTIAL_HINTS.search(question))
 
 def build_prompt(
     question: str,
@@ -199,6 +216,8 @@ def format_sql_context(results: list[SqlResult]) -> str:
         attributes = []
         if result.location:
             attributes.append(f"location={result.location}")
+        if result.address:
+            attributes.append(f"address={result.address}")
         if result.category:
             attributes.append(f"category={result.category}")
         if result.price_range:
@@ -245,6 +264,7 @@ class ChatService:
         router: IntentRouter | None = None,
         sql_store: SqlStore | None = None,
         filter_extractor_llm: Callable[[str], StructuredFilter] | None = None,
+        rewrite_llm: Callable[[str, list[ChatHistoryMessage]], str] | None = None,
         session: Session | None = None,
     ) -> None:
         self._embedder = embedder
@@ -256,6 +276,7 @@ class ChatService:
         self._router = router
         self._sql_store = sql_store
         self._filter_extractor_llm = filter_extractor_llm
+        self._rewrite_llm = rewrite_llm
         self._session = session
         self._client = client
 
@@ -309,36 +330,61 @@ class ChatService:
                 search_type="Conversational",
                 intent=None,
             )
-        contextual_question = build_contextual_question(question, history)
+        routing_question = self._resolve_routing_question(question, history)
         if self._router is None:
             logger.info("No intent router configured; using Vector path")
             return self._prepare_vector(
                 question,
                 match=None,
                 history=history,
-                retrieval_question=contextual_question,
+                retrieval_question=routing_question,
                 query_vector=None,
             )
 
-        match = self._router.classify(contextual_question)
+        match = self._router.classify(routing_question)
         logger.info("Executing chatbot answer via search_type=%s", match.search_type)
         if match.search_type == "SQL":
-            return self._prepare_sql(question, match, history, contextual_question)
+            return self._prepare_sql(question, match, history, routing_question)
         if match.search_type == "SQL + Vector":
             return self._prepare_hybrid(
                 question,
                 match,
                 history,
-                contextual_question,
+                routing_question,
                 query_vector=match.query_vector,
             )
         return self._prepare_vector(
             question,
             match,
             history=history,
-            retrieval_question=contextual_question,
+            retrieval_question=routing_question,
             query_vector=match.query_vector,
         )
+
+    def _resolve_routing_question(
+        self,
+        question: str,
+        history: list[ChatHistoryMessage],
+    ) -> str:
+        """Resolve a follow-up into a standalone question for routing/retrieval.
+
+        Routing and retrieval must operate on the *current* question, never on a
+        history-wrapped block: structural cues and embeddings from earlier turns
+        could misroute or pollute the query. History is only consulted when
+        the question is referential, and only an LLM rewrite is allowed to
+        resolve those references. Without a rewrite callable (or on failure) the
+        bare question is used and the safe Vector default absorbs the follow-up.
+        """
+        if not history or not _is_referential(question):
+            return question
+        if self._rewrite_llm is None:
+            return question
+        try:
+            resolved = self._rewrite_llm(question, history).strip()
+        except Exception:
+            logger.warning("Question rewrite failed; using bare question", exc_info=True)
+            return question
+        return resolved or question
 
     def _prepare_vector(
         self,
@@ -348,7 +394,7 @@ class ChatService:
         retrieval_question: str,
         query_vector: list[float] | None,
     ) -> ChatGeneration:
-        vector_filters = self._build_vector_filters(question)
+        vector_filters = self._build_vector_filters(retrieval_question)
         results = self._search_direct_reddit(retrieval_question, vector_filters)
         if not results:
             query_vector = query_vector or self._embedder.embed([retrieval_question])[0]
@@ -385,7 +431,7 @@ class ChatService:
         history: list[ChatHistoryMessage],
         retrieval_question: str,
     ) -> ChatGeneration:
-        filters = self._resolve_filters(question)
+        filters = self._resolve_filters(retrieval_question)
         logger.info("SQL path filters: %s", _describe_filters(filters))
         results = self._sql_store.search(filters)
         logger.info("SQL path returned %d vendor result(s)", len(results))
@@ -423,7 +469,7 @@ class ChatService:
         *,
         query_vector: list[float] | None,
     ) -> ChatGeneration:
-        filters = self._resolve_filters(question)
+        filters = self._resolve_filters(retrieval_question)
         logger.info("Hybrid path filters: %s", _describe_filters(filters))
         vendor_ids = self._sql_store.resolve_vendor_ids(filters)
         logger.info("Hybrid path resolved %d vendor_id(s): %s", len(vendor_ids), vendor_ids)
@@ -432,7 +478,7 @@ class ChatService:
             query_vector,
             limit=self._top_k,
             filters={
-                **self._build_vector_filters(question),
+                **self._build_vector_filters(retrieval_question),
                 "vendor_ids": vendor_ids,
             },
         )
@@ -460,6 +506,13 @@ class ChatService:
 
     def _resolve_filters(self, question: str) -> StructuredFilter:
         filters = extract_structured_filters(question)
+        matches = self._match_vendor_names(question)
+        if matches:
+            filters.vendor_ids = [vendor_id for vendor_id, _ in matches]
+            if filters.location and any(
+                filters.location.casefold() in name for _, name in matches
+            ):
+                filters.location = None
         if (
             filters.query_kind == "list"
             and not filters.has_constraints
@@ -471,6 +524,37 @@ class ChatService:
             )
         return filters
 
+    def _match_vendor_names(self, question: str) -> list[tuple[int, str]]:
+        """Return ``(vendor_id, normalized_name)`` for vendors named in a question.
+
+        Vendor names are normalized by dropping parenthetical suffixes (e.g.
+        ``"Quad Cafe (SBS)"`` -> ``"quad cafe"``) so user phrasing like
+        ``"quad cafe"`` matches even when the stored name differs.
+        """
+        if self._session is None:
+            return []
+        normalized = " ".join(re.sub(r"[^\w\s]", " ", question.casefold()).split())
+        if not normalized:
+            return []
+        
+        question_words = set(normalized.split())
+        rows = self._session.execute(select(Vendor.id, Vendor.name)).all()
+        matches: list[tuple[int, str]] = []
+        
+        for vendor_id, vendor_name in rows:
+            name = " ".join(
+                _PARENTHETICAL_RE.sub(" ", (vendor_name or "").casefold()).split()
+            )
+            if not name:
+                continue
+            
+            # Check either: full name is in question, OR any vendor word (>=3 chars) is in question
+            vendor_words = [w for w in name.split() if len(w) >= 3]
+            if name in normalized or any(w in question_words for w in vendor_words):
+                matches.append((vendor_id, name))
+                
+        return matches
+
     def _build_vector_filters(self, question: str) -> dict:
         filters: dict[str, object] = {}
         normalized_question = question.casefold()
@@ -479,16 +563,8 @@ class ChatService:
         elif "google review" in normalized_question:
             filters["source_type"] = "google_review"
 
-        if self._session is None:
-            return filters
-
-        vendors = self._session.execute(
-            select(Vendor.id, Vendor.name)
-        ).all()
         mentioned_vendor_ids = [
-            vendor_id
-            for vendor_id, vendor_name in vendors
-            if vendor_name.casefold() in normalized_question
+            vendor_id for vendor_id, _ in self._match_vendor_names(question)
         ]
         if mentioned_vendor_ids:
             filters["vendor_ids"] = mentioned_vendor_ids

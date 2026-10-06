@@ -9,12 +9,14 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import SessionLocal, get_db
 from app.models import User
+from app.schemas.chat import ChatHistoryMessage
 from app.services.chat import ChatService
 from app.services.embedding import Embedder, GoogleEmbedder
 from app.services.intent_router import IntentRouter
 from app.services.llm_routing import (
     build_classifier,
     build_filter_extractor,
+    build_question_rewriter,
 )
 from app.services.retrieval import KnowledgeStore, PgvectorKnowledgeStore
 from app.services.review_knowledge import InternalReviewKnowledgeSync
@@ -99,6 +101,15 @@ def get_filter_extractor_llm() -> Callable[[str], StructuredFilter] | None:
     return build_filter_extractor(client)
 
 
+def get_question_rewriter() -> (
+    Callable[[str, list[ChatHistoryMessage]], str] | None
+):
+    client = _get_genai_client()
+    if client is None:
+        return None
+    return build_question_rewriter(client)
+
+
 def get_chat_service(
     session: DbSession,
     embedder: Annotated[Embedder, Depends(get_embedder)],
@@ -109,6 +120,10 @@ def get_chat_service(
         Callable[[str], StructuredFilter] | None,
         Depends(get_filter_extractor_llm),
     ],
+    rewrite_llm: Annotated[
+        Callable[[str, list[ChatHistoryMessage]], str] | None,
+        Depends(get_question_rewriter),
+    ],
 ) -> ChatService:
     return ChatService(
         embedder,
@@ -117,6 +132,7 @@ def get_chat_service(
         router=router,
         sql_store=sql_store,
         filter_extractor_llm=filter_extractor_llm,
+        rewrite_llm=rewrite_llm,
         session=session,
     )
 
