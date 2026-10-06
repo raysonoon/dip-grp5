@@ -525,34 +525,22 @@ class ChatService:
         return filters
 
     def _match_vendor_names(self, question: str) -> list[tuple[int, str]]:
-        """Return ``(vendor_id, normalized_name)`` for vendors named in a question.
-
-        Vendor names are normalized by dropping parenthetical suffixes (e.g.
-        ``"Quad Cafe (SBS)"`` -> ``"quad cafe"``) so user phrasing like
-        ``"quad cafe"`` matches even when the stored name differs.
-        """
         if self._session is None:
             return []
         normalized = " ".join(re.sub(r"[^\w\s]", " ", question.casefold()).split())
         if not normalized:
             return []
-        
-        question_words = set(normalized.split())
-        rows = self._session.execute(select(Vendor.id, Vendor.name)).all()
+        padded = f" {normalized} "
+
         matches: list[tuple[int, str]] = []
-        
-        for vendor_id, vendor_name in rows:
+        for vendor_id, vendor_name in self._session.execute(
+            select(Vendor.id, Vendor.name)
+        ).all():
             name = " ".join(
                 _PARENTHETICAL_RE.sub(" ", (vendor_name or "").casefold()).split()
             )
-            if not name:
-                continue
-            
-            # Check either: full name is in question, OR any vendor word (>=3 chars) is in question
-            vendor_words = [w for w in name.split() if len(w) >= 3]
-            if name in normalized or any(w in question_words for w in vendor_words):
+            if name and f" {name} " in padded:
                 matches.append((vendor_id, name))
-                
         return matches
 
     def _build_vector_filters(self, question: str) -> dict:
