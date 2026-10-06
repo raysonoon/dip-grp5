@@ -10,6 +10,7 @@ import SignInPage from "./pages/SignInPage";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
 import VendorMap from "./pages/VendorMap";
+import MapPage from "./pages/MapPage";
 import {
   Search,
   Star,
@@ -570,6 +571,7 @@ function App() {
         <Route path="/food" element={<FoodPage />} />
         <Route path="/vendors/:vendorId" element={<VendorsPage />} />
         <Route path="signin" element={<SignInPage />} />
+        <Route path="/map" element={<MapPage />} />
       </Route>
     </Routes>
   );

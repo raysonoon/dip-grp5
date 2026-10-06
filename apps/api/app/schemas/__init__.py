@@ -16,6 +16,8 @@ from app.schemas.vendor import (
     VendorImageUpdate,
     VendorListItem,
     VendorListRead,
+    VendorNearbyItem,
+    VendorNearbyRead,
 )
 
 __all__ = [
@@ -36,4 +38,6 @@ __all__ = [
     "VendorCoordinates",
     "VendorListItem",
     "VendorListRead",
+    "VendorNearbyItem",
+    "VendorNearbyRead",
 ]
