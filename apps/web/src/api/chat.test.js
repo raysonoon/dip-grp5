@@ -10,8 +10,10 @@ import {
 } from "./client.js";
 import {
   ChatResponseError,
-  askChat,
   chatErrorMessage,
+  parseChatResponse,
+  streamChat,
+  trimChatHistory,
 } from "./chat.js";
 
 const CHAT_RESPONSE = {
@@ -78,34 +80,72 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
-test("askChat posts the ChatRequest publicly and parses ChatResponse", async (context) => {
+function streamResponse(chunks, status = 200) {
+  const encoder = new TextEncoder();
+  return new Response(new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+      controller.close();
+    },
+  }), {
+    status,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
+function configureDevUser(context) {
+  const original = process.env.VITE_DEV_USER_ID;
+  process.env.VITE_DEV_USER_ID = "42";
+  context.after(() => {
+    if (original === undefined) delete process.env.VITE_DEV_USER_ID;
+    else process.env.VITE_DEV_USER_ID = original;
+  });
+}
+
+test("streamChat sends auth and incrementally parses fragmented SSE events", async (context) => {
+  configureDevUser(context);
   const originalFetch = globalThis.fetch;
   context.after(() => {
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (path, options) => {
-    assert.equal(path, "/chat");
+    assert.equal(path, "/chat/stream");
     assert.equal(options.method, "POST");
-    assert.equal(options.headers["X-Dev-User-Id"], undefined);
+    assert.equal(options.headers["X-Dev-User-Id"], "42");
     assert.equal(options.headers["Content-Type"], "application/json");
-    assert.equal(options.body, JSON.stringify({ question: "What should I eat?" }));
-    return jsonResponse(CHAT_RESPONSE);
+    assert.equal(options.body, JSON.stringify({
+      session_id: "session-a",
+      question: "What should I eat?",
+      history: [
+        { role: "user", content: "I want noodles." },
+        { role: "assistant", content: "Try Demo Vendor 1." },
+      ],
+    }));
+    return streamResponse([
+      'event: delta\ndata: "Try "\n\nevent: del',
+      'ta\ndata: "Demo Vendor 1."\n\n',
+      `event: sources\ndata: ${JSON.stringify(CHAT_RESPONSE.sources)}\n`,
+      "\n",
+    ]);
   };
 
-  const response = await askChat("What should I eat?");
+  const updates = [];
+  const response = await streamChat("What should I eat?", {
+    sessionId: "session-a",
+    history: [
+      { role: "user", content: "I want noodles." },
+      { role: "assistant", content: "Try Demo Vendor 1." },
+    ],
+    onDelta: (_delta, answer) => updates.push(answer),
+  });
 
   assert.equal(response.answer, CHAT_RESPONSE.answer);
   assert.deepEqual(response.sources, CHAT_RESPONSE.sources);
+  assert.deepEqual(updates, ["Try ", CHAT_RESPONSE.answer]);
 });
 
-test("askChat parses SQL search type vendor and count sources", async (context) => {
-  const originalFetch = globalThis.fetch;
-  context.after(() => {
-    globalThis.fetch = originalFetch;
-  });
-  globalThis.fetch = async () => jsonResponse(SQL_CHAT_RESPONSE);
-
-  const response = await askChat("Where can I find halal food?");
+test("parseChatResponse accepts SQL vendor and count sources", () => {
+  const response = parseChatResponse(SQL_CHAT_RESPONSE);
 
   assert.deepEqual(response.sources, SQL_CHAT_RESPONSE.sources);
   assert.equal(response.sources[0].source_type, "vendor");
@@ -115,28 +155,61 @@ test("askChat parses SQL search type vendor and count sources", async (context) 
   assert.equal(response.sources[1].count, 5);
 });
 
-test("askChat rejects a source with an invalid excerpt type", async (context) => {
-  const originalFetch = globalThis.fetch;
-  context.after(() => {
-    globalThis.fetch = originalFetch;
-  });
-  globalThis.fetch = async () =>
-    jsonResponse({
+test("parseChatResponse rejects a source with an invalid excerpt type", () => {
+  assert.throws(
+    () => parseChatResponse({
       answer: "x",
       sources: [{ source_type: "vendor", excerpt: 123 }],
-    });
-
-  await assert.rejects(askChat("Question"), ChatResponseError);
+    }),
+    ChatResponseError,
+  );
 });
 
-test("askChat rejects a malformed ChatResponse", async (context) => {
+test("parseChatResponse rejects a malformed ChatResponse", () => {
+  assert.throws(
+    () => parseChatResponse({ answer: 123, sources: [] }),
+    ChatResponseError,
+  );
+});
+
+test("chat history keeps the newest five messages for each role", () => {
+  const history = Array.from({ length: 7 }, (_, index) => [
+    { role: "user", content: `user-${index}` },
+    { role: "assistant", content: `assistant-${index}` },
+  ]).flat();
+
+  assert.deepEqual(
+    trimChatHistory(history),
+    Array.from({ length: 5 }, (_, offset) => {
+      const index = offset + 2;
+      return [
+        { role: "user", content: `user-${index}` },
+        { role: "assistant", content: `assistant-${index}` },
+      ];
+    }).flat(),
+  );
+});
+
+test("streamChat forwards a caller abort signal without a fixed timeout", async (context) => {
+  configureDevUser(context);
   const originalFetch = globalThis.fetch;
   context.after(() => {
     globalThis.fetch = originalFetch;
   });
-  globalThis.fetch = async () => jsonResponse({ answer: 123, sources: [] });
+  globalThis.fetch = (_path, options) => new Promise((_resolve, reject) => {
+    options.signal.addEventListener("abort", () => {
+      reject(new DOMException("aborted", "AbortError"));
+    });
+  });
+  const controller = new AbortController();
+  const request = streamChat("Slow question", {
+    sessionId: "session-a",
+    signal: controller.signal,
+  });
 
-  await assert.rejects(askChat("Question"), ChatResponseError);
+  controller.abort();
+
+  await assert.rejects(request, (error) => error.name === "AbortError");
 });
 
 test("the API client distinguishes network, HTTP, malformed-body, and timeout errors", async (context) => {

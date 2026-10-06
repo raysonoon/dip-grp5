@@ -1,5 +1,6 @@
 import re
 import time
+from threading import Lock
 from typing import Protocol
 
 from google import genai
@@ -41,7 +42,13 @@ class GoogleEmbedder:
         self._max_retries = max_retries
         self._min_interval = 60.0 / max(requests_per_minute, 1)
         self._last_request_at = 0.0
+        self._throttle_lock = Lock()
         self._client = genai.Client(api_key=api_key) if api_key else None
+
+    @property
+    def cache_key(self) -> tuple[str, str, int]:
+        """Identify embeddings that are interchangeable across requests."""
+        return ("google", self._model, self._dimensions)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if self._client is None:
@@ -59,11 +66,12 @@ class GoogleEmbedder:
         return embeddings
 
     def _throttle(self) -> None:
-        now = time.monotonic()
-        wait = self._min_interval - (now - self._last_request_at)
-        if wait > 0:
-            time.sleep(wait)
-        self._last_request_at = time.monotonic()
+        with self._throttle_lock:
+            now = time.monotonic()
+            wait = self._min_interval - (now - self._last_request_at)
+            if wait > 0:
+                time.sleep(wait)
+            self._last_request_at = time.monotonic()
 
     def _embed_batch(self, batch: list[str]) -> object:
         self._throttle()

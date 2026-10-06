@@ -3,7 +3,10 @@ from sqlalchemy.orm import Session
 
 from app.models import User, Vendor
 from app.services.sql_search import PgSqlStore
-from app.services.structured_filters import extract_structured_filters
+from app.services.structured_filters import (
+    StructuredFilter,
+    extract_structured_filters,
+)
 
 
 def _seed_vendors(session: Session) -> None:
@@ -137,3 +140,16 @@ def test_review_count_is_aggregated(session: Session) -> None:
     filters = extract_structured_filters("halal food")
     result = store.search(filters)[0]
     assert result.review_count == 2
+
+
+def test_sql_search_filters_by_vendor_ids(session: Session) -> None:
+    _seed_vendors(session)
+    store = PgSqlStore(session)
+    halal = session.scalar(
+        select(Vendor).where(Vendor.name == "Halal Nook")
+    )
+    filters = StructuredFilter(vendor_ids=[halal.id])
+
+    results = store.search(filters)
+
+    assert [result.vendor_name for result in results] == ["Halal Nook"]

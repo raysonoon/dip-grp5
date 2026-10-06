@@ -11,6 +11,7 @@ from typing import Callable
 
 from app.core.config import settings
 from app.models import ChatbotPrompt
+from app.schemas.chat import ChatHistoryMessage
 from app.services.intent_router import SEARCH_TYPES
 from app.services.structured_filters import StructuredFilter
 
@@ -75,6 +76,35 @@ def build_filter_extractor(
             return StructuredFilter()
 
     return extract
+
+
+def build_question_rewriter(
+    client: object,
+    model: str = settings.chat_model,
+) -> Callable[[str, list[ChatHistoryMessage]], str]:
+    """Return a rewriter that resolves a follow-up into a standalone question."""
+
+    def rewrite(question: str, history: list[ChatHistoryMessage]) -> str:
+        history_text = "\n".join(
+            f"{'User' if message.role == 'user' else 'Foodie'}: {message.content}"
+            for message in history
+        )
+        instruction = (
+            "Rewrite the user's latest question into a single standalone "
+            "question that resolves any references (pronouns, 'the one', "
+            "'what about ...') to the conversation history. Preserve the "
+            "user's intent and any names, places, or filters already stated. "
+            "Reply with only the rewritten question and no explanation.\n\n"
+            f"Conversation history:\n{history_text or '(none)'}\n\n"
+            f"Latest question: {question}"
+        )
+        response = client.models.generate_content(
+            model=model,
+            contents=instruction,
+        )
+        return (response.text or "").strip()
+
+    return rewrite
 
 
 def _parse_filter_json(text: str) -> StructuredFilter:

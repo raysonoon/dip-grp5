@@ -30,6 +30,7 @@ class SqlResult:
     vendor_name: str | None = None
     location: str | None = None
     unit_code: str | None = None
+    address: str | None = None
     category: str | None = None
     price_range: str | None = None
     opening_hours: str | None = None
@@ -100,6 +101,7 @@ class PgSqlStore:
             vendor_name=vendor.name,
             location=vendor.location,
             unit_code=vendor.unit_code,
+            address=vendor.address,
             category=vendor.category,
             price_range=vendor.price_range,
             opening_hours=vendor.opening_hours,
@@ -121,6 +123,8 @@ class PgSqlStore:
 
 def _build_predicates(filters: StructuredFilter) -> list:
     predicates = []
+    if filters.vendor_ids:
+        predicates.append(Vendor.id.in_(filters.vendor_ids))
     if filters.halal is not None:
         predicates.append(Vendor.halal.is_(filters.halal))
     if filters.vegetarian is not None:

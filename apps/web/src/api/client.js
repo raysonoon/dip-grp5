@@ -1,10 +1,14 @@
 const ENVIRONMENT = import.meta.env ?? globalThis.process?.env ?? {};
-const configuredDevUserId = String(ENVIRONMENT.VITE_DEV_USER_ID ?? "").trim();
+function configuredDevUserToken() {
+  const configuredDevUserId = String(ENVIRONMENT.VITE_DEV_USER_ID ?? "").trim();
+  return /^[1-9]\d*$/.test(configuredDevUserId) ? configuredDevUserId : null;
+}
 
-export const DEV_USER_TOKEN = /^[1-9]\d*$/.test(configuredDevUserId)
-  ? configuredDevUserId
-  : null;
+export const DEV_USER_TOKEN = configuredDevUserToken();
 export const DEV_USER_ID = DEV_USER_TOKEN === null ? null : Number(DEV_USER_TOKEN);
+export function getDevUserToken() {
+  return configuredDevUserToken();
+}
 export const API_BASE_URL = String(ENVIRONMENT.VITE_API_BASE_URL ?? "")
   .trim()
   .replace(/\/+$/, "");
