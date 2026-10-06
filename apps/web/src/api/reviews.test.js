@@ -60,7 +60,7 @@ test("fetchReviews fetches the homepage reviews with limit and offset", async (c
   });
 
   globalThis.fetch = async (path, options) => {
-    assert.equal(path, "/reviews?limit=15&offset=0");
+    assert.equal(path, "https://api.example.test/reviews?limit=15&offset=0");
     assert.equal(options.method, "GET");
     assert.equal(options.headers["X-Dev-User-Id"], undefined);
 

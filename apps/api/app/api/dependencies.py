@@ -1,18 +1,22 @@
 from collections.abc import Callable
+from functools import lru_cache
+import logging
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.models import User
+from app.schemas.chat import ChatHistoryMessage
 from app.services.chat import ChatService
 from app.services.embedding import Embedder, GoogleEmbedder
 from app.services.intent_router import IntentRouter
 from app.services.llm_routing import (
     build_classifier,
     build_filter_extractor,
+    build_question_rewriter,
 )
 from app.services.retrieval import KnowledgeStore, PgvectorKnowledgeStore
 from app.services.review_knowledge import InternalReviewKnowledgeSync
@@ -21,8 +25,10 @@ from app.services.structured_filters import StructuredFilter
 
 
 DbSession = Annotated[Session, Depends(get_db)]
+logger = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=1)
 def get_embedder() -> Embedder:
     api_key = (
         settings.gemini_api_key.get_secret_value()
@@ -39,12 +45,34 @@ def get_knowledge_store(session: DbSession) -> KnowledgeStore:
     return PgvectorKnowledgeStore(session)
 
 
+@lru_cache(maxsize=1)
 def _get_genai_client() -> object | None:
     if settings.gemini_api_key is None:
         return None
     from google import genai
 
     return genai.Client(api_key=settings.gemini_api_key.get_secret_value())
+
+
+def warm_intent_embeddings() -> int:
+    """Warm reusable intent embeddings while keeping startup failure-tolerant."""
+    if settings.gemini_api_key is None:
+        logger.info("Skipping intent embedding warm-up: GEMINI_API_KEY is not set")
+        return 0
+    try:
+        with SessionLocal() as session:
+            count = IntentRouter(
+                session,
+                embedder=get_embedder(),
+            ).warm_prompt_embeddings()
+    except Exception:
+        logger.warning(
+            "Intent embedding warm-up failed; requests will use normal fallback",
+            exc_info=True,
+        )
+        return 0
+    logger.info("Warmed embeddings for %d intent prompt(s)", count)
+    return count
 
 
 def get_intent_router(
@@ -73,6 +101,15 @@ def get_filter_extractor_llm() -> Callable[[str], StructuredFilter] | None:
     return build_filter_extractor(client)
 
 
+def get_question_rewriter() -> (
+    Callable[[str, list[ChatHistoryMessage]], str] | None
+):
+    client = _get_genai_client()
+    if client is None:
+        return None
+    return build_question_rewriter(client)
+
+
 def get_chat_service(
     session: DbSession,
     embedder: Annotated[Embedder, Depends(get_embedder)],
@@ -83,13 +120,19 @@ def get_chat_service(
         Callable[[str], StructuredFilter] | None,
         Depends(get_filter_extractor_llm),
     ],
+    rewrite_llm: Annotated[
+        Callable[[str, list[ChatHistoryMessage]], str] | None,
+        Depends(get_question_rewriter),
+    ],
 ) -> ChatService:
     return ChatService(
         embedder,
         store,
+        client=_get_genai_client(),
         router=router,
         sql_store=sql_store,
         filter_extractor_llm=filter_extractor_llm,
+        rewrite_llm=rewrite_llm,
         session=session,
     )
 

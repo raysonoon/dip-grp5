@@ -1,12 +1,12 @@
 import {
   ApiError,
+  ApiAuthConfigurationError,
   ApiNetworkError,
   ApiResponseError,
   ApiTimeoutError,
-  apiClient,
+  apiUrl,
+  getDevUserToken,
 } from "./client.js";
-
-const CHAT_TIMEOUT_MS = 30_000;
 
 export class ChatResponseError extends Error {
   constructor(message) {
@@ -69,13 +69,125 @@ export function parseChatResponse(value) {
   };
 }
 
-export async function askChat(question) {
-  const payload = await apiClient.post(
-    "/chat",
-    { question },
-    { auth: false, timeoutMs: CHAT_TIMEOUT_MS },
-  );
-  return parseChatResponse(payload);
+export const MAX_CHAT_MESSAGES_PER_ROLE = 5;
+
+export function trimChatHistory(history) {
+  const kept = new Set();
+  for (const role of ["user", "assistant"]) {
+    const indexes = history
+      .map((message, index) => (message.role === role ? index : -1))
+      .filter((index) => index >= 0);
+    indexes.slice(-MAX_CHAT_MESSAGES_PER_ROLE).forEach((index) => kept.add(index));
+  }
+  return history.filter((_message, index) => kept.has(index));
+}
+
+function parseEventBlock(block) {
+  let event = "message";
+  const data = [];
+  for (const line of block.split("\n")) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+  }
+  return { event, data: data.join("\n") };
+}
+
+function parseSources(value) {
+  if (!Array.isArray(value)) {
+    throw new ChatResponseError("Invalid sources event in chat API response");
+  }
+  return value.map(parseSource);
+}
+
+export async function streamChat(
+  question,
+  { history = [], sessionId, signal, onDelta = () => {} } = {},
+) {
+  const devUserToken = getDevUserToken();
+  if (devUserToken === null) throw new ApiAuthConfigurationError();
+
+  let response;
+  try {
+    response = await fetch(apiUrl("/chat/stream"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Dev-User-Id": devUserToken,
+      },
+      body: JSON.stringify({
+      session_id: sessionId,
+      question,
+      history: trimChatHistory(history),
+      }),
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new ApiNetworkError("Could not connect to the API", error);
+  }
+
+  if (!response.ok) {
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      // The status code is enough when an upstream server returns non-JSON.
+    }
+    const message = typeof payload?.detail === "string"
+      ? payload.detail
+      : `Request failed with status ${response.status}`;
+    throw new ApiError(message, response.status, payload);
+  }
+  if (!response.headers.get("content-type")?.includes("text/event-stream")) {
+    throw new ChatResponseError("Chat API did not return an event stream");
+  }
+  if (!response.body) {
+    throw new ChatResponseError("Chat API returned an empty event stream");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let answer = "";
+  let sources = null;
+
+  async function handleBlock(block) {
+    const parsed = parseEventBlock(block);
+    if (!parsed.data) return;
+    let data;
+    try {
+      data = JSON.parse(parsed.data);
+    } catch (error) {
+      throw new ChatResponseError(`Invalid ${parsed.event} event JSON`, { cause: error });
+    }
+    if (parsed.event === "delta") {
+      if (typeof data !== "string") {
+        throw new ChatResponseError("Invalid delta event in chat API response");
+      }
+      answer += data;
+      await onDelta(data, answer);
+    } else if (parsed.event === "sources") {
+      sources = parseSources(data);
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    buffer = buffer.replaceAll("\r\n", "\n");
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      await handleBlock(buffer.slice(0, boundary));
+      buffer = buffer.slice(boundary + 2);
+      boundary = buffer.indexOf("\n\n");
+    }
+    if (done) break;
+  }
+  if (buffer.trim()) await handleBlock(buffer.trim());
+  if (sources === null) {
+    throw new ChatResponseError("Chat API stream ended before sources arrived");
+  }
+  return { answer, sources };
 }
 
 export function chatErrorMessage(error) {

@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -52,8 +53,9 @@ def client(session: Session) -> Iterator[TestClient]:
         lambda: NoopReviewKnowledgeSync()
     )
     try:
-        with TestClient(app) as test_client:
-            yield test_client
+        with patch("app.main.warm_intent_embeddings", return_value=0):
+            with TestClient(app) as test_client:
+                yield test_client
     finally:
         app.dependency_overrides.clear()
         settings.dev_auth_enabled = previous_dev_auth
