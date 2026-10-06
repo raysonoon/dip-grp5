@@ -205,6 +205,12 @@ def format_sql_context(results: list[SqlResult]) -> str:
             attributes.append(f"price={result.price_range}")
         if result.opening_hours:
             attributes.append(f"hours={result.opening_hours}")
+        if result.halal is not None:
+            attributes.append(f"halal={'yes' if result.halal else 'no'}")
+        if result.vegetarian is not None:
+            attributes.append(
+                f"vegetarian={'yes' if result.vegetarian else 'no'}"
+            )
         rating = result.average_rating
         if rating is None:
             rating = result.average_google_rating

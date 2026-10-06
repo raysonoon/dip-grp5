@@ -80,6 +80,8 @@ def test_format_sql_context_lists_attributes() -> None:
     rendered = format_sql_context([result])
     assert "[1] Halal Nook" in rendered
     assert "location=North Spine" in rendered
+    assert "halal=yes" in rendered
+    assert "vegetarian=no" in rendered
     assert "rating=4.5" in rendered
 
 
@@ -391,6 +393,8 @@ def test_sql_path_returns_vendor_sources(session) -> None:
     assert response.search_type == "SQL"
     assert response.sources[0].source_type == "vendor"
     assert response.sources[0].vendor_name == "Halal Nook"
+    assert "Halal Nook" in captured["prompt"]
+    assert "halal=yes" in captured["prompt"]
 
 
 def test_empty_sql_list_falls_back_to_vector_for_dish_terms(session) -> None:
