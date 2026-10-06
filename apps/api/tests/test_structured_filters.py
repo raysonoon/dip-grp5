@@ -57,6 +57,11 @@ def test_list_default() -> None:
     assert filters.sort is None
 
 
+def test_vendor_ids_default_none() -> None:
+    filters = extract_structured_filters("Where can I find halal food?")
+    assert filters.vendor_ids is None
+
+
 def test_llm_fallback_returns_empty_without_extractor() -> None:
     filters = extract_structured_filters_llm("anything", extractor=None)
     assert filters.query_kind == "list"
