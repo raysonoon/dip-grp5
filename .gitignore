@@ -2,3 +2,7 @@
 ~$*.xlsx
 .DS_Store
 .opencode
+.agents
+.venv/
+
+
