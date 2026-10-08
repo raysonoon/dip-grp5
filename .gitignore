@@ -1,5 +1,8 @@
 /.local-backups/
 ~$*.xlsx
 .DS_Store
-.opencode.venv/
+.opencode
+.agents
 .venv/
+
+
