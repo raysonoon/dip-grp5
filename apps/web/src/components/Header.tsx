@@ -27,7 +27,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
         <button
           type="button"
           onClick={() => setAccountMenuOpen((open) => !open)}
-          className="flex max-w-52 items-center justify-between gap-1.5 px-3 rounded-lg text-sm font-semibold text-foreground cursor-pointer hover:bg-muted transition-colors"
+          className="flex w-full items-center justify-between gap-1.5 px-0.25 rounded-s text-sm font-semibold text-foreground cursor-pointer hover:bg-muted transition-colors"
           aria-expanded={accountMenuOpen}
           aria-haspopup="menu"
           aria-label="Open account menu"
