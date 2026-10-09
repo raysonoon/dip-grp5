@@ -193,28 +193,9 @@ Open <http://127.0.0.1:8000/docs> to use the interactive API page.
 
 ### Temporary local authentication
 
-Until the team integrates the real login system, a protected FastAPI route can
-use the placeholder dependency:
-
-```python
-from app.api.dependencies import CurrentUser
-
-
-def protected_route(user: CurrentUser):
-    return {"user_id": user.id}
-```
-
-With `DEV_AUTH_ENABLED=true` in the local `.env`, the frontend or an API client
-can choose a seeded user by sending its generated ID:
-
-```text
-X-Dev-User-Id: <seeded user ID>
-```
-
-This header is a development shortcut, not secure authentication. The example
-environment keeps it disabled. Replace it with the team's real session or token
-authentication and keep `DEV_AUTH_ENABLED=false` in every shared or deployed
-environment.
+Protected API actions require a signed-in Supabase session. The backend
+verifies the Supabase bearer token and creates or links the corresponding local
+user profile when the frontend calls `/auth/me`.
 
 ## Local frontend environment
 
@@ -226,22 +207,9 @@ npm install
 Copy-Item .env.example .env
 ```
 
-Set `VITE_DEV_USER_ID` in `apps/web/.env` to a seeded user ID from the backend
-seed output (see [Local backend environment](#local-backend-environment)). The
-frontend sends it as the `X-Dev-User-Id` header for authenticated actions such
-as creating, editing, or deleting reviews. Leave it empty to browse only.
-
-On a fresh database seed, the user IDs are assigned in creation order:
-
-| `VITE_DEV_USER_ID` | User |
-| --- | --- |
-| `1` | Administrator |
-| `2` | Test User |
-
-These are auto-generated `Identity` IDs, so they may differ if rows were added
-or removed previously. Always confirm against the IDs printed by
-`python -m app.db.seed`. The Test User (`2`) authors the seeded demo reviews, so
-it is the usual choice for exercising review add/edit/delete in the UI.
+Sign in through Supabase before using authenticated actions such as creating,
+editing, or deleting reviews. Interacting with chatbot and browsing public vendors and reviews does not
+require a session.
 
 ### Run the frontend
 
@@ -280,19 +248,18 @@ $body = @{
 Invoke-RestMethod `
     -Method Post `
     -Uri http://127.0.0.1:8000/reviews `
-    -Headers @{ "X-Dev-User-Id" = "1" } `
+    -Headers @{ Authorization = "Bearer <supabase-access-token>" } `
     -ContentType "application/json" `
     -Body $body
 ```
 
-The API takes `user_id` from the authenticated user header; it does not accept
+The API takes `user_id` from the authenticated Supabase token; it does not accept
 `user_id` in the request body. An omitted or whitespace-only comment is stored
 as `NULL`, so rating-only reviews are supported.
 
 ### Read reviews
 
-Reading community reviews is public and does not require the temporary login
-header:
+Reading community reviews is public and does not require authentication:
 
 ```text
 GET /reviews
@@ -334,21 +301,21 @@ $body = @{
 Invoke-RestMethod `
     -Method Patch `
     -Uri http://127.0.0.1:8000/reviews/1 `
-    -Headers @{ "X-Dev-User-Id" = "1" } `
+    -Headers @{ Authorization = "Bearer <supabase-access-token>" } `
     -ContentType "application/json" `
     -Body $body
 ```
 
 ### Delete a review
 
-`DELETE /reviews/{review_id}` requires the temporary user header. A normal user
+`DELETE /reviews/{review_id}` requires a Supabase bearer token. A normal user
 may delete only their own review; an administrator may delete any review.
 
 ```powershell
 Invoke-RestMethod `
     -Method Delete `
     -Uri http://127.0.0.1:8000/reviews/1 `
-    -Headers @{ "X-Dev-User-Id" = "4" }
+    -Headers @{ Authorization = "Bearer <supabase-access-token>" }
 ```
 
 A successful deletion returns HTTP `204` with an empty body. The API returns
@@ -409,7 +376,7 @@ The two item-level `GET` endpoints are public. They load the image record from
 the database, resolve its root-relative `/media/...` URL inside the matching
 integer vendor/review upload directory, and return the JPEG or PNG file.
 Creating, editing, reordering, and deleting vendor image metadata require an
-administrator through the temporary development authentication dependency.
+administrator authenticated through Supabase.
 `POST` accepts a root-relative `image_url` under the matching
 `/media/vendor_images/{vendor_id}/` directory and an optional positive
 `display_order`; when the order is omitted, the API appends the image. The first

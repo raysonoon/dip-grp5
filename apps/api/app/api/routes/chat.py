@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from app.api.dependencies import ChatServiceDep, CurrentUser
+from app.api.dependencies import ChatServiceDep, OptionalCurrentUser
 from app.schemas.chat import ChatRequest
 
 
@@ -19,7 +19,7 @@ def _sse(event: str, data: object) -> str:
 def stream_chat(
     payload: ChatRequest,
     service: ChatServiceDep,
-    _current_user: CurrentUser,
+    _current_user: OptionalCurrentUser,
 ) -> StreamingResponse:
     """Stream answer deltas and finish with the sources used by the answer."""
 

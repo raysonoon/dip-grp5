@@ -15,6 +15,7 @@ import {
   streamChat,
   trimChatHistory,
 } from "./chat.js";
+import { supabase } from "../lib/supabase.js";
 
 const CHAT_RESPONSE = {
   answer: "Try Demo Vendor 1.",
@@ -93,17 +94,29 @@ function streamResponse(chunks, status = 200) {
   });
 }
 
-function configureDevUser(context) {
-  const original = process.env.VITE_DEV_USER_ID;
-  process.env.VITE_DEV_USER_ID = "42";
+function configureSession(context, accessToken = "test-access-token") {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(
+    supabase.auth,
+    "getSession",
+  );
+  Object.defineProperty(supabase.auth, "getSession", {
+    configurable: true,
+    value: async () => ({
+    data: { session: { access_token: accessToken } },
+    error: null,
+    }),
+  });
   context.after(() => {
-    if (original === undefined) delete process.env.VITE_DEV_USER_ID;
-    else process.env.VITE_DEV_USER_ID = original;
+    if (originalDescriptor) {
+      Object.defineProperty(supabase.auth, "getSession", originalDescriptor);
+    } else {
+      delete supabase.auth.getSession;
+    }
   });
 }
 
 test("streamChat sends auth and incrementally parses fragmented SSE events", async (context) => {
-  configureDevUser(context);
+  configureSession(context, "42");
   const originalFetch = globalThis.fetch;
   context.after(() => {
     globalThis.fetch = originalFetch;
@@ -111,7 +124,7 @@ test("streamChat sends auth and incrementally parses fragmented SSE events", asy
   globalThis.fetch = async (path, options) => {
     assert.equal(path, "/chat/stream");
     assert.equal(options.method, "POST");
-    assert.equal(options.headers["X-Dev-User-Id"], "42");
+    assert.equal(options.headers.Authorization, "Bearer 42");
     assert.equal(options.headers["Content-Type"], "application/json");
     assert.equal(options.body, JSON.stringify({
       session_id: "session-a",
@@ -142,6 +155,26 @@ test("streamChat sends auth and incrementally parses fragmented SSE events", asy
   assert.equal(response.answer, CHAT_RESPONSE.answer);
   assert.deepEqual(response.sources, CHAT_RESPONSE.sources);
   assert.deepEqual(updates, ["Try ", CHAT_RESPONSE.answer]);
+});
+
+test("streamChat allows anonymous requests without an Authorization header", async (context) => {
+  configureSession(context, null);
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (_path, options) => {
+    assert.equal(options.headers.Authorization, undefined);
+    return streamResponse([
+      'event: delta\ndata: "Try it. d"\n\n',
+      `event: sources\ndata: ${JSON.stringify([])}\n\n`,
+    ]);
+  };
+
+  const response = await streamChat("What should I eat?");
+
+  assert.equal(response.answer, "Try it. d");
+  assert.deepEqual(response.sources, []);
 });
 
 test("parseChatResponse accepts SQL vendor and count sources", () => {
@@ -191,7 +224,7 @@ test("chat history keeps the newest five messages for each role", () => {
 });
 
 test("streamChat forwards a caller abort signal without a fixed timeout", async (context) => {
-  configureDevUser(context);
+  configureSession(context, "42");
   const originalFetch = globalThis.fetch;
   context.after(() => {
     globalThis.fetch = originalFetch;

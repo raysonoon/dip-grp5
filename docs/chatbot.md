@@ -244,11 +244,10 @@ All three routing paths, wired into a public `POST /chat` route.
 
 ### API
 
-```text
-POST /chat   # public; body: { "question": "..." }
-             # response: { "answer": "...", "sources": [...],
-             #             "search_type": "SQL"|"Vector"|"SQL + Vector",
-             #             "intent": "<intent_key>" }
+```
+POST /chat/stream   # public; optional Supabase bearer token for personalization
+                    # body: { "question": "..." }
+                    # response: Server-sent events with answer deltas and sources
 ```
 
 Each source carries `source_type`, `source_id`, `vendor_id`, `vendor_name`

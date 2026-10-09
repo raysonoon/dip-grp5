@@ -1,12 +1,11 @@
 import {
   ApiError,
-  ApiAuthConfigurationError,
   ApiNetworkError,
   ApiResponseError,
   ApiTimeoutError,
   apiUrl,
-  getDevUserToken,
 } from "./client.js";
+import { getAccessToken } from "../lib/auth.js";
 
 export class ChatResponseError extends Error {
   constructor(message) {
@@ -100,20 +99,23 @@ function parseSources(value) {
 }
 
 export async function streamChat(
+  /** @type {string} */
   question,
+  /** @type {{ history?: Array<{ role: "user" | "assistant", content: string }>, sessionId?: string, signal?: AbortSignal, onDelta?: (delta: string, answer: string) => void }} */
   { history = [], sessionId, signal, onDelta = () => {} } = {},
 ) {
-  const devUserToken = getDevUserToken();
-  if (devUserToken === null) throw new ApiAuthConfigurationError();
+  const accessToken = await getAccessToken();
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException("The operation was aborted", "AbortError");
+  }
 
   let response;
   try {
+    const headers = { "Content-Type": "application/json" };
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
     response = await fetch(apiUrl("/chat/stream"), {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Dev-User-Id": devUserToken,
-      },
+      headers,
       body: JSON.stringify({
       session_id: sessionId,
       question,

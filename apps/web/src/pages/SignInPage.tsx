@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Mail, Lock, AlertCircle, ArrowLeft } from "lucide-react";
+import { supabase } from "../lib/supabase.js";
 
 type AuthMode = "signin" | "signup";
 
@@ -10,10 +11,14 @@ export default function SignInPage() {
   const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
 
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [authError, setAuthError] = useState("");
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
+  const [confirmationRequired, setConfirmationRequired] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const dismissTimerRef = useRef<number | null>(null);
 
@@ -50,7 +55,7 @@ export default function SignInPage() {
     return "";
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const eErr = validateEmail(email);
@@ -61,15 +66,43 @@ export default function SignInPage() {
 
     if (eErr || pErr) return;
 
-    // Stub handler for Supabase integration
-    console.log(`[Stub Submit] ${mode.toUpperCase()} attempt:`, { email, password });
+    if (mode === "signup" && !displayName.trim()) {
+      setAuthError("Display name is required.");
+      return;
+    }
 
-    setSubmittedSuccess(true);
-    dismissTimerRef.current = window.setTimeout(() => {
-      dismissTimerRef.current = null;
-      setSubmittedSuccess(false);
-      navigate(returnRoute);
-    }, 1500);
+    clearDismissTimer();
+    setAuthError("");
+    setConfirmationRequired(false);
+    setSubmitting(true);
+
+    try {
+      const result = mode === "signin"
+        ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
+        : await supabase.auth.signUp({
+            email: email.trim(),
+            password,
+            options: { data: { display_name: displayName.trim() } },
+          });
+
+      if (result.error) throw result.error;
+
+      if (mode === "signup" && !result.data.session) {
+        setConfirmationRequired(true);
+        return;
+      }
+
+      setSubmittedSuccess(true);
+      dismissTimerRef.current = window.setTimeout(() => {
+        dismissTimerRef.current = null;
+        setSubmittedSuccess(false);
+        navigate(returnRoute);
+      }, 800);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Authentication failed.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleModeSwitch = (newMode: AuthMode) => {
@@ -77,7 +110,9 @@ export default function SignInPage() {
     setMode(newMode);
     setEmailError("");
     setPasswordError("");
+    setAuthError("");
     setSubmittedSuccess(false);
+    setConfirmationRequired(false);
   };
 
   return (
@@ -130,7 +165,18 @@ export default function SignInPage() {
           </div>
         </div>
 
-        {submittedSuccess ? (
+        {authError && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{authError}</span>
+          </div>
+        )}
+
+        {confirmationRequired ? (
+          <div className="my-6 rounded-xl border border-primary/30 bg-primary/10 p-4 text-center text-sm font-medium text-foreground">
+            Check your email to confirm your account before signing in.
+          </div>
+        ) : submittedSuccess ? (
           <div className="my-6 rounded-xl bg-emerald-500/15 border border-emerald-500/30 p-4 text-center text-sm font-medium text-emerald-600 dark:text-emerald-400">
             {mode === "signin"
               ? "Signed in successfully!"
@@ -138,6 +184,20 @@ export default function SignInPage() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} noValidate className="space-y-4">
+            {mode === "signup" && (
+              <div>
+                <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5">
+                  Display name
+                </label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Your name"
+                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-all focus:border-primary focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            )}
             <div>
               <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5">
                 Email
@@ -198,9 +258,10 @@ export default function SignInPage() {
 
             <button
               type="submit"
-              className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground shadow hover:opacity-90 active:scale-[0.99] transition-all"
+              disabled={submitting}
+              className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground shadow hover:opacity-90 disabled:opacity-50 active:scale-[0.99] transition-all"
             >
-              {mode === "signin" ? "Sign In" : "Create Account"}
+              {submitting ? "Please wait..." : mode === "signin" ? "Sign In" : "Create Account"}
             </button>
           </form>
         )}
