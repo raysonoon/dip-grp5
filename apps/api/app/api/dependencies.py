@@ -3,10 +3,13 @@ from functools import lru_cache
 import logging
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, HTTPException, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.security import verify_supabase_access_token
 from app.db.session import SessionLocal, get_db
 from app.models import User
 from app.schemas.chat import ChatHistoryMessage
@@ -26,6 +29,7 @@ from app.services.structured_filters import StructuredFilter
 
 DbSession = Annotated[Session, Depends(get_db)]
 logger = logging.getLogger(__name__)
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 @lru_cache(maxsize=1)
@@ -157,50 +161,66 @@ ReviewKnowledgeSyncDep = Annotated[
 
 def get_current_user(
     session: DbSession,
-    x_dev_user_id: Annotated[
-        int | None,
-        Header(alias="X-Dev-User-Id"),
-    ] = None,
+    credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
 ) -> User:
-    """Resolve a seeded user from a request header during local development."""
-    if not settings.dev_auth_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Development authentication is disabled",
-        )
-
-    if x_dev_user_id is None:
+    """Resolve a local user from a verified Supabase bearer token."""
+    if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing X-Dev-User-Id header",
-            headers={"WWW-Authenticate": "X-Dev-User-Id"},
+            detail="Missing Bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user = session.get(User, x_dev_user_id)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unknown development user",
-        )
-
-    return user
+    return _resolve_supabase_user(session, credentials.credentials)
 
 
 def get_optional_current_user(
     session: DbSession,
-    x_dev_user_id: Annotated[
-        int | None,
-        Header(alias="X-Dev-User-Id"),
-    ] = None,
+    credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
 ) -> User | None:
-    """Resolve the development user when the header is present."""
-    if x_dev_user_id is None:
+    """Resolve the user when a valid bearer token is present."""
+    if credentials is None:
         return None
+    return _resolve_supabase_user(session, credentials.credentials)
 
-    if not settings.dev_auth_enabled:
-        return None
 
-    return session.get(User, x_dev_user_id)
+def _resolve_supabase_user(session: Session, token: str) -> User:
+    claims = verify_supabase_access_token(token)
+    subject = claims.get("sub")
+    email = claims.get("email")
+    if not isinstance(subject, str) or not isinstance(email, str) or not email.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Supabase token does not identify a user",
+        )
+
+    user = session.scalar(
+        select(User).where(User.supabase_user_id == subject)
+    )
+    if user is not None:
+        return user
+
+    email_address = email.strip()
+    user = session.scalar(
+        select(User).where(User.email_canonical == email_address.lower())
+    )
+    metadata = claims.get("user_metadata")
+    display_name = metadata.get("display_name") if isinstance(metadata, dict) else None
+    if user is None:
+        user = User(
+            display_name=(display_name.strip() if isinstance(display_name, str) and display_name.strip() else email_address.split("@", 1)[0]),
+            email_address=email_address,
+            email_canonical=email_address.lower(),
+            supabase_user_id=subject,
+            password_hash="supabase-managed",
+            role="user",
+        )
+        session.add(user)
+    else:
+        user.supabase_user_id = subject
+    session.commit()
+    session.refresh(user)
+    return user
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
