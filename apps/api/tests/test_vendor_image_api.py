@@ -43,7 +43,7 @@ def test_vendor_image_api_is_public_read_and_admin_write(
 ) -> None:
     monkeypatch.setattr(image_storage, "UPLOADS_ROOT", tmp_path / "uploads")
     admin, normal_user, vendor = _seed_users_and_vendor(session)
-    admin_headers = {"X-Dev-User-Id": str(admin.id)}
+    admin_headers = {"Authorization": f"Bearer {admin.id}"}
 
     empty_list = client.get(f"/vendors/{vendor.id}/images")
     assert empty_list.status_code == 200
@@ -51,7 +51,7 @@ def test_vendor_image_api_is_public_read_and_admin_write(
 
     forbidden = client.post(
         f"/vendors/{vendor.id}/images",
-        headers={"X-Dev-User-Id": str(normal_user.id)},
+        headers={"Authorization": f"Bearer {normal_user.id}"},
         files={"file": ("meal.png", PNG_BYTES, "image/png")},
     )
     assert forbidden.status_code == 403
@@ -131,7 +131,7 @@ def test_vendor_image_api_validates_vendor_and_file(
 ) -> None:
     monkeypatch.setattr(image_storage, "UPLOADS_ROOT", tmp_path / "uploads")
     admin, _, vendor = _seed_users_and_vendor(session)
-    headers = {"X-Dev-User-Id": str(admin.id)}
+    headers = {"Authorization": f"Bearer {admin.id}"}
 
     missing_vendor = client.post(
         "/vendors/9999/images",
@@ -170,7 +170,7 @@ def test_vendor_image_reuses_freed_display_order_slot(
 ) -> None:
     monkeypatch.setattr(image_storage, "UPLOADS_ROOT", tmp_path / "uploads")
     admin, _, vendor = _seed_users_and_vendor(session)
-    headers = {"X-Dev-User-Id": str(admin.id)}
+    headers = {"Authorization": f"Bearer {admin.id}"}
 
     first = client.post(
         f"/vendors/{vendor.id}/images",
