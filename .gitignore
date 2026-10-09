@@ -4,5 +4,6 @@
 .opencode
 .agents
 .venv/
+skills-lock.json
 
 
