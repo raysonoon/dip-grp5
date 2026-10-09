@@ -31,6 +31,11 @@ class User(Base):
         String(320),
         nullable=False,
     )
+    supabase_user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True, # Change to false, after removing seeded test/admin users
+        unique=True,
+    )
     __table_args__ = (
         CheckConstraint(
             "role IN ('user', 'admin')",
