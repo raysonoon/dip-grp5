@@ -2,9 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 process.env.VITE_API_BASE_URL = "https://api.example.test/";
-process.env.VITE_DEV_USER_ID = "27";
 
-const { DEV_USER_TOKEN } = await import("./client.js");
 const {
   createReview,
   deleteReview,
@@ -13,6 +11,28 @@ const {
   reviewImageUrl,
   updateReview,
 } = await import("./reviews.js");
+const { supabase } = await import("../lib/supabase.js");
+
+function configureSession(context, accessToken = "test-access-token") {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(
+    supabase.auth,
+    "getSession",
+  );
+  Object.defineProperty(supabase.auth, "getSession", {
+    configurable: true,
+    value: async () => ({
+    data: { session: { access_token: accessToken } },
+    error: null,
+    }),
+  });
+  context.after(() => {
+    if (originalDescriptor) {
+      Object.defineProperty(supabase.auth, "getSession", originalDescriptor);
+    } else {
+      delete supabase.auth.getSession;
+    }
+  });
+}
 
 const REVIEW_DETAIL = {
   id: 42,
@@ -21,6 +41,9 @@ const REVIEW_DETAIL = {
   created_at: "2026-09-09T08:00:00Z",
   updated_at: null,
   is_edited: false,
+  upvote_count: 0,
+  downvote_count: 0,
+  current_user_vote: null,
   user: {
     id: 2,
     display_name: "Test User",
@@ -62,7 +85,7 @@ test("fetchReviews fetches the homepage reviews with limit and offset", async (c
   globalThis.fetch = async (path, options) => {
     assert.equal(path, "https://api.example.test/reviews?limit=15&offset=0");
     assert.equal(options.method, "GET");
-    assert.equal(options.headers["X-Dev-User-Id"], undefined);
+    assert.equal(options.headers.Authorization, undefined);
 
     return jsonResponse({
       items: [REVIEW_DETAIL],
@@ -90,7 +113,7 @@ test("fetchVendorReviews is public, filters, and parses review details", async (
       "https://api.example.test/reviews?vendor_id=7&limit=10&offset=0",
     );
     assert.equal(options.method, "GET");
-    assert.equal(options.headers["X-Dev-User-Id"], undefined);
+    assert.equal(options.headers.Authorization, undefined);
     return jsonResponse({ items: [REVIEW_DETAIL], total: 1, limit: 10, offset: 0 });
   };
 
@@ -124,6 +147,7 @@ test("fetchVendorReviews sends the requested limit and offset", async (context) 
 });
 
 test("review mutations use the test-user token and backend schemas", async (context) => {
+  configureSession(context, "27");
   const originalFetch = globalThis.fetch;
   context.after(() => {
     globalThis.fetch = originalFetch;
@@ -144,26 +168,26 @@ test("review mutations use the test-user token and backend schemas", async (cont
     requests.map(({ path, options }) => ({
       path,
       method: options.method,
-      token: options.headers["X-Dev-User-Id"],
+      token: options.headers.Authorization,
       body: options.body,
     })),
     [
       {
         path: "https://api.example.test/reviews",
         method: "POST",
-        token: DEV_USER_TOKEN,
+        token: "Bearer 27",
         body: JSON.stringify({ vendor_id: 7, rating: 4.5, comment: "New review" }),
       },
       {
         path: "https://api.example.test/reviews/42",
         method: "PATCH",
-        token: DEV_USER_TOKEN,
+        token: "Bearer 27",
         body: JSON.stringify({ rating: 5, comment: "Updated review" }),
       },
       {
         path: "https://api.example.test/reviews/42",
         method: "DELETE",
-        token: DEV_USER_TOKEN,
+        token: "Bearer 27",
         body: undefined,
       },
     ],
@@ -171,6 +195,7 @@ test("review mutations use the test-user token and backend schemas", async (cont
 });
 
 test("API errors expose a readable backend message", async (context) => {
+  configureSession(context, "27");
   const originalFetch = globalThis.fetch;
   context.after(() => {
     globalThis.fetch = originalFetch;
