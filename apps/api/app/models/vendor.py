@@ -110,6 +110,12 @@ class Vendor(Base):
         nullable=True,
     )
 
+    # Denormalized comma-separated dish keywords (e.g., "Chicken Rice, Ban Mian")
+    dishes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     average_google_rating: Mapped[float | None] = mapped_column(
         Numeric(2, 1),
         nullable=True,

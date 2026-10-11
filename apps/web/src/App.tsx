@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Routes, Route, Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Routes, Route, Link } from "react-router-dom";
 import Layout, { FoodieChat } from "./components/Layout";
 import Footer from "./components/Footer";
 import Header from "./components/Header";
@@ -11,13 +11,11 @@ import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
 import VendorMap from "./pages/VendorMap";
 import {
-  Search,
   Star,
   MapPin,
   ChevronRight,
   Clock,
   TrendingUp,
-  //ThumbsUp,//
 } from "lucide-react";
 
 const BODY_FONT = "'Plus Jakarta Sans', sans-serif";
@@ -68,11 +66,13 @@ function computeTrendingScore(
   },
   maxReviewCount: number,
   minCreatedAt: number,
-  maxCreatedAt: number,
+  maxCreatedAt: number
 ) {
   const created = new Date(vendor.created_at).getTime();
-  const recency = (created - minCreatedAt) / Math.max(maxCreatedAt - minCreatedAt, 1);
-  const reviews = maxReviewCount > 0 ? vendor.review_count / maxReviewCount : 0;
+  const recency =
+    (created - minCreatedAt) / Math.max(maxCreatedAt - minCreatedAt, 1);
+  const reviews =
+    maxReviewCount > 0 ? vendor.review_count / maxReviewCount : 0;
   const rating = vendor.average_rating ?? vendor.average_google_rating ?? 0;
   const ratingScore = Math.min(1, rating / 5);
   return (
@@ -82,7 +82,13 @@ function computeTrendingScore(
   );
 }
 
-function StarRow({ rating, size = "sm" }: { rating: number; size?: "sm" | "md" }) {
+function StarRow({
+  rating,
+  size = "sm",
+}: {
+  rating: number;
+  size?: "sm" | "md";
+}) {
   return (
     <div className="flex items-center gap-0.5">
       {[1, 2, 3, 4, 5].map((i) => (
@@ -101,8 +107,6 @@ function StarRow({ rating, size = "sm" }: { rating: number; size?: "sm" | "md" }
 
 function HomePage() {
   const [reviewsPaused, setReviewsPaused] = useState(false);
-  const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState("");
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [reviewSlide, setReviewSlide] = useState(0);
@@ -110,7 +114,7 @@ function HomePage() {
 
   useEffect(() => {
     const controller = new AbortController();
-  
+
     async function loadReviews() {
       try {
         const response = await fetchReviews(15, 0, controller.signal);
@@ -125,19 +129,19 @@ function HomePage() {
         }
       }
     }
-  
+
     loadReviews();
-  
+
     return () => controller.abort();
   }, []);
 
   useEffect(() => {
     if (reviewSlideCount <= 1 || reviewsPaused) return;
-  
+
     const interval = window.setInterval(() => {
       setReviewSlide((current) => (current + 1) % reviewSlideCount);
     }, 8000);
-  
+
     return () => window.clearInterval(interval);
   }, [reviewSlideCount, reviewsPaused]);
 
@@ -162,12 +166,12 @@ function HomePage() {
         }
 
         const createdTimes = vendors.map((vendor) =>
-          new Date(vendor.created_at).getTime(),
+          new Date(vendor.created_at).getTime()
         );
         const minCreatedAt = Math.min(...createdTimes);
         const maxCreatedAt = Math.max(...createdTimes);
         const maxReviewCount = Math.max(
-          ...vendors.map((vendor) => vendor.review_count),
+          ...vendors.map((vendor) => vendor.review_count)
         );
 
         const ranked = vendors
@@ -177,7 +181,7 @@ function HomePage() {
               vendor,
               maxReviewCount,
               minCreatedAt,
-              maxCreatedAt,
+              maxCreatedAt
             ),
           }))
           .sort((a, b) => b.score - a.score)
@@ -187,7 +191,6 @@ function HomePage() {
         const withTopReviews = await Promise.all(
           ranked.map(async (vendor) => {
             try {
-              // Only the first review's comment is used, so one review is enough.
               const page = await fetchVendorReviews(vendor.id, {
                 limit: 1,
                 signal: controller.signal,
@@ -196,7 +199,7 @@ function HomePage() {
             } catch {
               return { ...vendor, topReview: null };
             }
-          }),
+          })
         );
 
         setTrendingVendors(withTopReviews);
@@ -210,13 +213,6 @@ function HomePage() {
 
     return () => controller.abort();
   }, []);
-
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const query = searchQuery.trim();
-    if (!query) return;
-    navigate(`/food?q=${encodeURIComponent(query)}`);
-  }
 
   return (
     <div
@@ -241,58 +237,20 @@ function HomePage() {
         <div className="relative z-10 max-w-7xl mx-auto px-6 py-28">
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-semibold mb-7 tracking-wide">
-              BUILT BY STUDENTS, FOR STUDENTS <TrendingUp className="w-3.5 h-3.5" />
+              BUILT BY STUDENTS, FOR STUDENTS{" "}
+              <TrendingUp className="w-3.5 h-3.5" />
             </div>
 
-            <h1
-              className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.05] mb-6 font-display"
-            >
+            <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.05] mb-6 font-display">
               Find Your Next
               <span className="block text-primary italic">Favourite Stall</span>
             </h1>
 
-            <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
-              Discover hidden gems across 13 canteens, a variety of cafes, fast food outlets and restaurants — rated, reviewed, and recommended by your fellow NTU foodies.
+            <p className="text-lg text-muted-foreground mb-12 leading-relaxed">
+              Discover hidden gems across 13 canteens, a variety of cafes, fast
+              food outlets and restaurants — rated, reviewed, and recommended by
+              your fellow NTU foodies.
             </p>
-
-            {/* Search bar */}
-            <form className="flex gap-3 mb-7" onSubmit={submitSearch}>
-              <div className="flex-1 flex items-center gap-3 px-4 py-3 rounded-xl bg-card border border-border focus-within:border-primary/40 transition-colors">
-                <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search for stalls, dishes, canteens..."
-                  className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none flex-1"
-              />
-              </div>
-              <button
-                type="submit"
-                className="px-5 py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-opacity"
-              >
-                Search
-              </button>
-            </form>
-
-            {/* Quick tags */}
-            <div className="flex flex-wrap gap-2 mb-10">
-              {[
-                "🍗 Chicken Rice",
-                "🍜 Ban Mian",
-                "🌶️ Mala",
-                "🍱 Bento",
-                "🥘 Economy Rice",
-                "🍣 Japanese",
-              ].map((tag) => (
-                <button
-                  key={tag}
-                  className="px-3 py-1.5 rounded-full text-xs border border-border text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all duration-200"
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
 
             {/* Stats */}
             <div className="flex gap-10">
@@ -302,9 +260,7 @@ function HomePage() {
                 ["13", "Canteens"],
               ].map(([num, label]) => (
                 <div key={label}>
-                  <div
-                    className="text-3xl font-bold text-foreground font-display"
-                  >
+                  <div className="text-3xl font-bold text-foreground font-display">
                     {num}
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">
@@ -324,9 +280,7 @@ function HomePage() {
             <p className="text-[#1B2D4F] text-xs font-bold uppercase tracking-widest mb-2">
               Navigate Campus
             </p>
-            <h2
-              className="text-3xl md:text-4xl font-bold mb-4 font-display"
-            >
+            <h2 className="text-3xl md:text-4xl font-bold mb-4 font-display">
               All Food Places in 1 Map
             </h2>
             <p className="text-muted-foreground max-w-sm mx-auto text-sm leading-relaxed">
@@ -346,9 +300,7 @@ function HomePage() {
               <p className="text-primary text-xs font-bold uppercase tracking-widest mb-2">
                 This Week's Picks
               </p>
-              <h2
-                className="text-3xl md:text-4xl font-bold font-display"
-              >
+              <h2 className="text-3xl md:text-4xl font-bold font-display">
                 Trending on Campus
               </h2>
             </div>
@@ -361,13 +313,18 @@ function HomePage() {
           </div>
 
           {trendingLoading ? (
-            <p className="text-sm text-muted-foreground">Loading trending stalls...</p>
+            <p className="text-sm text-muted-foreground">
+              Loading trending stalls...
+            </p>
           ) : trendingVendors.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No stalls to show yet.</p>
+            <p className="text-sm text-muted-foreground">
+              No stalls to show yet.
+            </p>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
               {trendingVendors.map((vendor) => {
-                const rating = vendor.average_rating ?? vendor.average_google_rating;
+                const rating =
+                  vendor.average_rating ?? vendor.average_google_rating;
                 return (
                   <Link
                     key={vendor.id}
@@ -439,119 +396,117 @@ function HomePage() {
 
       {/* ── REVIEWS ──────────────────────────────────── */}
       <section className="py-24 bg-card border-y border-border">
-  <div className="max-w-7xl mx-auto px-6">
-    <div className="flex items-end justify-between mb-12">
-      <div>
-        <p className="text-[#1B2D4F] text-xs font-bold uppercase tracking-widest mb-2">
-          From the Community
-        </p>
-        <h2
-          className="text-3xl md:text-4xl font-bold font-display"
-        >
-          What students are saying
-        </h2>
-      </div>
-    </div>
-
-    {reviewsLoading ? (
-      <div className="grid md:grid-cols-3 gap-6">
-        {[0, 1, 2].map((item) => (
-          <div
-            key={item}
-            className="p-6 rounded-2xl border border-border bg-background animate-pulse"
-          >
-            <div className="h-10 w-40 bg-muted rounded mb-5" />
-            <div className="h-4 w-32 bg-muted rounded mb-3" />
-            <div className="h-20 bg-muted rounded" />
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex items-end justify-between mb-12">
+            <div>
+              <p className="text-[#1B2D4F] text-xs font-bold uppercase tracking-widest mb-2">
+                From the Community
+              </p>
+              <h2 className="text-3xl md:text-4xl font-bold font-display">
+                What students are saying
+              </h2>
+            </div>
           </div>
-        ))}
-      </div>
-    ) : reviews.length === 0 ? (
-      <div className="text-center py-12 text-muted-foreground">
-        No reviews available yet.
-      </div>
-    ) : (
-      <>
-        <div
-          className="grid md:grid-cols-3 gap-6"
-          onMouseEnter={() => setReviewsPaused(true)}
-          onMouseLeave={() => setReviewsPaused(false)}
-        >
-          {reviews
-            .slice(reviewSlide * 3, reviewSlide * 3 + 3)
-            .map((review) => (
-              <Link
-                key={review.id}
-                to={`/vendors/${review.vendor.id}`}
-                className="p-6 rounded-2xl border border-border bg-background flex flex-col hover:border-primary/40 transition-colors"
+
+          {reviewsLoading ? (
+            <div className="grid md:grid-cols-3 gap-6">
+              {[0, 1, 2].map((item) => (
+                <div
+                  key={item}
+                  className="p-6 rounded-2xl border border-border bg-background animate-pulse"
+                >
+                  <div className="h-10 w-40 bg-muted rounded mb-5" />
+                  <div className="h-4 w-32 bg-muted rounded mb-3" />
+                  <div className="h-20 bg-muted rounded" />
+                </div>
+              ))}
+            </div>
+          ) : reviews.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              No reviews available yet.
+            </div>
+          ) : (
+            <>
+              <div
+                className="grid md:grid-cols-3 gap-6"
+                onMouseEnter={() => setReviewsPaused(true)}
+                onMouseLeave={() => setReviewsPaused(false)}
               >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-bold flex-shrink-0">
-                      {review.user.display_name.charAt(0).toUpperCase()}
-                    </div>
+                {reviews
+                  .slice(reviewSlide * 3, reviewSlide * 3 + 3)
+                  .map((review) => (
+                    <Link
+                      key={review.id}
+                      to={`/vendors/${review.vendor.id}`}
+                      className="p-6 rounded-2xl border border-border bg-background flex flex-col hover:border-primary/40 transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-bold flex-shrink-0">
+                            {review.user.display_name.charAt(0).toUpperCase()}
+                          </div>
 
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold truncate">
-                        {review.user.display_name}
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold truncate">
+                              {review.user.display_name}
+                            </div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {review.user.affiliation || "NTU"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
+                          <Clock className="w-3 h-3" />
+                          {new Date(review.created_at).toLocaleDateString()}
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {review.user.affiliation || "NTU"}
+
+                      <div className="flex items-center gap-2 mb-3">
+                        <StarRow rating={review.rating} />
+
+                        <span className="text-xs text-muted-foreground">
+                          at
+                        </span>
+
+                        <span className="text-xs font-semibold text-primary truncate">
+                          {review.vendor.name}
+                        </span>
                       </div>
-                    </div>
-                  </div>
 
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-                    <Clock className="w-3 h-3" />
-                    {new Date(review.created_at).toLocaleDateString()}
-                  </div>
-                </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed flex-1 mb-4">
+                        &ldquo;{review.comment || ""}&rdquo;
+                      </p>
 
-                <div className="flex items-center gap-2 mb-3">
-                  <StarRow rating={review.rating} />
+                      <div className="flex items-center text-xs text-muted-foreground border-t border-border pt-3">
+                        <div className="flex items-center gap-1.5">
+                          <MapPin className="w-3 h-3" />
+                          {review.vendor.location || "NTU"}
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+              </div>
 
-                  <span className="text-xs text-muted-foreground">
-                    at
-                  </span>
-
-                  <span className="text-xs font-semibold text-primary truncate">
-                    {review.vendor.name}
-                  </span>
-                </div>
-
-                <p className="text-sm text-muted-foreground leading-relaxed flex-1 mb-4">
-                  &ldquo;{review.comment || ""}&rdquo;
-                </p>
-
-                <div className="flex items-center text-xs text-muted-foreground border-t border-border pt-3">
-                  <div className="flex items-center gap-1.5">
-                    <MapPin className="w-3 h-3" />
-                    {review.vendor.location || "NTU"}
-                  </div>
-                </div>
-              </Link>
-            ))}
+              <div className="flex justify-center gap-2 mt-8">
+                {Array.from({ length: reviewSlideCount }).map((_, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => setReviewSlide(index)}
+                    aria-label={`Go to review slide ${index + 1}`}
+                    className={`w-2.5 h-2.5 rounded-full transition-colors ${
+                      reviewSlide === index
+                        ? "bg-primary"
+                        : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
+                    }`}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
-
-        <div className="flex justify-center gap-2 mt-8">
-        {Array.from({ length: reviewSlideCount }).map((_, index) => (
-         <button
-           key={index}
-           type="button"
-           onClick={() => setReviewSlide(index)}
-           aria-label={`Go to review slide ${index + 1}`}
-           className={`w-2.5 h-2.5 rounded-full transition-colors ${
-             reviewSlide === index
-               ? "bg-primary"
-               : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
-             }`}
-            />
-         ))}
-        </div>
-      </>
-    )}
-  </div>
-</section>
+      </section>
 
       {/* ── FLOATING CHATBOT WIDGET ───────────────────── */}
       <FoodieChat />

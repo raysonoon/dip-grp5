@@ -59,6 +59,7 @@ class VendorListItem(BaseModel):
     price_range: str | None
     halal: bool | None
     vegetarian: bool | None
+    dishes: str | None
     average_google_rating: float | None
     created_at: datetime
     updated_at: datetime
