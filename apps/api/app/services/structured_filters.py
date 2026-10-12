@@ -61,6 +61,115 @@ LOCATION_KEYWORDS = {
 VEGETARIAN_KEYWORDS = {"vegetarian", "vegetarian-friendly", "vegan", "veg"}
 HALAL_KEYWORDS = {"halal"}
 
+_BUDGET_KEYWORDS = {
+    "inexpensive": "cheap",
+    "affordable": "cheap",
+    "cheap": "cheap",
+    "budget": "cheap",
+    "expensive": "expensive",
+    "pricey": "expensive",
+    "premium": "expensive",
+}
+
+_OPEN_HOURS_KEYWORDS = {
+    "after 8 pm": "after 20:00",
+    "after 8pm": "after 20:00",
+    "late at night": "late",
+    "late night": "late",
+    "open late": "late",
+    "late": "late",
+    "sunday": "sunday",
+}
+
+_NEGATION_BEFORE_KEYWORD_RE = re.compile(
+    r"(?:\bnot\s+open(?:\s+on)?|"
+    r"\bnot(?:\s+(?:a|an|at|in|near|on|too|very))?|"
+    r"\bclosed(?:\s+on)?|\bno|\bnon|"
+    r"\bwithout(?:\s+any)?)"
+    r"[\s\-\u2010-\u2015]*$"
+)
+_TOP_N_RE = re.compile(
+    r"\btop\s+(\d+)"
+    r"(?!\w|[.,:/+'\u2010-\u2015\u2019\uff0c\uff0e\uff0f-]\s*\d|\s+\d)"
+)
+_EXPLICIT_CUISINE_PHRASE_RE = re.compile(
+    r"(?P<phrase>(?:[A-Za-z][A-Za-z'\u2019-]*\s+){1,4})"
+    r"food\b",
+    re.IGNORECASE,
+)
+_CUISINE_REQUEST_WORDS = {
+    "a",
+    "an",
+    "any",
+    "can",
+    "could",
+    "craving",
+    "eat",
+    "find",
+    "for",
+    "get",
+    "have",
+    "has",
+    "i",
+    "like",
+    "list",
+    "looking",
+    "me",
+    "no",
+    "not",
+    "of",
+    "options",
+    "place",
+    "places",
+    "or",
+    "please",
+    "recommend",
+    "serve",
+    "serves",
+    "serving",
+    "show",
+    "some",
+    "the",
+    "to",
+    "want",
+    "we",
+    "where",
+    "which",
+    "without",
+    "you",
+}
+_CUISINE_BOUNDARY_WORDS = {
+    "craving",
+    "find",
+    "get",
+    "have",
+    "has",
+    "offer",
+    "offers",
+    "recommend",
+    "serve",
+    "serves",
+    "serving",
+    "want",
+}
+_NON_CUISINE_DESCRIPTORS = {
+    "affordable",
+    "best",
+    "cheap",
+    "delicious",
+    "expensive",
+    "good",
+    "halal",
+    "healthy",
+    "nice",
+    "premium",
+    "pricey",
+    "spicy",
+    "tasty",
+    "vegan",
+    "vegetarian",
+}
+
 
 @dataclass
 class StructuredFilter:
@@ -74,12 +183,17 @@ class StructuredFilter:
     halal: bool | None = None
     vegetarian: bool | None = None
     cuisine: str | None = None
+    exclude_cuisine: str | None = None
     location: str | None = None
+    exclude_location: str | None = None
     budget: str | None = None
+    exclude_budget: str | None = None
     open_hours: str | None = None
+    exclude_open_hours: str | None = None
     sort: str | None = None
     top_n: int | None = None
     query_kind: str = "list"
+    vendor_names: list[str] | None = None
     vendor_ids: list[int] | None = None
 
     @property
@@ -90,56 +204,142 @@ class StructuredFilter:
                 self.halal,
                 self.vegetarian,
                 self.cuisine,
+                self.exclude_cuisine,
                 self.location,
+                self.exclude_location,
                 self.budget,
+                self.exclude_budget,
                 self.open_hours,
+                self.exclude_open_hours,
                 self.sort,
                 self.top_n,
+                self.vendor_names,
                 self.vendor_ids,
             )
         )
 
 
-def _contains_any(question: str, keywords: set[str]) -> bool:
-    lowered = question.casefold()
-    return any(keyword in lowered for keyword in keywords)
+def _keyword_matches(question: str, keyword: str) -> list[re.Match[str]]:
+    pattern = rf"(?<!\w){re.escape(keyword.casefold())}(?!\w)"
+    return list(re.finditer(pattern, question.casefold()))
 
 
-def _find_keyword(question: str, mapping: dict[str, str | None]) -> str | None:
-    lowered = question.casefold()
-    for keyword, value in mapping.items():
-        if keyword in lowered:
-            return value
+def _keyword_is_negated(question: str, start: int) -> bool:
+    return (
+        _NEGATION_BEFORE_KEYWORD_RE.search(question.casefold()[:start])
+        is not None
+    )
+
+
+def _extract_boolean_keyword(
+    question: str,
+    keywords: set[str],
+) -> bool | None:
+    candidates: list[tuple[int, int, bool]] = []
+    for keyword in sorted(keywords, key=lambda value: (-len(value), value)):
+        for match in _keyword_matches(question, keyword):
+            candidates.append(
+                (
+                    match.start(),
+                    -len(keyword),
+                    not _keyword_is_negated(question, match.start()),
+                )
+            )
+    if not candidates:
+        return None
+    return min(candidates)[2]
+
+
+def _find_keyword(
+    question: str,
+    mapping: dict[str, str | None],
+    *,
+    negated: bool = False,
+) -> str | None:
+    candidates: list[tuple[int, int, str | None]] = []
+    for keyword, value in sorted(
+        mapping.items(),
+        key=lambda item: (-len(item[0]), item[0]),
+    ):
+        if value is None:
+            continue
+        for match in _keyword_matches(question, keyword):
+            if _keyword_is_negated(question, match.start()) == negated:
+                candidates.append((match.start(), -len(keyword), value))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda candidate: candidate[:2])[2]
+
+
+def _extract_explicit_cuisine_phrase(
+    question: str,
+    *,
+    negated: bool,
+) -> str | None:
+    """Extract an open-ended cuisine from an explicit ``X food`` phrase.
+
+    The fixed mapping above keeps aliases such as ``jap`` deterministic, while
+    this linguistic fallback lets explicit phrases such as ``Vietnamese food``
+    or ``Middle Eastern food`` use the same SQL path without adding one keyword
+    per cuisine. Generic request/adjective words are removed conservatively.
+    """
+
+    for match in _EXPLICIT_CUISINE_PHRASE_RE.finditer(question):
+        raw_phrase = match.group("phrase")
+        word_matches = list(
+            re.finditer(r"[A-Za-z][A-Za-z'\u2019-]*", raw_phrase)
+        )
+        words = [word_match.group(0) for word_match in word_matches]
+        if not words or words[-1].casefold() in _NON_CUISINE_DESCRIPTORS:
+            continue
+
+        start_index = 0
+        for index, word in enumerate(words):
+            if word.casefold() in _CUISINE_BOUNDARY_WORDS:
+                start_index = index + 1
+        while start_index < len(words) and (
+            words[start_index].casefold() in _CUISINE_REQUEST_WORDS
+            or words[start_index].casefold() in _NON_CUISINE_DESCRIPTORS
+        ):
+            start_index += 1
+
+        candidate_words = words[start_index:]
+        if not candidate_words or all(
+            word.casefold() in _NON_CUISINE_DESCRIPTORS
+            for word in candidate_words
+        ):
+            continue
+
+        candidate_start = (
+            match.start("phrase") + word_matches[start_index].start()
+        )
+        if _keyword_is_negated(question, candidate_start) != negated:
+            continue
+        return " ".join(candidate_words).title()
     return None
 
 
-def _extract_cuisine(question: str) -> str | None:
-    value = _find_keyword(question, CUISINE_KEYWORDS)
-    return value
+def _extract_cuisine(question: str, *, negated: bool = False) -> str | None:
+    value = _find_keyword(question, CUISINE_KEYWORDS, negated=negated)
+    if value is not None:
+        return value
+    return _extract_explicit_cuisine_phrase(question, negated=negated)
 
 
-def _extract_location(question: str) -> str | None:
-    return _find_keyword(question, LOCATION_KEYWORDS)
+def _extract_location(question: str, *, negated: bool = False) -> str | None:
+    return _find_keyword(question, LOCATION_KEYWORDS, negated=negated)
 
 
-def _extract_budget(question: str) -> str | None:
-    lowered = question.casefold()
-    if any(word in lowered for word in ("cheap", "affordable", "budget")):
-        return "cheap"
-    if any(word in lowered for word in ("expensive", "pricey", "premium")):
-        return "expensive"
-    return None
+def _extract_budget(question: str, *, negated: bool = False) -> str | None:
+    return _find_keyword(question, _BUDGET_KEYWORDS, negated=negated)
 
 
-def _extract_open_hours(question: str) -> str | None:
-    lowered = re.sub(r"\s+", " ", question.casefold())
-    if "after 8pm" in lowered:
-        return "after 20:00"
-    if "late at night" in lowered or "late night" in lowered:
-        return "late"
-    if "open on sunday" in lowered or "sunday" in lowered:
-        return "sunday"
-    return None
+def _extract_open_hours(
+    question: str,
+    *,
+    negated: bool = False,
+) -> str | None:
+    return _find_keyword(question, _OPEN_HOURS_KEYWORDS, negated=negated)
 
 
 def _extract_sort(question: str) -> str | None:
@@ -162,20 +362,20 @@ def _extract_query_kind(question: str) -> tuple[str, int | None]:
     if "how many" in lowered or "how much" in lowered:
         return "count", None
 
-    top_match = re.search(r"\btop\s+(\d+)\b", lowered)
+    top_match = _TOP_N_RE.search(lowered)
     if top_match:
-        return "rank", int(top_match.group(1))
+        digits = top_match.group(1).lstrip("0") or "0"
+        if len(digits) <= 3:
+            top_n = int(digits)
+            if 1 <= top_n <= 100:
+                return "rank", top_n
     return "list", None
 
 
 def extract_structured_filters(question: str) -> StructuredFilter:
     """Derive structured SQL filters from a question using deterministic rules."""
-    halal = None
-    vegetarian = None
-    if _contains_any(question, HALAL_KEYWORDS):
-        halal = True
-    if _contains_any(question, VEGETARIAN_KEYWORDS):
-        vegetarian = True
+    halal = _extract_boolean_keyword(question, HALAL_KEYWORDS)
+    vegetarian = _extract_boolean_keyword(question, VEGETARIAN_KEYWORDS)
 
     query_kind, top_n = _extract_query_kind(question)
     sort = _extract_sort(question)
@@ -186,9 +386,13 @@ def extract_structured_filters(question: str) -> StructuredFilter:
         halal=halal,
         vegetarian=vegetarian,
         cuisine=_extract_cuisine(question),
+        exclude_cuisine=_extract_cuisine(question, negated=True),
         location=_extract_location(question),
+        exclude_location=_extract_location(question, negated=True),
         budget=_extract_budget(question),
+        exclude_budget=_extract_budget(question, negated=True),
         open_hours=_extract_open_hours(question),
+        exclude_open_hours=_extract_open_hours(question, negated=True),
         sort=sort,
         top_n=top_n,
         query_kind=query_kind,

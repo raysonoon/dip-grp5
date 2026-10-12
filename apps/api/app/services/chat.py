@@ -1,7 +1,7 @@
 import logging
 import re
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +18,13 @@ from app.services.structured_filters import (
     extract_structured_filters,
     extract_structured_filters_llm,
 )
+from app.services.vendor_matching import (
+    match_vendor_mentions,
+    normalize_vendor_text,
+    resolve_vendor_names,
+    suggest_vendor_names,
+    vendor_brand_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +37,7 @@ class ChatGeneration:
     sources: list[ChatSource]
     search_type: str
     intent: str | None
+    direct_answer: str | None = None
 
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -104,11 +112,429 @@ _REFERENTIAL_HINTS = re.compile(
     re.IGNORECASE,
 )
 
-_PARENTHETICAL_RE = re.compile(r"\([^)]*\)")
+# A confirmation is meaningful only immediately after one of the vendor
+# clarification messages generated below. Keep these as exact, normalized
+# replies rather than looking for a loose ``yes`` substring: a new question
+# such as "is Yes Cafe open?" must continue through normal routing.
+_AFFIRMATIVE_VENDOR_CONFIRMATIONS = frozenset(
+    {
+        "correct",
+        "exactly",
+        "it is",
+        "ok",
+        "okay",
+        "right",
+        "sure",
+        "that is correct",
+        "that is it",
+        "thats correct",
+        "thats it",
+        "thats right",
+        "yeah",
+        "yep",
+        "yes",
+        "yes please",
+        "yes thats it",
+        "yup",
+        "对",
+        "对的",
+        "就是它",
+        "就是这个",
+        "是",
+        "是的",
+        "没错",
+    }
+)
+_NEGATIVE_VENDOR_CONFIRMATIONS = frozenset(
+    {
+        "incorrect",
+        "no",
+        "no thanks",
+        "nope",
+        "not that one",
+        "thats not it",
+        "wrong",
+        "不对",
+        "不是",
+        "不是它",
+        "不是这个",
+        "错了",
+    }
+)
+_SUGGESTED_VENDOR_CLARIFICATION_RE = re.compile(
+    r"\ADo you mean (?P<suggestions>.+)\? "
+    r"Please clarify which vendor you want me to look up\.\Z",
+    re.IGNORECASE | re.DOTALL,
+)
+_GENERIC_VENDOR_CLARIFICATION_RE = re.compile(
+    r'\A(?:I could not identify ".+"\.\s+)?'
+    r"Do you mean a specific NTU food vendor\?\s+"
+    r"Please clarify (?:the vendor name|the vendor name, cuisine, or location)\.\Z",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_VENDOR_SQL_LOOKUP_RE = re.compile(
+    r"\b(where\s+(?:is|are)|where\s+can\s+i\s+find|locate|located|locations?|"
+    r"address|opening\s+hours?|closing\s+time|find\s+(?:the\s+)?"
+    r"(?:location|address))\b",
+    re.IGNORECASE,
+)
+_VENDOR_EVIDENCE_RE = re.compile(
+    r"\b(reddit|reviews?|recommend(?:ed|ation|ations)?|suggestions?|"
+    r"opinion|opinions|"
+    r"what\s+do\s+people\s+say|vibe)\b",
+    re.IGNORECASE,
+)
+_MULTI_VENDOR_HINT_RE = re.compile(
+    r"(?:[,;/+&\r\n]|[；、]|\b(?:and|or|vs|versus)\b)",
+    re.IGNORECASE,
+)
+_GENERIC_RECOMMEND_TARGET_RE = re.compile(
+    r"\brecommend(?:ed)?\s+(.+)$",
+    re.IGNORECASE,
+)
+_VENDOR_TARGET_PATTERNS = (
+    re.compile(r"\bwhere\s+(?:is|are)\s+(.+)$", re.IGNORECASE),
+    re.compile(r"\bwhere\s+can\s+i\s+find\s+(.+)$", re.IGNORECASE),
+    re.compile(r"\blocate\s+(.+)$", re.IGNORECASE),
+    re.compile(
+        r"\bshow\s+me\s+(.+?)\s+locations?\s*[?.!]*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bwhat(?:'s|\s+is)\s+(?:the\s+)?(?:price|cost)\s+"
+        r"(?:at|for|of)\s+(.+)$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*is\s+(.+?)\s+(?:halal|vegetarian|vegan)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*is\s+(?:halal|vegetarian|vegan)(?:\s+food)?\s+"
+        r"available\s+(?:at|from)\s+(.+)$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*is\s+(.+?)\s+"
+        r"(?:cheap|expensive|pricey|affordable)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*does\s+(.+?)\s+(?:have|offer|serve|sell)\s+"
+        r"(?:halal|vegetarian|vegan)(?:\s+food)?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:recommend(?:ed|ation|ations)?|reviews?|opinions?|vibe)"
+        r"\s+(?:at|about|for|of)\s+(.+)$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bwhat\s+do\s+people\s+say\s+(?:at|about|for|of)\s+(.+)$",
+        re.IGNORECASE,
+    ),
+    _GENERIC_RECOMMEND_TARGET_RE,
+    re.compile(
+        r"^(.+?)\s+(?:reviews?|recommendations?|opinions?|vibe)\s*[?.!]*$",
+        re.IGNORECASE,
+    ),
+)
+_VENDOR_TYPE_CUE_RE = re.compile(
+    r"\b(?:bakery|bistro|cafe|café|canteen|cuisine|eatery|food\s+court|"
+    r"house|kitchen|kopitiam|restaurant|shop|stall|vendor)\b",
+    re.IGNORECASE,
+)
+_GENERIC_FOOD_TOKENS = frozenset(
+    {
+        "a",
+        "affordable",
+        "an",
+        "beef",
+        "best",
+        "ban",
+        "bak",
+        "biryani",
+        "black",
+        "bowl",
+        "bubble",
+        "burger",
+        "burgers",
+        "char",
+        "cheap",
+        "chicken",
+        "chinese",
+        "chop",
+        "chor",
+        "claypot",
+        "coffee",
+        "congee",
+        "cream",
+        "crispy",
+        "curry",
+        "delicious",
+        "dessert",
+        "desserts",
+        "dim",
+        "drink",
+        "drinks",
+        "duck",
+        "dumpling",
+        "dumplings",
+        "expensive",
+        "filling",
+        "fish",
+        "fishball",
+        "food",
+        "foo",
+        "fried",
+        "good",
+        "goreng",
+        "grilled",
+        "guo",
+        "hainanese",
+        "halal",
+        "healthy",
+        "hokkien",
+        "hot",
+        "ice",
+        "indian",
+        "italian",
+        "japanese",
+        "korean",
+        "kway",
+        "laksa",
+        "lemak",
+        "local",
+        "lor",
+        "mala",
+        "malay",
+        "meal",
+        "meals",
+        "meat",
+        "mee",
+        "mexican",
+        "mian",
+        "minced",
+        "murtabak",
+        "mutton",
+        "nasi",
+        "nice",
+        "noodle",
+        "noodles",
+        "pasta",
+        "pizza",
+        "pork",
+        "porridge",
+        "prata",
+        "png",
+        "ramen",
+        "rebus",
+        "rendang",
+        "rice",
+        "roast",
+        "roasted",
+        "roti",
+        "salad",
+        "sandwich",
+        "sandwiches",
+        "seafood",
+        "soup",
+        "soto",
+        "spicy",
+        "steamed",
+        "sum",
+        "sushi",
+        "tea",
+        "teow",
+        "thai",
+        "the",
+        "thunder",
+        "tasty",
+        "toast",
+        "tofu",
+        "tau",
+        "udon",
+        "vegan",
+        "vegetable",
+        "vegetables",
+        "vegetarian",
+        "waffle",
+        "waffles",
+        "wanton",
+        "wantons",
+        "western",
+        "xiang",
+        "yong",
+        "zi",
+    }
+)
+_GENERIC_RECOMMENDATION_TOKENS = frozenset(
+    {
+        "a",
+        "an",
+        "any",
+        "anything",
+        "around",
+        "campus",
+        "different",
+        "else",
+        "favorite",
+        "favourite",
+        "great",
+        "here",
+        "interesting",
+        "near",
+        "nearby",
+        "new",
+        "ntu",
+        "option",
+        "options",
+        "place",
+        "places",
+        "popular",
+        "restaurant",
+        "restaurants",
+        "some",
+        "something",
+        "somewhere",
+        "stall",
+        "stalls",
+        "the",
+        "to",
+        "try",
+        "vendor",
+        "vendors",
+    }
+)
+_VENDOR_CLAUSE_PREFIX_RE = re.compile(
+    r"^(?:where\s+(?:is|are)|where\s+can\s+i\s+find|"
+    r"find\s+(?:the\s+)?(?:location|address)(?:\s+of)?|"
+    r"(?:at|about|for|of))\s+",
+    re.IGNORECASE,
+)
+_NON_VENDOR_CLAUSE_RE = re.compile(
+    r"^(?:what|when|where|why|how|which|who|is|are|do|does|did|"
+    r"can|could|would|should|will|tell|show|list|give|opening|closing|"
+    r"please|thanks|also)\b",
+    re.IGNORECASE,
+)
+_TRAILING_VENDOR_DETAIL_RE = re.compile(
+    r"\s+(?:located|location|address|opening\s+hours?|closing\s+time|"
+    r"open|closed|closes?)\s*$",
+    re.IGNORECASE,
+)
+_GENERIC_VENDOR_REFERENCES = {
+    "a place",
+    "a restaurant",
+    "a stall",
+    "a vendor",
+    "food",
+    "it",
+    "restaurant",
+    "restaurants",
+    "stall",
+    "stalls",
+    "that place",
+    "the place",
+    "the restaurant",
+    "the stall",
+    "the vendor",
+    "there",
+    "vendor",
+    "vendors",
+}
+
+
+def _strip_trailing_filter_scope(
+    candidate: str,
+    filters: StructuredFilter,
+) -> str:
+    """Remove trailing location/cuisine qualifiers without losing pure filters."""
+
+    stripped = candidate
+    if filters.location:
+        without_location = re.sub(
+            rf"\s+(?:in|at|near|around)\s+(?:the\s+)?"
+            rf"{re.escape(filters.location)}\s*$",
+            "",
+            stripped,
+            flags=re.IGNORECASE,
+        ).strip()
+        if without_location:
+            stripped = without_location
+
+    if filters.cuisine:
+        without_cuisine = re.sub(
+            rf"\s+(?:(?:serving|selling|with|for)\s+)?"
+            rf"{re.escape(filters.cuisine)}(?:\s+(?:food|cuisine))?\s*$",
+            "",
+            stripped,
+            flags=re.IGNORECASE,
+        ).strip()
+        if without_cuisine:
+            stripped = without_cuisine
+    return stripped
+
+
+def _looks_like_generic_recommendation(value: str) -> bool:
+    """Return whether a target is only food or non-entity request language."""
+
+    normalized_tokens = normalize_vendor_text(value).split()
+    allowed_tokens = _GENERIC_FOOD_TOKENS | _GENERIC_RECOMMENDATION_TOKENS
+    return bool(normalized_tokens) and all(
+        token in allowed_tokens for token in normalized_tokens
+    )
+
+
+def _looks_like_vendor_brand(value: str) -> bool:
+    """Recognize a non-food entity in an explicit vendor-object phrase."""
+
+    normalized_tokens = normalize_vendor_text(value).split()
+    return (
+        bool(normalized_tokens)
+        and not _looks_like_generic_recommendation(value)
+        and any(
+            any(character.isalpha() for character in token)
+            for token in normalized_tokens
+        )
+    )
+
 
 def _is_simple_conversation(question: str) -> bool:
     normalized = re.sub(r"[^\w\s']", "", question.casefold())
     return " ".join(normalized.split()) in _SIMPLE_CONVERSATION
+
+
+def _vendor_confirmation_intent(question: str) -> str | None:
+    """Classify a short standalone reply to a vendor clarification."""
+
+    folded = question.casefold().replace("’", "'")
+    normalized = re.sub(r"[^\w\s']", " ", folded).replace("'", "")
+    normalized = " ".join(normalized.split())
+    if normalized in _AFFIRMATIVE_VENDOR_CONFIRMATIONS:
+        return "affirmative"
+    if normalized in _NEGATIVE_VENDOR_CONFIRMATIONS:
+        return "negative"
+    return None
+
+
+def _vendor_clarification_suggestions(answer: str) -> str | None:
+    """Return only the suggested-name span from a service clarification.
+
+    An empty string represents a recognized generic clarification with no
+    concrete candidate. ``None`` means the preceding answer was not one of the
+    service's vendor clarification templates.
+    """
+
+    stripped = answer.strip()
+    suggested = _SUGGESTED_VENDOR_CLARIFICATION_RE.fullmatch(stripped)
+    if suggested is not None:
+        return suggested.group("suggestions")
+    if _GENERIC_VENDOR_CLARIFICATION_RE.fullmatch(stripped) is not None:
+        return ""
+    return None
+
 
 def _is_referential(question: str) -> bool:
     return bool(_REFERENTIAL_HINTS.search(question))
@@ -288,7 +714,11 @@ class ChatService:
     ) -> ChatResponse:
         generation = self._prepare_answer(question, history=history)
         return ChatResponse(
-            answer=self._generate(generation.prompt),
+            answer=(
+                generation.direct_answer
+                if generation.direct_answer is not None
+                else self._generate(generation.prompt)
+            ),
             sources=generation.sources,
             search_type=generation.search_type,
             intent=generation.intent,
@@ -302,9 +732,12 @@ class ChatService:
     ) -> Iterator[tuple[str, str | list[ChatSource] | None]]:
         """Yield generated text deltas followed by the response sources."""
         generation = self._prepare_answer(question, history=history)
-        for text in self._generate_stream(generation.prompt):
-            if text:
-                yield "delta", text
+        if generation.direct_answer is not None:
+            yield "delta", generation.direct_answer
+        else:
+            for text in self._generate_stream(generation.prompt):
+                if text:
+                    yield "delta", text
         yield "sources", generation.sources
 
     def _prepare_answer(
@@ -323,18 +756,32 @@ class ChatService:
             ]
         )
         history = history_with_question[:-1]
-        if _is_simple_conversation(question):
+        confirmation_resolution = self._resolve_vendor_confirmation(
+            question,
+            history,
+        )
+        if isinstance(confirmation_resolution, ChatGeneration):
+            return confirmation_resolution
+
+        effective_question = confirmation_resolution or question
+        if confirmation_resolution is not None:
+            # The accepted suggestion reconstructs the original request with
+            # the official vendor name, so it is already standalone and must
+            # be re-routed as that request rather than as the bare word "yes".
+            routing_question = effective_question
+        elif _is_simple_conversation(question):
             return ChatGeneration(
                 prompt=build_prompt(question, EMPTY_CONTEXT, history=history),
                 sources=[],
                 search_type="Conversational",
                 intent=None,
             )
-        routing_question = self._resolve_routing_question(question, history)
+        else:
+            routing_question = self._resolve_routing_question(question, history)
         if self._router is None:
             logger.info("No intent router configured; using Vector path")
             return self._prepare_vector(
-                question,
+                effective_question,
                 match=None,
                 history=history,
                 retrieval_question=routing_question,
@@ -342,23 +789,174 @@ class ChatService:
             )
 
         match = self._router.classify(routing_question)
+        vendor_matches = self._match_vendor_names(routing_question)
+        if (
+            match.search_type != "SQL"
+            and self._should_force_vendor_sql(routing_question, vendor_matches)
+        ):
+            logger.info(
+                "Recognized vendor location lookup; overriding %s route with SQL",
+                match.search_type,
+            )
+            match = replace(match, search_type="SQL", tier=1)
+        if (
+            match.search_type in {"SQL", "SQL + Vector"}
+            and self._sql_store is None
+        ):
+            logger.warning(
+                "Cannot execute %s route because no SQL store is configured",
+                match.search_type,
+            )
+            return ChatGeneration(
+                prompt="",
+                sources=[],
+                search_type=match.search_type,
+                intent=match.intent_key,
+                direct_answer=(
+                    "Structured vendor search is temporarily unavailable. "
+                    "Please try again later."
+                ),
+            )
         logger.info("Executing chatbot answer via search_type=%s", match.search_type)
         if match.search_type == "SQL":
-            return self._prepare_sql(question, match, history, routing_question)
+            return self._prepare_sql(
+                effective_question,
+                match,
+                history,
+                routing_question,
+            )
         if match.search_type == "SQL + Vector":
             return self._prepare_hybrid(
-                question,
+                effective_question,
                 match,
                 history,
                 routing_question,
                 query_vector=match.query_vector,
             )
         return self._prepare_vector(
-            question,
+            effective_question,
             match,
             history=history,
             retrieval_question=routing_question,
             query_vector=match.query_vector,
+        )
+
+    def _resolve_vendor_confirmation(
+        self,
+        question: str,
+        history: list[ChatHistoryMessage],
+    ) -> str | ChatGeneration | None:
+        """Resolve yes/no replies to the immediately preceding clarification.
+
+        A positive reply is accepted only when the clarification contains one
+        distinct official vendor name and the preceding user request contains
+        one unresolved vendor-like phrase. This preserves the original intent
+        (location, price, reviews, dietary constraints, and so on) while
+        replacing only the misspelled name. Multiple branch rows with the same
+        official name intentionally remain one selectable vendor and are all
+        resolved later by normal matching.
+        """
+
+        confirmation = _vendor_confirmation_intent(question)
+        if confirmation is None or not history or history[-1].role != "assistant":
+            return None
+
+        clarification = history[-1].content
+        suggestion_text = _vendor_clarification_suggestions(clarification)
+        if suggestion_text is None:
+            return None
+
+        if confirmation == "negative":
+            logger.info("Vendor clarification was rejected by the user")
+            return self._vendor_confirmation_reply(
+                "Okay - please type the vendor name you meant, and I will look it up."
+            )
+
+        vendors = self._vendor_rows()
+        suggested_matches = match_vendor_mentions(suggestion_text, vendors)
+        suggested_names: dict[str, str] = {}
+        for _, vendor_name in suggested_matches:
+            brand_key = vendor_brand_key(vendor_name)
+            if brand_key:
+                suggested_names.setdefault(brand_key, vendor_name)
+
+        if not suggested_names:
+            logger.info("Vendor confirmation had no concrete suggestion to accept")
+            return self._vendor_confirmation_reply(
+                "I still need the vendor name because there is no specific "
+                "suggestion to confirm. Please type the vendor name you meant."
+            )
+        if len(suggested_names) > 1:
+            choices = ", ".join(suggested_names.values())
+            logger.info(
+                "Vendor confirmation was ambiguous across %d suggestions",
+                len(suggested_names),
+            )
+            return self._vendor_confirmation_reply(
+                f"I found multiple possible vendors: {choices}. Please reply "
+                "with the exact vendor name so I know which one to use."
+            )
+
+        previous_question = next(
+            (
+                message.content
+                for message in reversed(history[:-1])
+                if message.role == "user"
+            ),
+            None,
+        )
+        if previous_question is None:
+            logger.info("Vendor confirmation had no preceding user request")
+            return self._vendor_confirmation_reply(
+                "Please type the vendor name and what you want to know about it."
+            )
+
+        previous_matches = match_vendor_mentions(previous_question, vendors)
+        unresolved = self._suspected_unresolved_vendor_names(
+            previous_question,
+            vendors,
+            previous_matches,
+        )
+        if len(unresolved) != 1:
+            logger.info(
+                "Vendor confirmation could not identify one unresolved name; found %d",
+                len(unresolved),
+            )
+            return self._vendor_confirmation_reply(
+                "I could not safely connect that confirmation to one vendor. "
+                "Please type the exact vendor name and your question."
+            )
+
+        official_name = next(iter(suggested_names.values()))
+        resolved_question, replacements = re.subn(
+            re.escape(unresolved[0]),
+            lambda _match: official_name,
+            previous_question,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        if replacements != 1:
+            logger.info("Vendor confirmation target was not replaceable in prior request")
+            return self._vendor_confirmation_reply(
+                "I could not safely restore the earlier request. Please type the "
+                "exact vendor name and your question."
+            )
+
+        logger.info(
+            "Resolved vendor confirmation %r to %r",
+            question,
+            resolved_question,
+        )
+        return resolved_question
+
+    @staticmethod
+    def _vendor_confirmation_reply(answer: str) -> ChatGeneration:
+        return ChatGeneration(
+            prompt="",
+            sources=[],
+            search_type="Conversational",
+            intent=None,
+            direct_answer=answer,
         )
 
     def _resolve_routing_question(
@@ -394,6 +992,19 @@ class ChatService:
         retrieval_question: str,
         query_vector: list[float] | None,
     ) -> ChatGeneration:
+        vendors = self._vendor_rows()
+        unresolved = self._suspected_unresolved_vendor_names(
+            retrieval_question,
+            vendors,
+            match_vendor_mentions(retrieval_question, vendors),
+        )
+        if unresolved:
+            return self._prepare_vendor_clarification(
+                StructuredFilter(vendor_names=unresolved),
+                match,
+                search_type="Vector",
+            )
+
         vector_filters = self._build_vector_filters(retrieval_question)
         results = self._search_direct_reddit(retrieval_question, vector_filters)
         if not results:
@@ -432,20 +1043,75 @@ class ChatService:
         retrieval_question: str,
     ) -> ChatGeneration:
         filters = self._resolve_filters(retrieval_question)
+        if filters.vendor_names:
+            return self._prepare_vendor_clarification(filters, match)
+        if (
+            not _has_scope_constraint(filters)
+            and _VENDOR_SQL_LOOKUP_RE.search(retrieval_question)
+        ):
+            logger.info(
+                "SQL lookup did not identify a bounded vendor filter; asking "
+                "for clarification"
+            )
+            return self._prepare_vendor_clarification(filters, match)
+
         logger.info("SQL path filters: %s", _describe_filters(filters))
         results = self._sql_store.search(filters)
         logger.info("SQL path returned %d vendor result(s)", len(results))
-        if not results and filters.query_kind == "list":
-            logger.info(
-                "SQL list path returned no vendors; falling back to Vector search"
+        should_retry = _sql_results_are_empty(results) and not (
+            filters.query_kind == "count"
+            and not _has_scope_constraint(filters)
+        )
+        if should_retry:
+            retry_filters = self._retry_filters_with_llm(
+                retrieval_question,
+                query_shape=filters,
             )
-            return self._prepare_vector(
-                question,
-                match=None,
-                history=history,
-                retrieval_question=retrieval_question,
-                query_vector=match.query_vector,
-            )
+            if retry_filters is not None:
+                if retry_filters.vendor_names:
+                    return self._prepare_vendor_clarification(retry_filters, match)
+                filters = retry_filters
+                logger.info(
+                    "SQL path returned no vendors; retrying with LLM filters: %s",
+                    _describe_filters(filters),
+                )
+                results = self._sql_store.search(filters)
+                logger.info(
+                    "LLM-corrected SQL path returned %d vendor result(s)",
+                    len(results),
+                )
+
+            if _sql_results_are_empty(results):
+                clarification = self._clarify_failed_vendor_lookup(
+                    retrieval_question,
+                    filters,
+                    match,
+                )
+                if clarification is not None:
+                    return clarification
+
+            if _sql_results_are_empty(results) and _has_scope_constraint(filters):
+                logger.info(
+                    "Scoped SQL lookup still returned no vendors; returning a "
+                    "bounded no-match response"
+                )
+                return self._prepare_no_matching_vendors(
+                    match,
+                    search_type="SQL",
+                )
+
+            if _sql_results_are_empty(results) and filters.query_kind == "list":
+                logger.info(
+                    "SQL list path still returned no vendors; falling back to "
+                    "filtered Vector search"
+                )
+                return self._prepare_vector(
+                    question,
+                    match=None,
+                    history=history,
+                    retrieval_question=retrieval_question,
+                    query_vector=match.query_vector,
+                )
         context = format_sql_context(results)
         prompt = build_prompt(
             question,
@@ -470,9 +1136,55 @@ class ChatService:
         query_vector: list[float] | None,
     ) -> ChatGeneration:
         filters = self._resolve_filters(retrieval_question)
+        if filters.vendor_names:
+            return self._prepare_vendor_clarification(
+                filters,
+                match,
+                search_type="SQL + Vector",
+            )
+
         logger.info("Hybrid path filters: %s", _describe_filters(filters))
         vendor_ids = self._sql_store.resolve_vendor_ids(filters)
         logger.info("Hybrid path resolved %d vendor_id(s): %s", len(vendor_ids), vendor_ids)
+        if _has_scope_constraint(filters) and not vendor_ids:
+            retry_filters = self._retry_filters_with_llm(
+                retrieval_question,
+                query_shape=filters,
+            )
+            if retry_filters is not None:
+                if retry_filters.vendor_names:
+                    return self._prepare_vendor_clarification(
+                        retry_filters,
+                        match,
+                        search_type="SQL + Vector",
+                    )
+                filters = retry_filters
+                logger.info(
+                    "Hybrid filters resolved no vendors; retrying with LLM "
+                    "filters: %s",
+                    _describe_filters(filters),
+                )
+                vendor_ids = self._sql_store.resolve_vendor_ids(filters)
+                logger.info(
+                    "LLM-corrected hybrid path resolved %d vendor_id(s): %s",
+                    len(vendor_ids),
+                    vendor_ids,
+                )
+
+            if not vendor_ids:
+                clarification = self._clarify_failed_vendor_lookup(
+                    retrieval_question,
+                    filters,
+                    match,
+                    search_type="SQL + Vector",
+                )
+                if clarification is not None:
+                    return clarification
+                return self._prepare_no_matching_vendors(
+                    match,
+                    search_type="SQL + Vector",
+                )
+
         query_vector = query_vector or self._embedder.embed([retrieval_question])[0]
         results = self._store.search(
             query_vector,
@@ -506,42 +1218,334 @@ class ChatService:
 
     def _resolve_filters(self, question: str) -> StructuredFilter:
         filters = extract_structured_filters(question)
-        matches = self._match_vendor_names(question)
+        vendors = self._vendor_rows()
+        matches = match_vendor_mentions(question, vendors)
+        unresolved_candidates = self._suspected_unresolved_vendor_names(
+            question,
+            vendors,
+            matches,
+        )
         if matches:
             filters.vendor_ids = [vendor_id for vendor_id, _ in matches]
             if filters.location and any(
-                filters.location.casefold() in name for _, name in matches
+                normalize_vendor_text(filters.location)
+                in normalize_vendor_text(name)
+                for _, name in matches
             ):
                 filters.location = None
+            if filters.cuisine and any(
+                normalize_vendor_text(filters.cuisine)
+                in normalize_vendor_text(name)
+                for _, name in matches
+            ):
+                filters.cuisine = None
+
+        if unresolved_candidates:
+            # Keep deterministic evidence for every unresolved coordinated
+            # phrase.  The LLM may add useful structure, but an unavailable,
+            # empty, or mistaken extraction must never silently discard an
+            # unknown vendor or broaden retrieval.
+            filters.vendor_names = unresolved_candidates
+            if self._filter_extractor_llm is not None:
+                llm_filters = self._extract_llm_filters(question)
+                if llm_filters is not None:
+                    filters = _merge_structured_filters(filters, llm_filters)
         if (
             filters.query_kind == "list"
             and not filters.has_constraints
             and self._filter_extractor_llm is not None
         ):
-            filters = extract_structured_filters_llm(
+            llm_filters = self._extract_llm_filters(question)
+            if llm_filters is not None:
+                filters = llm_filters
+        return self._resolve_filter_vendor_names(filters)
+
+    @staticmethod
+    def _suspected_unresolved_vendor_names(
+        question: str,
+        vendors: list[tuple[int, str]],
+        matches: list[tuple[int, str]],
+    ) -> list[str]:
+        """Extract vendor-like clauses that deterministic matching missed.
+
+        This is intentionally conservative.  It only inspects the object of a
+        vendor lookup/evidence phrase, or coordinated clauses next to a known
+        vendor.  Question continuations (``and when does it close?``) and real
+        structured filters (``Korean``, ``North Spine``) are not vendor names.
+        """
+
+        target: str | None = None
+        for pattern in _VENDOR_TARGET_PATTERNS:
+            target_match = pattern.search(question)
+            if target_match is not None:
+                target = target_match.group(1)
+                break
+
+        if target is None:
+            if not matches or _MULTI_VENDOR_HINT_RE.search(question) is None:
+                return []
+            target = question
+
+        candidates: list[str] = []
+        seen: set[str] = set()
+        coordinated_with_known_vendor = bool(
+            matches and _MULTI_VENDOR_HINT_RE.search(target)
+        )
+        matched_name_forms = {
+            normalize_vendor_text(name) for _, name in matches
+        }
+        for clause in _MULTI_VENDOR_HINT_RE.split(target):
+            candidate = _VENDOR_CLAUSE_PREFIX_RE.sub("", clause.strip())
+            candidate = re.sub(
+                r"\s+(?:in|at)\s+ntu(?:\s+campus)?\s*$",
+                "",
+                candidate,
+                flags=re.IGNORECASE,
+            )
+            candidate = _TRAILING_VENDOR_DETAIL_RE.sub("", candidate)
+            candidate = candidate.strip(" \t\r\n?.!;:'\"")
+            if not candidate or _NON_VENDOR_CLAUSE_RE.search(candidate):
+                continue
+
+            normalized = normalize_vendor_text(candidate)
+            if not normalized or normalized in _GENERIC_VENDOR_REFERENCES:
+                continue
+            if any(normalized in name for name in matched_name_forms):
+                continue
+            if match_vendor_mentions(candidate, vendors):
+                continue
+
+            candidate_filters = extract_structured_filters(candidate)
+            candidate = _strip_trailing_filter_scope(candidate, candidate_filters)
+            normalized = normalize_vendor_text(candidate)
+            if not normalized or normalized in _GENERIC_VENDOR_REFERENCES:
+                continue
+            if any(normalized in name for name in matched_name_forms):
+                continue
+            if match_vendor_mentions(candidate, vendors):
+                continue
+            if extract_structured_filters(candidate).has_constraints:
+                continue
+            if _looks_like_generic_recommendation(candidate):
+                continue
+            if not (
+                coordinated_with_known_vendor
+                or _VENDOR_TYPE_CUE_RE.search(candidate)
+                or suggest_vendor_names([candidate], vendors, limit=1)
+                or _looks_like_vendor_brand(candidate)
+            ):
+                continue
+            if normalized in seen:
+                continue
+            candidates.append(candidate)
+            seen.add(normalized)
+        return candidates
+
+    def _extract_llm_filters(self, question: str) -> StructuredFilter | None:
+        if self._filter_extractor_llm is None:
+            return None
+        try:
+            return extract_structured_filters_llm(
                 question,
                 self._filter_extractor_llm,
             )
+        except Exception:
+            logger.warning("LLM filter extraction failed", exc_info=True)
+            return None
+
+    def _retry_filters_with_llm(
+        self,
+        question: str,
+        *,
+        query_shape: StructuredFilter,
+    ) -> StructuredFilter | None:
+        """Give a zero-result SQL lookup one deterministic-first retry."""
+        supplemental = self._extract_llm_filters(question)
+        if supplemental is None:
+            return None
+        supplemental = self._resolve_filter_vendor_names(supplemental)
+
+        # The deterministic pass defines both scope and answer shape.  The LLM
+        # may fill fields that were genuinely absent, but must never replace a
+        # known vendor/location/cuisine or turn list/count/rank into another
+        # query kind.
+        filters = replace(
+            query_shape,
+            vendor_names=(
+                list(query_shape.vendor_names)
+                if query_shape.vendor_names is not None
+                else None
+            ),
+            vendor_ids=(
+                list(query_shape.vendor_ids)
+                if query_shape.vendor_ids is not None
+                else None
+            ),
+        )
+        filters = _merge_structured_filters(filters, supplemental)
+        filters.query_kind = query_shape.query_kind
+        filters.top_n = query_shape.top_n
+        filters.sort = query_shape.sort
+        filters = self._resolve_filter_vendor_names(filters)
+        if not _has_scope_constraint(filters):
+            logger.info(
+                "Ignoring unbounded LLM retry filters to avoid an all-vendor SQL query"
+            )
+            return None
+        if filters == query_shape:
+            logger.info("Ignoring LLM retry because it added no safe constraints")
+            return None
+        return filters
+
+    def _resolve_filter_vendor_names(
+        self,
+        filters: StructuredFilter,
+    ) -> StructuredFilter:
+        """Resolve LLM vendor names and correct vendor-as-cuisine mistakes."""
+        vendors = self._vendor_rows()
+        if not vendors:
+            return filters
+
+        vendor_ids = list(filters.vendor_ids or [])
+        unresolved: list[str] = []
+        if filters.vendor_names:
+            matches, unresolved = resolve_vendor_names(filters.vendor_names, vendors)
+            vendor_ids.extend(vendor_id for vendor_id, _ in matches)
+
+        # LLMs may still put a known brand in cuisine. Correct this only when
+        # the value resolves unambiguously to a known vendor, preserving real
+        # cuisine values such as Korean or Japanese.
+        if filters.cuisine:
+            cuisine_matches, cuisine_unresolved = resolve_vendor_names(
+                [filters.cuisine],
+                vendors,
+            )
+            if cuisine_matches and not cuisine_unresolved:
+                vendor_ids.extend(vendor_id for vendor_id, _ in cuisine_matches)
+                filters.cuisine = None
+
+        filters.vendor_ids = list(dict.fromkeys(vendor_ids)) or None
+        filters.vendor_names = unresolved or None
         return filters
 
     def _match_vendor_names(self, question: str) -> list[tuple[int, str]]:
+        return match_vendor_mentions(question, self._vendor_rows())
+
+    def _vendor_rows(self) -> list[tuple[int, str]]:
         if self._session is None:
             return []
-        normalized = " ".join(re.sub(r"[^\w\s]", " ", question.casefold()).split())
-        if not normalized:
-            return []
-        padded = f" {normalized} "
+        return [
+            (vendor_id, vendor_name)
+            for vendor_id, vendor_name in self._session.execute(
+                select(Vendor.id, Vendor.name)
+            ).all()
+            if vendor_name
+        ]
 
-        matches: list[tuple[int, str]] = []
-        for vendor_id, vendor_name in self._session.execute(
-            select(Vendor.id, Vendor.name)
-        ).all():
-            name = " ".join(
-                _PARENTHETICAL_RE.sub(" ", (vendor_name or "").casefold()).split()
+    def _should_force_vendor_sql(
+        self,
+        question: str,
+        matches: list[tuple[int, str]],
+    ) -> bool:
+        return bool(
+            matches
+            and self._sql_store is not None
+            and _VENDOR_SQL_LOOKUP_RE.search(question)
+            and not _VENDOR_EVIDENCE_RE.search(question)
+        )
+
+    def _prepare_vendor_clarification(
+        self,
+        filters: StructuredFilter,
+        match: IntentMatch | None,
+        *,
+        search_type: str = "SQL",
+    ) -> ChatGeneration:
+        unresolved = filters.vendor_names or []
+        suggestions = suggest_vendor_names(unresolved, self._vendor_rows(), limit=3)
+        if suggestions:
+            choices = ", ".join(suggestions)
+            answer = (
+                f"Do you mean {choices}? Please clarify which vendor you want "
+                "me to look up."
             )
-            if name and f" {name} " in padded:
-                matches.append((vendor_id, name))
-        return matches
+        else:
+            requested = ", ".join(unresolved)
+            if requested:
+                answer = (
+                    f'I could not identify "{requested}". Do you mean a specific '
+                    "NTU food vendor? Please clarify the vendor name."
+                )
+            else:
+                answer = (
+                    "Do you mean a specific NTU food vendor? Please clarify the "
+                    "vendor name, cuisine, or location."
+                )
+        return ChatGeneration(
+            prompt="",
+            sources=[],
+            search_type=search_type,
+            intent=match.intent_key if match else None,
+            direct_answer=answer,
+        )
+
+    def _prepare_no_matching_vendors(
+        self,
+        match: IntentMatch,
+        *,
+        search_type: str,
+    ) -> ChatGeneration:
+        return ChatGeneration(
+            prompt="",
+            sources=[],
+            search_type=search_type,
+            intent=match.intent_key,
+            direct_answer=(
+                "I couldn't find any NTU food vendors matching those filters. "
+                "Please try another vendor, cuisine, or location."
+            ),
+        )
+
+    def _clarify_failed_vendor_lookup(
+        self,
+        question: str,
+        filters: StructuredFilter,
+        match: IntentMatch,
+        *,
+        search_type: str = "SQL",
+    ) -> ChatGeneration | None:
+        if filters.vendor_names:
+            return self._prepare_vendor_clarification(
+                filters,
+                match,
+                search_type=search_type,
+            )
+
+        vendors = self._vendor_rows()
+
+        # If a location-style question contains a likely misspelled vendor that
+        # the LLM placed in cuisine, offer only high-confidence name suggestions.
+        if filters.cuisine and _VENDOR_SQL_LOOKUP_RE.search(question):
+            suggestions = suggest_vendor_names(
+                [filters.cuisine],
+                vendors,
+                limit=3,
+            )
+            if suggestions:
+                return self._prepare_vendor_clarification(
+                    StructuredFilter(vendor_names=[filters.cuisine]),
+                    match,
+                    search_type=search_type,
+                )
+        if _has_scope_constraint(filters):
+            return None
+        if _VENDOR_SQL_LOOKUP_RE.search(question):
+            return self._prepare_vendor_clarification(
+                StructuredFilter(),
+                match,
+                search_type=search_type,
+            )
+        return None
 
     def _build_vector_filters(self, question: str) -> dict:
         filters: dict[str, object] = {}
@@ -712,6 +1716,80 @@ class ChatService:
         )
 
 
+def _merge_structured_filters(
+    primary: StructuredFilter,
+    supplemental: StructuredFilter,
+) -> StructuredFilter:
+    """Merge LLM-discovered names without weakening deterministic filters."""
+
+    for field in (
+        "halal",
+        "vegetarian",
+        "cuisine",
+        "location",
+        "budget",
+        "open_hours",
+        "exclude_cuisine",
+        "exclude_location",
+        "exclude_budget",
+        "exclude_open_hours",
+    ):
+        if (
+            hasattr(primary, field)
+            and hasattr(supplemental, field)
+            and getattr(primary, field) is None
+        ):
+            setattr(primary, field, getattr(supplemental, field))
+
+    # Treat names and IDs as one logical constraint.  Once deterministic
+    # matching identifies any vendor, a hallucinated LLM vendor cannot be
+    # appended or substituted during retry.
+    if not primary.vendor_names and not primary.vendor_ids:
+        primary.vendor_names = (
+            list(dict.fromkeys(supplemental.vendor_names or [])) or None
+        )
+        primary.vendor_ids = (
+            list(dict.fromkeys(supplemental.vendor_ids or [])) or None
+        )
+    return primary
+
+
+def _sql_results_are_empty(results: list[SqlResult]) -> bool:
+    """Treat a structured count of zero as a zero-result SQL lookup too."""
+
+    return not results or (
+        len(results) == 1
+        and results[0].count is not None
+        and results[0].count == 0
+    )
+
+
+def _has_scope_constraint(filters: StructuredFilter) -> bool:
+    """Return whether filters narrow retrieval to a vendor subset.
+
+    ``sort`` and ``top_n`` shape an answer but do not prevent an accidental
+    all-vendor query, so they deliberately do not count here.
+    """
+
+    return any(
+        getattr(filters, name, None) is not None
+        for name in (
+            "halal",
+            "vegetarian",
+            "cuisine",
+            "vendor_names",
+            "vendor_ids",
+            "location",
+            "budget",
+            "open_hours",
+            "exclude_cuisine",
+            "exclude_location",
+            "exclude_budget",
+            "exclude_open_hours",
+        )
+    )
+
+
 def _describe_filters(filters: StructuredFilter) -> str:
     """Render a ``StructuredFilter`` for log output."""
     fields = []
@@ -719,13 +1797,19 @@ def _describe_filters(filters: StructuredFilter) -> str:
         "halal",
         "vegetarian",
         "cuisine",
+        "vendor_names",
+        "vendor_ids",
         "location",
         "budget",
         "open_hours",
+        "exclude_cuisine",
+        "exclude_location",
+        "exclude_budget",
+        "exclude_open_hours",
         "sort",
         "top_n",
     ):
-        value = getattr(filters, name)
+        value = getattr(filters, name, None)
         if value is not None:
             fields.append(f"{name}={value}")
     fields.append(f"query_kind={filters.query_kind}")

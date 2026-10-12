@@ -398,7 +398,9 @@ def test_sql_path_returns_vendor_sources(session) -> None:
     assert "halal=yes" in captured["prompt"]
 
 
-def test_empty_sql_list_falls_back_to_vector_for_dish_terms(session) -> None:
+def test_empty_scoped_sql_list_returns_no_match_without_broad_vector(
+    session,
+) -> None:
     _seed_prompt(
         session,
         intent_key="Q-NOODLE",
@@ -420,10 +422,16 @@ def test_empty_sql_list_falls_back_to_vector_for_dish_terms(session) -> None:
         ],
         vendor_names={4: "Demo Vendor 2"},
     )
+    retrieval_embedder = RecordingEmbedder()
+
+    def reject_broad_vector(*_args, **_kwargs):
+        raise AssertionError("scoped SQL no-match must not run broad Vector")
+
+    store.search = reject_broad_vector
     service = ChatService(
-        FakeEmbedder(),
+        retrieval_embedder,
         store,
-        generate=lambda _prompt: "Try Demo Vendor 2 [1]",
+        generate=lambda _prompt: "unexpected generated answer",
         router=_make_router(session),
         sql_store=PgSqlStore(session),
         filter_extractor_llm=lambda _question: StructuredFilter(
@@ -433,11 +441,10 @@ def test_empty_sql_list_falls_back_to_vector_for_dish_terms(session) -> None:
 
     response = service.answer("noodle")
 
-    assert response.search_type == "Vector"
-    assert response.answer == "Try Demo Vendor 2 [1]"
-    assert [source.vendor_name for source in response.sources] == [
-        "Demo Vendor 2"
-    ]
+    assert response.search_type == "SQL"
+    assert "couldn't find" in response.answer
+    assert response.sources == []
+    assert retrieval_embedder.calls == []
 
 
 def test_hybrid_path_filters_vector_results(session) -> None:

@@ -7,6 +7,7 @@ unit-test path.
 
 import json
 import re
+import unicodedata
 from typing import Callable
 
 from app.core.config import settings
@@ -14,6 +15,12 @@ from app.models import ChatbotPrompt
 from app.schemas.chat import ChatHistoryMessage
 from app.services.intent_router import SEARCH_TYPES
 from app.services.structured_filters import StructuredFilter
+
+_MAX_VENDOR_NAMES = 20
+_MAX_VENDOR_NAME_LENGTH = 100
+_BUDGETS = {"cheap", "expensive"}
+_OPEN_HOURS = {"after 20:00", "late", "sunday"}
+_SORTS = {"rating", "price_asc", "price_desc"}
 
 
 def _extract_search_type(text: str) -> str:
@@ -60,10 +67,17 @@ def build_filter_extractor(
         instruction = (
             "Extract structured food filters from the question. Reply with only "
             "a JSON object using any of these keys: halal (bool), vegetarian "
-            "(bool), cuisine (str), location (str), budget (str: 'cheap' or "
+            "(bool), cuisine (str), vendor_names (array of merchant/vendor "
+            "name strings), location (str), budget (str: 'cheap' or "
             "'expensive'), open_hours (str), sort (str: 'rating', 'price_asc' "
             "or 'price_desc'), query_kind (str: 'list', 'count' or 'rank'), "
-            "top_n (int). Omit keys that are unknown.\n\n"
+            "top_n (int). Put every explicitly named merchant in vendor_names, "
+            "including multiple merchants, regardless of punctuation or how "
+            "many are named. A proper business, brand, stall, cafe, or restaurant "
+            "name is a vendor, never a cuisine. Only use cuisine for a type or "
+            "regional style of food. Apply these rules consistently to every "
+            "name rather than relying on a fixed list of examples. Omit keys "
+            "that are unknown.\n\n"
             f"Question: {question}"
         )
         try:
@@ -117,18 +131,23 @@ def _parse_filter_json(text: str) -> StructuredFilter:
         return StructuredFilter()
 
     query_kind = data.get("query_kind")
-    if query_kind not in {"list", "count", "rank"}:
+    if not isinstance(query_kind, str) or query_kind not in {
+        "list",
+        "count",
+        "rank",
+    }:
         query_kind = "list"
     return StructuredFilter(
         halal=_as_bool(data.get("halal")),
         vegetarian=_as_bool(data.get("vegetarian")),
         cuisine=_as_str(data.get("cuisine")),
         location=_as_str(data.get("location")),
-        budget=_as_str(data.get("budget")),
-        open_hours=_as_str(data.get("open_hours")),
-        sort=_as_str(data.get("sort")),
+        budget=_as_enum(data.get("budget"), _BUDGETS),
+        open_hours=_as_enum(data.get("open_hours"), _OPEN_HOURS),
+        sort=_as_enum(data.get("sort"), _SORTS),
         top_n=_as_int(data.get("top_n")),
         query_kind=query_kind,
+        vendor_names=_as_str_list(data.get("vendor_names")),
     )
 
 
@@ -140,8 +159,58 @@ def _as_str(value: object) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
+def _as_enum(value: object, allowed: set[str]) -> str | None:
+    parsed = _as_str(value)
+    normalized = parsed.casefold() if parsed is not None else None
+    return normalized if normalized in allowed else None
+
+
 def _as_int(value: object) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
+    if isinstance(value, bool):
         return None
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        raw_digits = value.strip()
+        if not raw_digits or not all(
+            character.isdecimal() for character in raw_digits
+        ):
+            return None
+
+        # Convert at most the three significant decimal digits needed for the
+        # supported 1..100 range.  This avoids Python's large-integer conversion
+        # limit for malicious or malformed strings with thousands of digits.
+        significant_digits: list[str] = []
+        for character in raw_digits:
+            digit = unicodedata.decimal(character)
+            if digit or significant_digits:
+                significant_digits.append(str(digit))
+                if len(significant_digits) > 3:
+                    return None
+        parsed = int("".join(significant_digits) or "0")
+    else:
+        return None
+    return parsed if 1 <= parsed <= 100 else None
+
+
+def _as_str_list(value: object) -> list[str] | None:
+    """Return a bounded, cleaned list of unique non-empty strings."""
+    if not isinstance(value, list):
+        return None
+
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        name = " ".join(item.split())
+        if not name or len(name) > _MAX_VENDOR_NAME_LENGTH:
+            continue
+        dedupe_key = name.casefold()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        cleaned.append(name)
+        if len(cleaned) == _MAX_VENDOR_NAMES:
+            break
+    return cleaned or None

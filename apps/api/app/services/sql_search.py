@@ -9,7 +9,7 @@ applying the ``StructuredFilter`` derived from the user's question. The
 from dataclasses import dataclass
 from typing import Protocol
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Review, Vendor
@@ -17,9 +17,26 @@ from app.services.structured_filters import StructuredFilter
 
 DEFAULT_LIMIT = 20
 _PRICE_BANDS = {
-    "cheap": ("$", "$$"),
-    "expensive": ("$$$", "$$$$"),
+    "cheap": ("$", "$$", "$1-10", "$10-20"),
+    "expensive": ("$$$", "$$$$", "$20-30"),
 }
+
+# Match a range's closing time when it is strictly later than 20:00.  This is
+# deliberately expressed as one SQL regular expression instead of enumerating
+# minutes, so both ISO times and the dotted am/pm format in the vendor CSV are
+# handled.  SQLAlchemy maps ``regexp_match`` to PostgreSQL ``~`` and installs a
+# compatible ``REGEXP`` function for SQLite tests.
+_OPEN_AFTER_20_REGEX = (
+    r"(to|till|until|[-–—]) *("
+    r"20[:.](0[1-9]|[1-5][0-9])"
+    r"|2[1-3][:.][0-5][0-9]"
+    r"|8[:.](0[1-9]|[1-5][0-9]) *p[.]? *m[.]?"
+    r"|(9|10|11)([:.][0-5][0-9])? *p[.]? *m[.]?"
+    r"|12([:.][0-5][0-9])? *a[.]? *m[.]?"
+    r"|midnight"
+    r")([^0-9a-z]|$)"
+    r"|(^|[^0-9a-z])24([ -]*(hours?|hrs?)|/7|:00)([^0-9a-z]|$)"
+)
 
 
 @dataclass
@@ -131,6 +148,14 @@ def _build_predicates(filters: StructuredFilter) -> list:
         predicates.append(Vendor.vegetarian.is_(filters.vegetarian))
     if filters.cuisine:
         predicates.append(Vendor.category.ilike(f"%{filters.cuisine}%"))
+    if filters.exclude_cuisine:
+        predicates.append(
+            not_(
+                func.coalesce(Vendor.category, "").ilike(
+                    f"%{filters.exclude_cuisine}%"
+                )
+            )
+        )
     if filters.location:
         pattern = f"%{filters.location}%"
         predicates.append(
@@ -139,11 +164,74 @@ def _build_predicates(filters: StructuredFilter) -> list:
                 Vendor.unit_code.ilike(pattern),
             )
         )
+    if filters.exclude_location:
+        pattern = f"%{filters.exclude_location}%"
+        predicates.append(
+            and_(
+                not_(func.coalesce(Vendor.location, "").ilike(pattern)),
+                not_(func.coalesce(Vendor.unit_code, "").ilike(pattern)),
+            )
+        )
     if filters.budget in _PRICE_BANDS:
         predicates.append(Vendor.price_range.in_(_PRICE_BANDS[filters.budget]))
-    if filters.open_hours == "sunday":
-        predicates.append(Vendor.opening_hours.ilike("%sunday%"))
+    if filters.exclude_budget in _PRICE_BANDS:
+        predicates.append(
+            or_(
+                Vendor.price_range.is_(None),
+                not_(
+                    Vendor.price_range.in_(
+                        _PRICE_BANDS[filters.exclude_budget]
+                    )
+                ),
+            )
+        )
+
+    if filters.open_hours:
+        open_hours_predicate = _build_open_hours_predicate(filters.open_hours)
+        if open_hours_predicate is not None:
+            predicates.append(open_hours_predicate)
+    if filters.exclude_open_hours:
+        open_hours_predicate = _build_open_hours_predicate(
+            filters.exclude_open_hours
+        )
+        if open_hours_predicate is not None:
+            predicates.append(not_(open_hours_predicate))
     return predicates
+
+
+def _build_open_hours_predicate(value: str):
+    opening_hours = func.lower(func.coalesce(Vendor.opening_hours, ""))
+
+    if value in {"after 20:00", "late"}:
+        return opening_hours.regexp_match(_OPEN_AFTER_20_REGEX)
+
+    if value == "sunday":
+        has_sunday_schedule = or_(
+            opening_hours.like("%daily%"),
+            opening_hours.like("%sunday%"),
+            opening_hours.like("%sun:%"),
+            opening_hours.like("%sun %"),
+            opening_hours.like("%sun&%"),
+            opening_hours.like("%sun &%"),
+        )
+        explicitly_closed = or_(
+            opening_hours.like("%sun: closed%"),
+            opening_hours.like("%sun - closed%"),
+            opening_hours.like("%sun closed%"),
+            opening_hours.like("%sun & ph: closed%"),
+            opening_hours.like("%sun & ph - closed%"),
+            opening_hours.like("%sun and ph: closed%"),
+            opening_hours.like("%sunday: closed%"),
+            opening_hours.like("%sunday - closed%"),
+            opening_hours.like("%sunday closed%"),
+            opening_hours.like("%closed on sun%"),
+            opening_hours.like("%closed on sunday%"),
+            opening_hours.like("%except sun%"),
+            opening_hours.like("%except sunday%"),
+        )
+        return and_(has_sunday_schedule, not_(explicitly_closed))
+
+    return None
 
 
 def _build_order_by(filters: StructuredFilter) -> list:

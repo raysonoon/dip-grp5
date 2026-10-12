@@ -1,4 +1,5 @@
 from app.services.structured_filters import (
+    LOCATION_KEYWORDS,
     SIMILARITY_THRESHOLD,
     extract_structured_filters,
     extract_structured_filters_llm,
@@ -27,15 +28,98 @@ def test_cuisine_and_location() -> None:
     assert filters.cuisine == "Korean"
     assert filters.location == "North Spine"
 
+    dietary_filters = extract_structured_filters("halal Japanese food")
+    assert dietary_filters.halal is True
+    assert dietary_filters.cuisine == "Japanese"
+
+
+def test_cuisine_and_location_keywords_require_word_boundaries() -> None:
+    assert extract_structured_filters("Indianapolis travel").cuisine is None
+    assert extract_structured_filters("spaniel cafe").location is None
+    assert extract_structured_filters("Japanese food").cuisine == "Japanese"
+
+
+def test_all_location_keywords_avoid_prefix_collisions() -> None:
+    for keyword, expected in LOCATION_KEYWORDS.items():
+        filters = extract_structured_filters(f"food near {keyword}")
+        assert filters.location == expected, keyword
+
+
+def test_negated_cuisine_and_location_become_exclusions() -> None:
+    cuisine = extract_structured_filters("not Indian food")
+    assert cuisine.cuisine is None
+    assert cuisine.exclude_cuisine == "Indian"
+    assert cuisine.has_constraints is True
+
+    location = extract_structured_filters("not near Hall 14")
+    assert location.location is None
+    assert location.exclude_location == "Hall 14"
+    assert location.has_constraints is True
+
 
 def test_budget() -> None:
     assert extract_structured_filters("cheap food").budget == "cheap"
     assert extract_structured_filters("expensive meal").budget == "expensive"
+    assert extract_structured_filters("inexpensive meal").budget == "cheap"
+    excluded = extract_structured_filters("not expensive")
+    assert excluded.budget is None
+    assert excluded.exclude_budget == "expensive"
+
+
+def test_not_too_expensive_is_an_expensive_exclusion() -> None:
+    filters = extract_structured_filters("not too expensive")
+
+    assert filters.budget is None
+    assert filters.exclude_budget == "expensive"
+    assert filters.has_constraints is True
+
+
+def test_explicit_dietary_negation() -> None:
+    assert extract_structured_filters("non-halal food").halal is False
+    assert extract_structured_filters("not halal").halal is False
+    assert extract_structured_filters("without any halal food").halal is False
+    assert extract_structured_filters("not vegetarian").vegetarian is False
+    assert extract_structured_filters("non-vegetarian").vegetarian is False
+    assert extract_structured_filters("not vegan").vegetarian is False
 
 
 def test_open_hours() -> None:
     assert extract_structured_filters("open after 8pm").open_hours == "after 20:00"
     assert extract_structured_filters("open on Sunday").open_hours == "sunday"
+    assert extract_structured_filters("open late").open_hours == "late"
+
+    q042 = extract_structured_filters(
+        "What's a good place near North Spine that's open late?"
+    )
+    assert q042.location == "North Spine"
+    assert q042.open_hours == "late"
+
+
+def test_negated_open_hours_become_exclusions() -> None:
+    sunday = extract_structured_filters("not open on Sunday")
+    assert sunday.open_hours is None
+    assert sunday.exclude_open_hours == "sunday"
+    assert sunday.has_constraints is True
+
+    late = extract_structured_filters("not open after 8pm")
+    assert late.open_hours is None
+    assert late.exclude_open_hours == "after 20:00"
+
+
+def test_positive_and_negative_constraints_are_kept_independently() -> None:
+    filters = extract_structured_filters(
+        "Indian but not Chinese near North Spine but not near Hall 14, "
+        "cheap but not premium, open after 8pm but not Sunday"
+    )
+
+    assert filters.cuisine == "Indian"
+    assert filters.exclude_cuisine == "Chinese"
+    assert filters.location == "North Spine"
+    assert filters.exclude_location == "Hall 14"
+    assert filters.budget == "cheap"
+    assert filters.exclude_budget == "expensive"
+    assert filters.open_hours == "after 20:00"
+    assert filters.exclude_open_hours == "sunday"
 
 
 def test_count_query_kind() -> None:
@@ -49,6 +133,41 @@ def test_rank_query_kind_and_top_n() -> None:
     assert filters.query_kind == "rank"
     assert filters.top_n == 10
     assert filters.sort == "rating"
+
+
+def test_rank_top_n_is_bounded_to_safe_positive_values() -> None:
+    assert extract_structured_filters("top 0010 vendors").top_n == 10
+
+    for question in (
+        "top 0 vendors",
+        "top -1 vendors",
+        "top 101 vendors",
+        "top " + ("9" * 1000) + " vendors",
+    ):
+        filters = extract_structured_filters(question)
+        assert filters.query_kind == "list"
+        assert filters.top_n is None
+
+
+def test_rank_top_n_rejects_partial_numeric_tokens() -> None:
+    for question in (
+        "top 1.5 vendors",
+        "top 10.0 vendors",
+        "top 10,000 vendors",
+        "top 1-2 vendors",
+        "top 10/20 vendors",
+        "top 10–20 vendors",
+    ):
+        filters = extract_structured_filters(question)
+        assert filters.query_kind == "list", question
+        assert filters.top_n is None, question
+
+
+def test_rank_top_n_allows_sentence_punctuation() -> None:
+    filters = extract_structured_filters("top 10, please")
+
+    assert filters.query_kind == "rank"
+    assert filters.top_n == 10
 
 
 def test_list_default() -> None:
