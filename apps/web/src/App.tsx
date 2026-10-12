@@ -9,6 +9,9 @@ import { fetchVendors } from "./api/vendors";
 import SignInPage from "./pages/SignInPage";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
+import FoodPreferencesOnboarding from "./components/FoodPreferencesOnboarding";
+import { fetchMyPreferences } from "./api/preferences.js";
+import { useAuth } from "./contexts/AuthContext";
 import VendorMap from "./pages/VendorMap";
 import NotFoundPage from "./pages/NotFoundPage";
 import {
@@ -569,18 +572,79 @@ function HomePage() {
 }
 
 function App() {
-  return (
-    <Routes>
-      <Route path="/" element={<HomePage />} />
+  const { session, loading } = useAuth();
 
-      <Route element={<Layout />}>
-        <Route path="/food" element={<FoodPage />} />
-        <Route path="/vendors/:vendorId" element={<VendorsPage />} />
-        <Route path="signin" element={<SignInPage />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Route>
-      
-    </Routes>
+  const [preferenceStatus, setPreferenceStatus] = useState<
+    "pending" | "completed" | "skipped" | null
+  >(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadPreferences() {
+      if (loading) return;
+
+      if (!session) {
+        setPreferenceStatus(null);
+        return;
+      }
+
+      try {
+        const preferences = await fetchMyPreferences();
+
+        if (!active) return;
+
+        if (!preferences) {
+          setPreferenceStatus("pending");
+          return;
+        }
+
+        if (
+          preferences.onboarding_status === "completed" ||
+          preferences.onboarding_status === "skipped"
+        ) {
+          setPreferenceStatus(preferences.onboarding_status);
+        } else {
+          setPreferenceStatus("pending");
+        }
+      } catch (error) {
+        console.error("Unable to load food preferences", error);
+      }
+    }
+
+    void loadPreferences();
+
+    return () => {
+      active = false;
+    };
+  }, [session, loading]);
+
+  return (
+    <>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+
+        <Route
+          element={
+            <Layout
+              preferenceStatus={preferenceStatus}
+              openPreferences={() => setPreferenceStatus("pending")}
+            />
+          }
+        >
+          <Route path="/food" element={<FoodPage />} />
+          <Route path="/vendors/:vendorId" element={<VendorsPage />} />
+          <Route path="signin" element={<SignInPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+      </Routes>
+
+      {session && preferenceStatus === "pending" && (
+        <FoodPreferencesOnboarding
+          onFinished={(status) => setPreferenceStatus(status)}
+        />
+      )}
+    </>
   );
 }
 
