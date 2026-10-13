@@ -240,11 +240,8 @@ function HomePage() {
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-semibold mb-7 tracking-wide">
               BUILT BY STUDENTS, FOR STUDENTS{" "}
               <TrendingUp className="w-3.5 h-3.5" />
-              BUILT BY STUDENTS, FOR STUDENTS{" "}
-              <TrendingUp className="w-3.5 h-3.5" />
             </div>
 
-            <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.05] mb-6 font-display">
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.05] mb-6 font-display">
               Find Your Next
               <span className="block text-primary italic">Favourite Stall</span>
@@ -264,7 +261,6 @@ function HomePage() {
                 ["13", "Canteens"],
               ].map(([num, label]) => (
                 <div key={label}>
-                  <div className="text-3xl font-bold text-foreground font-display">
                   <div className="text-3xl font-bold text-foreground font-display">
                     {num}
                   </div>
@@ -286,7 +282,6 @@ function HomePage() {
               Navigate Campus
             </p>
             <h2 className="text-3xl md:text-4xl font-bold mb-4 font-display">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4 font-display">
               All Food Places in 1 Map
             </h2>
             <p className="text-muted-foreground max-w-sm mx-auto text-sm leading-relaxed">
@@ -307,7 +302,6 @@ function HomePage() {
                 This Week's Picks
               </p>
               <h2 className="text-3xl md:text-4xl font-bold font-display">
-              <h2 className="text-3xl md:text-4xl font-bold font-display">
                 Trending on Campus
               </h2>
             </div>
@@ -323,21 +317,13 @@ function HomePage() {
             <p className="text-sm text-muted-foreground">
               Loading trending stalls...
             </p>
-            <p className="text-sm text-muted-foreground">
-              Loading trending stalls...
-            </p>
           ) : trendingVendors.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No stalls to show yet.
-            </p>
             <p className="text-sm text-muted-foreground">
               No stalls to show yet.
             </p>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
               {trendingVendors.map((vendor) => {
-                const rating =
-                  vendor.average_rating ?? vendor.average_google_rating;
                 const rating =
                   vendor.average_rating ?? vendor.average_google_rating;
                 return (
@@ -422,17 +408,6 @@ function HomePage() {
               </h2>
             </div>
           </div>
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="flex items-end justify-between mb-12">
-            <div>
-              <p className="text-[#1B2D4F] text-xs font-bold uppercase tracking-widest mb-2">
-                From the Community
-              </p>
-              <h2 className="text-3xl md:text-4xl font-bold font-display">
-                What students are saying
-              </h2>
-            </div>
-          </div>
 
           {reviewsLoading ? (
             <div className="grid md:grid-cols-3 gap-6">
@@ -471,44 +446,6 @@ function HomePage() {
                           <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-bold flex-shrink-0">
                             {review.user.display_name.charAt(0).toUpperCase()}
                           </div>
-          {reviewsLoading ? (
-            <div className="grid md:grid-cols-3 gap-6">
-              {[0, 1, 2].map((item) => (
-                <div
-                  key={item}
-                  className="p-6 rounded-2xl border border-border bg-background animate-pulse"
-                >
-                  <div className="h-10 w-40 bg-muted rounded mb-5" />
-                  <div className="h-4 w-32 bg-muted rounded mb-3" />
-                  <div className="h-20 bg-muted rounded" />
-                </div>
-              ))}
-            </div>
-          ) : reviews.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              No reviews available yet.
-            </div>
-          ) : (
-            <>
-              <div
-                className="grid md:grid-cols-3 gap-6"
-                onMouseEnter={() => setReviewsPaused(true)}
-                onMouseLeave={() => setReviewsPaused(false)}
-              >
-                {reviews
-                  .slice(reviewSlide * 3, reviewSlide * 3 + 3)
-                  .map((review) => (
-                    <Link
-                      key={review.id}
-                      to={`/vendors/${review.vendor.id}`}
-                      className="p-6 rounded-2xl border border-border bg-background flex flex-col hover:border-primary/40 transition-colors"
-                    >
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-bold flex-shrink-0">
-                            {review.user.display_name.charAt(0).toUpperCase()}
-                          </div>
-
                           <div className="min-w-0">
                             <div className="text-sm font-semibold truncate">
                               {review.user.display_name}
@@ -518,21 +455,6 @@ function HomePage() {
                             </div>
                           </div>
                         </div>
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold truncate">
-                              {review.user.display_name}
-                            </div>
-                            <div className="text-xs text-muted-foreground truncate">
-                              {review.user.affiliation || "NTU"}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-                          <Clock className="w-3 h-3" />
-                          {new Date(review.created_at).toLocaleDateString()}
-                        </div>
-                      </div>
                         <div className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
                           <Clock className="w-3 h-3" />
                           {new Date(review.created_at).toLocaleDateString()}
@@ -541,28 +463,14 @@ function HomePage() {
 
                       <div className="flex items-center gap-2 mb-3">
                         <StarRow rating={review.rating} />
-                      <div className="flex items-center gap-2 mb-3">
-                        <StarRow rating={review.rating} />
-
                         <span className="text-xs text-muted-foreground">
                           at
                         </span>
-                        <span className="text-xs text-muted-foreground">
-                          at
-                        </span>
-
-                        <span className="text-xs font-semibold text-primary truncate">
-                          {review.vendor.name}
-                        </span>
-                      </div>
                         <span className="text-xs font-semibold text-primary truncate">
                           {review.vendor.name}
                         </span>
                       </div>
 
-                      <p className="text-sm text-muted-foreground leading-relaxed flex-1 mb-4">
-                        &ldquo;{review.comment || ""}&rdquo;
-                      </p>
                       <p className="text-sm text-muted-foreground leading-relaxed flex-1 mb-4">
                         &ldquo;{review.comment || ""}&rdquo;
                       </p>
@@ -576,35 +484,7 @@ function HomePage() {
                     </Link>
                   ))}
               </div>
-                      <div className="flex items-center text-xs text-muted-foreground border-t border-border pt-3">
-                        <div className="flex items-center gap-1.5">
-                          <MapPin className="w-3 h-3" />
-                          {review.vendor.location || "NTU"}
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-              </div>
 
-              <div className="flex justify-center gap-2 mt-8">
-                {Array.from({ length: reviewSlideCount }).map((_, index) => (
-                  <button
-                    key={index}
-                    type="button"
-                    onClick={() => setReviewSlide(index)}
-                    aria-label={`Go to review slide ${index + 1}`}
-                    className={`w-2.5 h-2.5 rounded-full transition-colors ${
-                      reviewSlide === index
-                        ? "bg-primary"
-                        : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
-                    }`}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </section>
               <div className="flex justify-center gap-2 mt-8">
                 {Array.from({ length: reviewSlideCount }).map((_, index) => (
                   <button
@@ -645,7 +525,6 @@ function App() {
         <Route path="signin" element={<SignInPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
-      
     </Routes>
   );
 }
