@@ -11,6 +11,8 @@ import {
 import L from "leaflet";
 import { Link } from "react-router-dom";
 
+import VendorClusterLayer from "../components/VendorClusterLayer";
+import { LocationBoundaries, LocationLegend } from "../components/LocationOverlays";
 import { fetchNearbyVendors, fetchVendors } from "../api/vendors";
 import {
   formatDistance,
@@ -18,9 +20,6 @@ import {
   sortByRating,
   vendorRating,
 } from "../lib/vendorRanking";
-
-import icon from "leaflet/dist/images/marker-icon.png";
-import iconShadow from "leaflet/dist/images/marker-shadow.png";
 
 const NTU_CENTER = [1.3483, 103.6831];
 const MIN_DISTANCE_KM = 0.2;
@@ -38,22 +37,6 @@ const CAMPUS_LOCATIONS = [
   { label: "North Hill", lat: 1.3502, lng: 103.6875 },
   { label: "Pioneer Hall", lat: 1.347, lng: 103.691 },
 ];
-
-const DefaultIcon = L.icon({
-  iconUrl: icon,
-  shadowUrl: iconShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-});
-
-const SelectedIcon = L.divIcon({
-  className: "",
-  html: '<div class="w-8 h-8 rounded-full bg-primary border-4 border-white shadow-lg animate-pulse"></div>',
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-  popupAnchor: [0, -16],
-});
 
 const UserIcon = L.divIcon({
   className: "",
@@ -74,6 +57,16 @@ function hasCoordinates(vendor) {
 function ratingText(vendor) {
   const rating = vendorRating(vendor);
   return rating == null ? "No rating yet" : `⭐ ${rating.toFixed(1)}`;
+}
+
+// Extra lines shown in each clustered marker's popup (below "category · location").
+function popupExtraLines(vendor) {
+  const lines = [
+    ratingText(vendor),
+    vendor.opening_hours ?? "Opening hours not available",
+  ];
+  if (vendor.distance_m != null) lines.push(`${formatDistance(vendor.distance_m)} away`);
+  return lines;
 }
 
 function describeLocation(location, geoStatus) {
@@ -100,12 +93,13 @@ function MapViewController({ location, maxDistanceM, selected }) {
   const selectedLng = selected?.map_coordinates?.lng ?? null;
 
   useEffect(() => {
+    map.invalidateSize();
     if (lat === null || lng === null) {
-      map.setView(NTU_CENTER, 15);
+      map.setView(NTU_CENTER, 15, { animate: false });
       return;
     }
     map.fitBounds(L.latLng(lat, lng).toBounds(maxDistanceM * 2), {
-      animate: true,
+      animate: false,
       padding: [20, 20],
     });
   }, [map, lat, lng, maxDistanceM]);
@@ -125,47 +119,6 @@ function MapClickHandler({ enabled, onPick }) {
     },
   });
   return null;
-}
-
-function VendorMarker({ vendor, isSelected, onSelect }) {
-  const markerRef = useRef(null);
-  const { lat, lng } = vendor.map_coordinates;
-
-  useEffect(() => {
-    if (isSelected) markerRef.current?.openPopup();
-  }, [isSelected]);
-
-  return (
-    <Marker
-      ref={markerRef}
-      position={[lat, lng]}
-      icon={isSelected ? SelectedIcon : DefaultIcon}
-      zIndexOffset={isSelected ? 1000 : 0}
-      eventHandlers={{ click: () => onSelect(vendor.id) }}
-    >
-      <Popup>
-        <div className="min-w-[190px] font-sans">
-          <strong className="text-base font-display">{vendor.name}</strong>
-          <p className="text-sm text-muted-foreground mt-1">
-            {vendor.category ?? "Food"} · {ratingText(vendor)}
-          </p>
-          <p className="text-sm text-muted-foreground">{vendor.location ?? "NTU"}</p>
-          <p className="text-sm text-muted-foreground">
-            {vendor.opening_hours ?? "Opening hours not available"}
-          </p>
-          {vendor.distance_m != null && (
-            <p className="text-sm font-semibold mt-1">{formatDistance(vendor.distance_m)} away</p>
-          )}
-          <Link
-            to={`/vendors/${vendor.id}`}
-            className="text-primary text-sm font-semibold hover:underline block mt-2"
-          >
-            View More →
-          </Link>
-        </div>
-      </Popup>
-    </Marker>
-  );
 }
 
 function RecommendationItem({ vendor, rank, isSelected, onSelect, itemRef }) {
@@ -222,6 +175,7 @@ export default function MapPage() {
   const [distancePriority, setDistancePriority] = useState(50); // 0 = rating, 100 = distance
 
   const [vendors, setVendors] = useState([]);
+  const [allVendors, setAllVendors] = useState([]); // unfiltered, for stable location boundaries
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
@@ -265,6 +219,17 @@ export default function MapPage() {
   useEffect(() => {
     requestLocation();
   }, [requestLocation]);
+
+  // All vendors once, so the colour-coded location boundaries don't change with filters.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchVendors("", controller.signal)
+      .then(setAllVendors)
+      .catch((error) => {
+        if (error.name !== "AbortError") console.error("Could not load vendor boundaries", error);
+      });
+    return () => controller.abort();
+  }, []);
 
   // Nearby vendors (distance from PostGIS) when we have a location, otherwise everything.
   useEffect(() => {
@@ -310,7 +275,9 @@ export default function MapPage() {
     return sortByRating(vendors.filter((vendor) => (vendorRating(vendor) ?? 0) >= minRating));
   }, [hasLocation, vendors, maxDistanceM, distancePriority, minRating]);
 
-  const mappedVendors = recommendations.filter(hasCoordinates);
+  // Memoised: the cluster layer rebuilds whenever this array's identity changes.
+  const mappedVendors = useMemo(() => recommendations.filter(hasCoordinates), [recommendations]);
+  const allMappedVendors = useMemo(() => allVendors.filter(hasCoordinates), [allVendors]);
   const selectedVendor = recommendations.find((vendor) => vendor.id === selectedId) ?? null;
 
   useEffect(() => {
@@ -484,6 +451,8 @@ export default function MapPage() {
             />
             <MapClickHandler enabled={pickMode} onPick={handleMapPick} />
 
+            <LocationBoundaries vendors={allMappedVendors} />
+
             {hasLocation && (
               <>
                 <Circle
@@ -497,14 +466,14 @@ export default function MapPage() {
               </>
             )}
 
-            {mappedVendors.map((vendor) => (
-              <VendorMarker
-                key={vendor.id}
-                vendor={vendor}
-                isSelected={vendor.id === selectedId}
-                onSelect={setSelectedId}
-              />
-            ))}
+            <VendorClusterLayer
+              vendors={mappedVendors}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              getExtraLines={popupExtraLines}
+            />
+
+            <LocationLegend vendors={allMappedVendors} />
           </MapContainer>
         </div>
 
