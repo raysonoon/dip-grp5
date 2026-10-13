@@ -351,7 +351,6 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
             to="/food"
             onClick={() => setMobileMenuOpen(false)}
             className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => setMobileMenuOpen(false)}
           >
             Discover
           </Link>
