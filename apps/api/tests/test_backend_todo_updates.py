@@ -243,7 +243,7 @@ def test_review_api_uses_display_name_and_reports_edit_state(
 
     edit_response = client.patch(
         f"/reviews/{review.id}",
-        headers={"X-Dev-User-Id": str(author.id)},
+        headers={"Authorization": f"Bearer {author.id}"},
         json={"rating": 4.5, "comment": "  Updated review  "},
     )
 
@@ -267,7 +267,7 @@ def test_only_review_author_can_edit(
 
     response = client.patch(
         f"/reviews/{review.id}",
-        headers={"X-Dev-User-Id": str(other_user.id)},
+        headers={"Authorization": f"Bearer {other_user.id}"},
         json={"comment": "Not allowed"},
     )
 
@@ -280,7 +280,7 @@ def test_review_edit_requires_at_least_one_valid_field(
     session: Session,
 ) -> None:
     author, _, _, review = _seed_records(session)
-    headers = {"X-Dev-User-Id": str(author.id)}
+    headers = {"Authorization": f"Bearer {author.id}"}
 
     empty_edit = client.patch(f"/reviews/{review.id}", headers=headers, json={})
     assert empty_edit.status_code == 422
@@ -322,7 +322,7 @@ def test_review_delete_checks_ownership_and_removes_images(
 
     forbidden = client.delete(
         f"/reviews/{review.id}",
-        headers={"X-Dev-User-Id": str(other_user.id)},
+        headers={"Authorization": f"Bearer {other_user.id}"},
     )
     assert forbidden.status_code == 403
     assert session.get(Review, review.id) is not None
@@ -330,7 +330,7 @@ def test_review_delete_checks_ownership_and_removes_images(
 
     deleted = client.delete(
         f"/reviews/{review.id}",
-        headers={"X-Dev-User-Id": str(author.id)},
+        headers={"Authorization": f"Bearer {author.id}"},
     )
     assert deleted.status_code == 204
     session.expire_all()
@@ -340,9 +340,59 @@ def test_review_delete_checks_ownership_and_removes_images(
 
     missing = client.delete(
         f"/reviews/{review.id}",
-        headers={"X-Dev-User-Id": str(author.id)},
+        headers={"Authorization": f"Bearer {author.id}"},
     )
     assert missing.status_code == 404
+
+
+def test_admin_can_delete_another_users_review_and_images(
+    client: TestClient,
+    session: Session,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    uploads_root = tmp_path / "uploads"
+    monkeypatch.setattr(image_storage, "UPLOADS_ROOT", uploads_root)
+    _, _, _, review = _seed_records(session)
+    admin = User(
+        display_name="Review Admin",
+        email_address="admin@example.com",
+        password_hash="test-hash",
+        role="admin",
+    )
+    session.add(admin)
+    image = ReviewImage(
+        review_id=review.id,
+        image_url=f"/media/review_images/{review.id}/1.png",
+        mime_type="image/png",
+        file_size_bytes=8,
+        display_order=1,
+    )
+    session.add(image)
+    session.commit()
+    session.refresh(image)
+    image_path = (
+        uploads_root / "review_images" / str(review.id) / "1.png"
+    )
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(b"test-png")
+
+    forbidden_edit = client.patch(
+        f"/reviews/{review.id}",
+        headers={"Authorization": f"Bearer {admin.id}"},
+        json={"comment": "Admin edit should remain forbidden"},
+    )
+    assert forbidden_edit.status_code == 403
+
+    deleted = client.delete(
+        f"/reviews/{review.id}",
+        headers={"Authorization": f"Bearer {admin.id}"},
+    )
+    assert deleted.status_code == 204
+    session.expire_all()
+    assert session.get(Review, review.id) is None
+    assert session.get(ReviewImage, image.id) is None
+    assert not image_path.exists()
 
 
 def test_review_vote_requires_authentication(
@@ -357,7 +407,7 @@ def test_review_vote_requires_authentication(
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Missing X-Dev-User-Id header"
+    assert response.json()["detail"] == "Missing Bearer token"
 
 
 def test_review_vote_can_be_added_retracted_and_switched(
@@ -365,7 +415,7 @@ def test_review_vote_can_be_added_retracted_and_switched(
     session: Session,
 ) -> None:
     author, _, _, review = _seed_records(session)
-    headers = {"X-Dev-User-Id": str(author.id)}
+    headers = {"Authorization": f"Bearer {author.id}"}
 
     upvote = client.post(
         f"/reviews/{review.id}/vote",
@@ -440,14 +490,14 @@ def test_review_votes_are_independent_and_do_not_change_rating(
 
     first_vote = client.post(
         f"/reviews/{review.id}/vote",
-        headers={"X-Dev-User-Id": str(author.id)},
+        headers={"Authorization": f"Bearer {author.id}"},
         json={"vote": "up"},
     )
     assert first_vote.status_code == 200
 
     second_vote = client.post(
         f"/reviews/{review.id}/vote",
-        headers={"X-Dev-User-Id": str(other_user.id)},
+        headers={"Authorization": f"Bearer {other_user.id}"},
         json={"vote": "up"},
     )
     assert second_vote.status_code == 200
@@ -456,7 +506,7 @@ def test_review_votes_are_independent_and_do_not_change_rating(
 
     authenticated_get = client.get(
         f"/reviews/{review.id}",
-        headers={"X-Dev-User-Id": str(author.id)},
+        headers={"Authorization": f"Bearer {author.id}"},
     )
     assert authenticated_get.status_code == 200
     assert authenticated_get.json()["upvote_count"] == 2

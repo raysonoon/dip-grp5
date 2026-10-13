@@ -74,11 +74,9 @@ def _fake_response() -> ChatResponse:
 def test_chat_stream_route_returns_deltas_then_sources(client: TestClient) -> None:
     fake_service = FakeChatService(_fake_response())
     app.dependency_overrides[dependencies.get_chat_service] = lambda: fake_service
-    app.dependency_overrides[dependencies.get_current_user] = lambda: object()
     try:
         response = client.post(
             "/chat/stream",
-            headers={"X-Dev-User-Id": "1"},
             json={
                 "session_id": "session-a",
                 "question": "What should I eat?",
@@ -105,11 +103,9 @@ def test_chat_stream_route_returns_deltas_then_sources(client: TestClient) -> No
 
 
 def test_chat_route_rejects_blank_question(client: TestClient) -> None:
-    app.dependency_overrides[dependencies.get_current_user] = lambda: object()
     try:
         response = client.post(
             "/chat/stream",
-            headers={"X-Dev-User-Id": "1"},
             json={"session_id": "session-a", "question": "   "},
         )
         assert response.status_code == 422
@@ -120,11 +116,9 @@ def test_chat_route_rejects_blank_question(client: TestClient) -> None:
 def test_chat_route_accepts_missing_session_id(client: TestClient) -> None:
     fake_service = FakeChatService(_fake_response())
     app.dependency_overrides[dependencies.get_chat_service] = lambda: fake_service
-    app.dependency_overrides[dependencies.get_current_user] = lambda: object()
     try:
         response = client.post(
             "/chat/stream",
-            headers={"X-Dev-User-Id": "1"},
             json={"question": "What should I eat?"},
         )
         assert response.status_code == 200
@@ -153,7 +147,6 @@ def test_chat_request_accepts_null_and_normalizes_supplied_session_id() -> None:
 def test_chat_route_drops_oldest_messages_per_role(client: TestClient) -> None:
     fake_service = FakeChatService(_fake_response())
     app.dependency_overrides[dependencies.get_chat_service] = lambda: fake_service
-    app.dependency_overrides[dependencies.get_current_user] = lambda: object()
     history = []
     for index in range(7):
         history.extend(
@@ -165,7 +158,6 @@ def test_chat_route_drops_oldest_messages_per_role(client: TestClient) -> None:
     try:
         response = client.post(
             "/chat/stream",
-            headers={"X-Dev-User-Id": "1"},
             json={
                 "session_id": "session-a",
                 "question": "follow up",
@@ -187,12 +179,17 @@ def test_legacy_chat_route_is_removed(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_chat_stream_requires_dev_user_header(client: TestClient) -> None:
-    response = client.post(
-        "/chat/stream",
-        json={"question": "What should I eat?"},
-    )
-    assert response.status_code == 401
+def test_chat_stream_allows_anonymous_requests(client: TestClient) -> None:
+    fake_service = FakeChatService(_fake_response())
+    app.dependency_overrides[dependencies.get_chat_service] = lambda: fake_service
+    try:
+        response = client.post(
+            "/chat/stream",
+            json={"question": "What should I eat?"},
+        )
+        assert response.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_chat_service_orchestrates_retrieval() -> None:

@@ -1,6 +1,5 @@
 import {
   apiClient,
-  DEV_USER_TOKEN,
   ApiAuthConfigurationError,
   ApiError,
   ApiNetworkError,
@@ -8,6 +7,9 @@ import {
   ApiTimeoutError,
   apiUrl,
 } from "./client.js";
+import { getAccessToken } from "../lib/auth.js";
+
+const REVIEW_AUTH_MESSAGE = "Sign in to submit a review";
 
 function objectValue(value, label) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -116,7 +118,7 @@ export function parseReviewList(value) {
 export async function fetchReviews(limit = 15, offset = 0, signal) {
   const payload = await apiClient.get(
     `/reviews?limit=${limit}&offset=${offset}`,
-    { auth: DEV_USER_TOKEN !== null, signal },
+    { auth: false, signal },
   );
   return parseReviewList(payload);
 }
@@ -130,27 +132,28 @@ export async function fetchVendorReviews(vendorId, { limit = 10, offset = 0, sig
   });
   const payload = await apiClient.get(
     `/reviews?${params.toString()}`,
-    { auth: DEV_USER_TOKEN !== null, signal },
+    { auth: false, signal },
   );
   return parseReviewList(payload);
 }
 
 export function createReview(review) {
-  return apiClient.post("/reviews", review);
+  return apiClient.post("/reviews", review, { authMessage: REVIEW_AUTH_MESSAGE });
 }
 
 export function updateReview(reviewId, review) {
-  return apiClient.patch(`/reviews/${reviewId}`, review);
+  return apiClient.patch(`/reviews/${reviewId}`, review, { authMessage: REVIEW_AUTH_MESSAGE });
 }
 
 export function deleteReview(reviewId) {
-  return apiClient.delete(`/reviews/${reviewId}`);
+  return apiClient.delete(`/reviews/${reviewId}`, { authMessage: REVIEW_AUTH_MESSAGE });
 }
 
 export async function voteReview(reviewId, vote) {
   const payload = await apiClient.post(
     `/reviews/${reviewId}/vote`,
     { vote },
+    { authMessage: REVIEW_AUTH_MESSAGE },
   );
 
   const result = objectValue(payload, "review vote");
@@ -178,8 +181,9 @@ export function reviewImageUrl(reviewId, imageId) {
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 async function multipartRequest(path, { method, formData, signal, timeoutMs = DEFAULT_TIMEOUT_MS }) {
-  if (DEV_USER_TOKEN === null) throw new ApiAuthConfigurationError();
-  const headers = { "X-Dev-User-Id": DEV_USER_TOKEN };
+  const accessToken = await getAccessToken();
+  if (!accessToken) throw new ApiAuthConfigurationError(REVIEW_AUTH_MESSAGE);
+  const headers = { Authorization: `Bearer ${accessToken}` };
 
   const controller = new AbortController();
   let timedOut = false;

@@ -1,14 +1,6 @@
-const ENVIRONMENT = import.meta.env ?? globalThis.process?.env ?? {};
-function configuredDevUserToken() {
-  const configuredDevUserId = String(ENVIRONMENT.VITE_DEV_USER_ID ?? "").trim();
-  return /^[1-9]\d*$/.test(configuredDevUserId) ? configuredDevUserId : null;
-}
+import { getAccessToken } from "../lib/auth.js";
 
-export const DEV_USER_TOKEN = configuredDevUserToken();
-export const DEV_USER_ID = DEV_USER_TOKEN === null ? null : Number(DEV_USER_TOKEN);
-export function getDevUserToken() {
-  return configuredDevUserToken();
-}
+const ENVIRONMENT = import.meta.env ?? globalThis.process?.env ?? {};
 export const API_BASE_URL = String(ENVIRONMENT.VITE_API_BASE_URL ?? "")
   .trim()
   .replace(/\/+$/, "");
@@ -48,8 +40,8 @@ export class ApiTimeoutError extends Error {
 }
 
 export class ApiAuthConfigurationError extends Error {
-  constructor() {
-    super("Set VITE_DEV_USER_ID to a seeded user ID before changing reviews");
+  constructor(message = "Sign in before using this authenticated API action") {
+    super(message);
     this.name = "ApiAuthConfigurationError";
   }
 }
@@ -79,13 +71,15 @@ async function request(
     body,
     signal,
     auth = true,
+    authMessage,
     timeoutMs = DEFAULT_TIMEOUT_MS,
   } = {},
 ) {
   const headers = {};
   if (auth) {
-    if (DEV_USER_TOKEN === null) throw new ApiAuthConfigurationError();
-    headers["X-Dev-User-Id"] = DEV_USER_TOKEN;
+    const accessToken = await getAccessToken();
+    if (!accessToken) throw new ApiAuthConfigurationError(authMessage);
+    headers.Authorization = `Bearer ${accessToken}`;
   }
   if (body !== undefined) headers["Content-Type"] = "application/json";
 

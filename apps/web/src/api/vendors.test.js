@@ -37,7 +37,7 @@ test("fetchVendorById finds a backend vendor by its integer id", async (context)
   globalThis.fetch = async (path, options) => {
     assert.equal(path, "/vendors?limit=100&offset=0");
     assert.equal(options.method, "GET");
-    assert.equal(options.headers["X-Dev-User-Id"], undefined);
+    assert.equal(options.headers.Authorization, undefined);
     return jsonResponse({ items: [VENDOR], total: 1, limit: 100, offset: 0 });
   };
 

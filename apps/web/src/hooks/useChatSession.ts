@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
 import { chatErrorMessage, streamChat, trimChatHistory } from "../api/chat";
+import { useAuth } from "../contexts/AuthContext";
 
-const CHAT_GREETING = "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!";
+const ANONYMOUS_CHAT_GREETING = "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!";
 
 type ChatHistoryMessage = {
   role: "user" | "assistant";
@@ -20,12 +21,23 @@ function createChatSessionId() {
     ?? `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function initialChatMessages(): ChatUiMessage[] {
-  return [{ role: "bot", text: CHAT_GREETING }];
+function initialChatMessages(displayName: string | null): ChatUiMessage[] {
+  const greeting = displayName
+    ? `Hey ${displayName}! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!`
+    : ANONYMOUS_CHAT_GREETING;
+  return [{ role: "bot", text: greeting }];
 }
 
 export function useChatSession() {
-  const [messages, setMessages] = useState<ChatUiMessage[]>(initialChatMessages);
+  const { user } = useAuth();
+  const metadataDisplayName = typeof user?.user_metadata?.display_name === "string"
+    && user.user_metadata.display_name.trim()
+    ? user.user_metadata.display_name.trim()
+    : null;
+  const displayName = metadataDisplayName ?? user?.email ?? null;
+  const [messages, setMessages] = useState<ChatUiMessage[]>(
+    () => initialChatMessages(displayName),
+  );
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const requestPendingRef = useRef(false);
@@ -35,6 +47,14 @@ export function useChatSession() {
   const requestIdRef = useRef(0);
 
   if (!sessionIdRef.current) sessionIdRef.current = createChatSessionId();
+
+  useEffect(() => {
+    setMessages((current) => (
+      current.length === 1 && current[0].role === "bot"
+        ? initialChatMessages(displayName)
+        : current
+    ));
+  }, [displayName]);
 
   useEffect(() => () => activeControllerRef.current?.abort(), []);
 
@@ -122,7 +142,7 @@ export function useChatSession() {
     stopResponse();
     historyRef.current = [];
     sessionIdRef.current = createChatSessionId();
-    setMessages(initialChatMessages());
+    setMessages(initialChatMessages(displayName));
     setInput("");
   }
 
