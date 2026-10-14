@@ -705,6 +705,7 @@ class ChatService:
         self._rewrite_llm = rewrite_llm
         self._session = session
         self._client = client
+        self._vendor_rows_cache: list[tuple[int, str]] | None = None
 
     def answer(
         self,
@@ -746,6 +747,9 @@ class ChatService:
         *,
         history: list[ChatHistoryMessage] | None = None,
     ) -> ChatGeneration:
+        # Keep vendor data stable and query it at most once per answer.
+        self._vendor_rows_cache = None
+
         # The current question counts as one of the five retained user messages.
         # Append it while trimming, then remove the duplicate current-question
         # entry because prompts render it separately below.
@@ -1432,15 +1436,19 @@ class ChatService:
         return match_vendor_mentions(question, self._vendor_rows())
 
     def _vendor_rows(self) -> list[tuple[int, str]]:
+        if self._vendor_rows_cache is not None:
+            return self._vendor_rows_cache
         if self._session is None:
-            return []
-        return [
+            self._vendor_rows_cache = []
+            return self._vendor_rows_cache
+        self._vendor_rows_cache = [
             (vendor_id, vendor_name)
             for vendor_id, vendor_name in self._session.execute(
                 select(Vendor.id, Vendor.name)
             ).all()
             if vendor_name
         ]
+        return self._vendor_rows_cache
 
     def _should_force_vendor_sql(
         self,
