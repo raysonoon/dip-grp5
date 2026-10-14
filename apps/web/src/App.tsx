@@ -578,6 +578,9 @@ function App() {
     "pending" | "completed" | "skipped" | null
   >(null);
 
+  const [preferenceLoadError, setPreferenceLoadError] = useState(false);
+  const [preferenceRetry, setPreferenceRetry] = useState(0);
+
   useEffect(() => {
     let active = true;
 
@@ -590,6 +593,8 @@ function App() {
       }
 
       try {
+        setPreferenceLoadError(false);
+
         const preferences = await fetchMyPreferences();
 
         if (!active) return;
@@ -609,6 +614,10 @@ function App() {
         }
       } catch (error) {
         console.error("Unable to load food preferences", error);
+
+        if (!active) return;
+
+        setPreferenceLoadError(true);
       }
     }
 
@@ -617,7 +626,7 @@ function App() {
     return () => {
       active = false;
     };
-  }, [session, loading]);
+  }, [session, loading, preferenceRetry]);
 
   return (
     <>
@@ -638,6 +647,39 @@ function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
+
+      {preferenceLoadError && (
+        <div className="fixed bottom-6 right-6 z-[110] w-[min(92vw,380px)] rounded-xl border border-border bg-card p-4 shadow-xl">
+          <p className="text-sm font-semibold text-foreground">
+            Unable to load food preferences
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            You can retry loading your preferences or close this message.
+          </p>
+
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setPreferenceLoadError(false)}
+              className="rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              Close
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPreferenceLoadError(false);
+                setPreferenceRetry((current) => current + 1);
+              }}
+              className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       {session && preferenceStatus === "pending" && (
         <FoodPreferencesOnboarding

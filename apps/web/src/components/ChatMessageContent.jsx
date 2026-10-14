@@ -39,15 +39,27 @@ function googleMapsUrl(mapsUrl) {
 
   try {
     const url = new URL(mapsUrl);
+
+    if (url.protocol !== "https:") return null;
+
     const hostname = url.hostname.toLowerCase();
+    const pathname = url.pathname.toLowerCase();
 
-    const validGoogleHost =
-      hostname === "google.com" ||
-      hostname.endsWith(".google.com") ||
+    const isGoogleMapsHost =
       hostname === "maps.google.com" ||
-      hostname === "maps.app.goo.gl";
+      /^maps\.google\.[a-z.]+$/.test(hostname);
 
-    if (!validGoogleHost) {
+    const isGoogleMapsPath =
+      (hostname === "www.google.com" ||
+        /^www\.google\.[a-z.]+$/.test(hostname) ||
+        /^google\.[a-z.]+$/.test(hostname)) &&
+      pathname.startsWith("/maps");
+
+    const isMapsShortLink =
+      hostname === "maps.app.goo.gl" ||
+      (hostname === "goo.gl" && pathname.startsWith("/maps"));
+
+    if (!isGoogleMapsHost && !isGoogleMapsPath && !isMapsShortLink) {
       return null;
     }
 

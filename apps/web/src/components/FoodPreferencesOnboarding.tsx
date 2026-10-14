@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 import { saveMyPreferences } from "../api/preferences.js";
@@ -88,6 +88,8 @@ function Chip({
 }
 
 export default function FoodPreferencesOnboarding({ onFinished }: Props) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const [allergies, setAllergies] = useState<string[]>([]);
   const [cuisines, setCuisines] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
@@ -96,6 +98,55 @@ export default function FoodPreferencesOnboarding({ onFinished }: Props) {
   const [lifestyle, setLifestyle] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+  previousFocusRef.current =
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+
+  const dialog = dialogRef.current;
+  dialog?.focus();
+
+  function handleKeyDown(event: KeyboardEvent) {
+    if (event.key !== "Tab" || !dialog) return;
+
+    const focusableElements = dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+
+    if (focusableElements.length === 0) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    if (
+      event.shiftKey &&
+      (document.activeElement === firstElement ||
+        document.activeElement === dialog)
+    ) {
+      event.preventDefault();
+      lastElement.focus();
+    } else if (
+      !event.shiftKey &&
+      document.activeElement === lastElement
+    ) {
+      event.preventDefault();
+      firstElement.focus();
+    }
+  }
+
+  document.addEventListener("keydown", handleKeyDown);
+
+  return () => {
+    document.removeEventListener("keydown", handleKeyDown);
+    previousFocusRef.current?.focus();
+  };
+}, []);
 
   async function save(status: "completed" | "skipped") {
     setSaving(true);
@@ -119,6 +170,10 @@ export default function FoodPreferencesOnboarding({ onFinished }: Props) {
           ? saveError.message
           : "Unable to save preferences",
       );
+
+      if (status === "skipped") {
+        onFinished("skipped");
+      }
     } finally {
       setSaving(false);
     }
@@ -126,10 +181,19 @@ export default function FoodPreferencesOnboarding({ onFinished }: Props) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4 py-8">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="food-preferences-title"
+        tabIndex={-1}
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl outline-none"
+      >
         <div className="flex items-start justify-between border-b border-border px-6 py-5">
           <div>
-            <h2 className="text-xl font-bold text-foreground">
+            <h2
+              id="food-preferences-title"
+              className="text-xl font-bold text-foreground">
               Tell us what you like
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
