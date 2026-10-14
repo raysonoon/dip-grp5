@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.db.chatbot_question_data import CHATBOT_QUESTION_ROWS
 from app.db.seed_reddit import seed_reddit_comments
+from app.db.seed_vendor_images import seed_vendor_images
 from app.db.session import SessionLocal
 from app.models import (
     ChatbotPrompt,
@@ -20,6 +21,7 @@ from app.models import (
     Review,
     User,
     Vendor,
+    VendorImage,
 )
 from app.models.knowledge import KnowledgeChunk
 
@@ -1170,6 +1172,10 @@ def main() -> None:
         ntu_vendors = seed_ntu_vendors(session)
         demo_coords_backfilled = seed_demo_vendor_coordinates(session)
 
+        vendor_images_created, vendor_images_skipped, vendors_missing_photos = (
+            seed_vendor_images(session)
+        )
+
         (
             google_metadata_matched,
             google_metadata_missing,
@@ -1274,6 +1280,19 @@ def main() -> None:
         f"unresolved_vendor={knowledge_unresolved}"
     )
     print(f"Vendor map coordinates: demo_backfilled={demo_coords_backfilled}")
+
+    print(
+        "Vendor images: "
+        f"created={vendor_images_created}, "
+        f"skipped={vendor_images_skipped}"
+    )
+
+    if vendors_missing_photos:
+        print("Vendors missing photos (manual upload needed):")
+        for vendor_name in vendors_missing_photos:
+            print(f"  - {vendor_name}")
+    else:
+        print("All NTU vendors have at least one image.")
 
 
 if __name__ == "__main__":
