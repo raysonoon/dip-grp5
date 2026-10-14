@@ -32,9 +32,15 @@ def _is_permitted(value: str | None) -> bool:
 
 def seed_vendor_images(
     session: Session,
+    *,
+    vendor_csv: Path = VENDOR_CSV,
+    manifest_path: Path = MANIFEST_PATH,
+    download_dir: Path = DOWNLOAD_DIR,
 ) -> tuple[int, int, list[str]]:
     """Seed permitted vendor photos from the manifest.
 
+    The manifest and downloads are produced by
+    ``data/ntu_food_scraper.py --photos-only`` (Google Maps photos).
     Existing images are never replaced. Display orders 1-3 are treated
     as fixed slots, so rerunning the seed does not duplicate images.
     """
@@ -42,7 +48,7 @@ def seed_vendor_images(
     skipped = 0
     storage = get_storage()
 
-    directory_rows = _read_csv(VENDOR_CSV)
+    directory_rows = _read_csv(vendor_csv)
     directory_names = {
         row["id"].strip(): row["name"].strip()
         for row in directory_rows
@@ -60,7 +66,12 @@ def seed_vendor_images(
         if vendor.directory_id
     }
 
-    for row in _read_csv(MANIFEST_PATH):
+    # No manifest yet: every vendor is left for manual upload.
+    manifest_rows = (
+        _read_csv(manifest_path) if manifest_path.is_file() else []
+    )
+
+    for row in manifest_rows:
         directory_id = (row.get("vendor_directory_id") or "").strip()
         filename = (row.get("filename") or "").strip()
         mime_type = (row.get("mime_type") or "").strip().casefold()
@@ -93,10 +104,10 @@ def seed_vendor_images(
             skipped += 1
             continue
 
-        image_path = (DOWNLOAD_DIR / filename).resolve()
+        image_path = (download_dir / filename).resolve()
 
         if (
-            image_path.parent != DOWNLOAD_DIR.resolve()
+            image_path.parent != download_dir.resolve()
             or not image_path.is_file()
         ):
             skipped += 1
