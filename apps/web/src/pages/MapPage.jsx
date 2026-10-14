@@ -84,15 +84,29 @@ function describeLocation(location, geoStatus) {
 }
 
 // Fits the map to the search radius, and flies to the selected vendor.
-function MapViewController({ location, maxDistanceM, selected }) {
+// An automatic (page-load) GPS fix never overrides a map the user has already moved;
+// every explicit choice (campus, map pick, "Use my location", clear) always re-fits.
+function MapViewController({ location, maxDistanceM, selected, userInteractedRef }) {
   const map = useMap();
   const lat = location?.lat ?? null;
   const lng = location?.lng ?? null;
+  const fitId = location?.fitId ?? null;
+  const isAuto = location?.auto === true;
   const selectedId = selected?.id ?? null;
   const selectedLat = selected?.map_coordinates?.lat ?? null;
   const selectedLng = selected?.map_coordinates?.lng ?? null;
 
+  const lastFitIdRef = useRef(undefined);
+  const suppressedRef = useRef(false);
+
   useEffect(() => {
+    // A new location (new fitId, or cleared) decides once whether it may re-fit.
+    if (lastFitIdRef.current !== fitId) {
+      lastFitIdRef.current = fitId;
+      suppressedRef.current = isAuto && userInteractedRef.current;
+    }
+    if (suppressedRef.current) return;
+
     map.invalidateSize();
     if (lat === null || lng === null) {
       map.setView(NTU_CENTER, 15, { animate: false });
@@ -102,13 +116,28 @@ function MapViewController({ location, maxDistanceM, selected }) {
       animate: false,
       padding: [20, 20],
     });
-  }, [map, lat, lng, maxDistanceM]);
+  }, [map, lat, lng, fitId, isAuto, maxDistanceM, userInteractedRef]);
 
   useEffect(() => {
     if (selectedId === null || selectedLat === null || selectedLng === null) return;
     map.flyTo([selectedLat, selectedLng], Math.max(map.getZoom(), 16));
   }, [map, selectedId, selectedLat, selectedLng]);
 
+  return null;
+}
+
+// Records that the user has touched the map (drag, scroll-zoom, zoom buttons, keys).
+function InteractionTracker({ interactedRef }) {
+  const map = useMap();
+  useEffect(() => {
+    const element = map.getContainer();
+    const mark = () => {
+      interactedRef.current = true;
+    };
+    const events = ["pointerdown", "wheel", "touchstart", "keydown"];
+    events.forEach((name) => element.addEventListener(name, mark, { passive: true }));
+    return () => events.forEach((name) => element.removeEventListener(name, mark));
+  }, [map, interactedRef]);
   return null;
 }
 
@@ -166,7 +195,7 @@ function RecommendationItem({ vendor, rank, isSelected, onSelect, itemRef }) {
 }
 
 export default function MapPage() {
-  const [location, setLocation] = useState(null); // { lat, lng, source, label? }
+  const [location, setLocation] = useState(null); // { lat, lng, source, label?, auto?, fitId }
   const [geoStatus, setGeoStatus] = useState("idle");
   const [pickMode, setPickMode] = useState(false);
 
@@ -181,6 +210,8 @@ export default function MapPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
   const itemRefs = useRef({});
+  const userInteractedRef = useRef(false); // has the user touched the map yet?
+  const fitCounterRef = useRef(0); // gives every explicit location choice a fresh fitId
 
   const hasLocation = location !== null;
   const lat = location?.lat ?? null;
@@ -202,6 +233,8 @@ export default function MapPage() {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
           source: "gps",
+          auto: !override, // page-load detection is automatic; the button is explicit
+          fitId: ++fitCounterRef.current,
         };
         setGeoStatus("granted");
         // A location chosen by hand wins over a late GPS fix, unless GPS was asked for.
@@ -289,12 +322,23 @@ export default function MapPage() {
     const chosen = CAMPUS_LOCATIONS.find((place) => place.label === event.target.value);
     setPickMode(false);
     if (chosen) {
-      setLocation({ lat: chosen.lat, lng: chosen.lng, source: "campus", label: chosen.label });
+      setLocation({
+        lat: chosen.lat,
+        lng: chosen.lng,
+        source: "campus",
+        label: chosen.label,
+        fitId: ++fitCounterRef.current,
+      });
     }
   };
 
   const handleMapPick = (pickedLat, pickedLng) => {
-    setLocation({ lat: pickedLat, lng: pickedLng, source: "map" });
+    setLocation({
+      lat: pickedLat,
+      lng: pickedLng,
+      source: "map",
+      fitId: ++fitCounterRef.current,
+    });
     setPickMode(false);
   };
 
@@ -444,10 +488,12 @@ export default function MapPage() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
+            <InteractionTracker interactedRef={userInteractedRef} />
             <MapViewController
               location={location}
               maxDistanceM={maxDistanceM}
               selected={selectedVendor && hasCoordinates(selectedVendor) ? selectedVendor : null}
+              userInteractedRef={userInteractedRef}
             />
             <MapClickHandler enabled={pickMode} onPick={handleMapPick} />
 
