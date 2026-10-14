@@ -2,3 +2,8 @@
 ~$*.xlsx
 .DS_Store
 .opencode
+.agents
+.venv/
+skills-lock.json
+
+

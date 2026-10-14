@@ -3,9 +3,12 @@ import pytest
 from app.services.chat import (
     DEFAULT_SYSTEM_PROMPT,
     EMPTY_CONTEXT,
+    build_contextual_question,
     build_prompt,
+    format_conversation_history,
     format_context,
 )
+from app.schemas.chat import ChatHistoryMessage
 from app.services.retrieval import KnowledgeResult
 
 
@@ -28,6 +31,7 @@ def test_build_prompt_uses_default_template() -> None:
     assert DEFAULT_SYSTEM_PROMPT.format(
         user_question="Is halal food available?",
         context="Context text here.",
+        conversation_history="(no earlier messages in this session)",
     ) == prompt
 
 
@@ -43,6 +47,55 @@ def test_build_prompt_uses_custom_template() -> None:
     template = "Question: {user_question}\n\nEvidence:\n{context}"
     prompt = build_prompt("q", "c", template=template)
     assert prompt == "Question: q\n\nEvidence:\nc"
+
+
+def test_build_prompt_adds_history_to_custom_template() -> None:
+    history = [ChatHistoryMessage(role="user", content="Tell me about Canteen 2")]
+    prompt = build_prompt(
+        "When does it close?",
+        "hours context",
+        template="Question: {user_question}\n\nEvidence:\n{context}",
+        history=history,
+    )
+    assert "User: Tell me about Canteen 2" in prompt
+    assert "Question: When does it close?" in prompt
+
+
+def test_format_conversation_history_keeps_five_messages_per_role() -> None:
+    history = [
+        message
+        for index in range(7)
+        for message in (
+            ChatHistoryMessage(role="user", content=f"user-{index}"),
+            ChatHistoryMessage(role="assistant", content=f"assistant-{index}"),
+        )
+    ]
+    rendered = format_conversation_history(history)
+    assert "user-0" not in rendered
+    assert "assistant-1" not in rendered
+    assert "user-2" in rendered
+    assert "assistant-6" in rendered
+
+
+def test_contextual_question_prioritizes_current_and_keeps_two_recent_turns() -> None:
+    history = [
+        message
+        for index in range(3)
+        for message in (
+            ChatHistoryMessage(role="user", content=f"user-{index}"),
+            ChatHistoryMessage(role="assistant", content=f"assistant-{index}"),
+        )
+    ]
+
+    rendered = build_contextual_question("current question", history)
+
+    assert rendered.startswith(
+        "=== CURRENT QUESTION (use this to determine intent) ===\ncurrent question"
+    )
+    assert "user-0" not in rendered
+    assert "assistant-0" not in rendered
+    assert "--- TURN 1 ---\nUser: user-1\nFoodie: assistant-1" in rendered
+    assert "--- TURN 2 ---\nUser: user-2\nFoodie: assistant-2" in rendered
 
 
 def test_build_prompt_rejects_unknown_placeholders() -> None:

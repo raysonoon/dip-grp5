@@ -80,6 +80,7 @@ class StructuredFilter:
     sort: str | None = None
     top_n: int | None = None
     query_kind: str = "list"
+    vendor_ids: list[int] | None = None
 
     @property
     def has_constraints(self) -> bool:
@@ -94,6 +95,7 @@ class StructuredFilter:
                 self.open_hours,
                 self.sort,
                 self.top_n,
+                self.vendor_ids,
             )
         )
 

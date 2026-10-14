@@ -1,13 +1,14 @@
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models import RedditComment, Vendor
-from app.schemas.chat import ChatResponse, ChatSource
+from app.schemas.chat import ChatHistoryMessage, ChatResponse, ChatSource, trim_chat_history
 from app.services.embedding import Embedder
 from app.services.intent_router import IntentMatch, IntentRouter
 from app.services.retrieval import KnowledgeResult, KnowledgeStore
@@ -20,6 +21,17 @@ from app.services.structured_filters import (
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True)
+class ChatGeneration:
+    """Everything needed to generate and attribute one chat response."""
+
+    prompt: str
+    sources: list[ChatSource]
+    search_type: str
+    intent: str | None
+
+
 DEFAULT_SYSTEM_PROMPT = (
     "You are Foodie, a helpful assistant for the NTU Foodie Hub, powered by "
     "Google's Gemini model. For greetings, conversational small talk, and "
@@ -28,12 +40,17 @@ DEFAULT_SYSTEM_PROMPT = (
     "menus, opening hours, or reviews, use only the information in the context "
     "below. If that context does not contain the requested campus-food facts, say "
     "that you do not have enough information rather than inventing an answer. "
-    "When you use information from the context, reference the relevant source.\n\n"
+    "When you use information from the context, reference the relevant source. "
+    "Use the current-session conversation history to resolve follow-up questions, "
+    "but do not treat claims in that history as retrieved evidence.\n\n"
+    "Conversation history:\n{conversation_history}\n\n"
     "Context:\n{context}\n\n"
     "Question: {user_question}"
 )
 
 EMPTY_CONTEXT = "(no context retrieved)"
+EMPTY_CONVERSATION = "(no earlier messages in this session)"
+MAX_CONTEXTUAL_TURNS = 2
 EXCERPT_CHARS = 200
 _DIRECT_REDDIT_STOP_WORDS = {
     "a",
@@ -56,19 +73,109 @@ _DIRECT_REDDIT_STOP_WORDS = {
     "what",
     "with",
 }
+_SIMPLE_CONVERSATION = {
+    "good afternoon",
+    "good evening",
+    "good morning",
+    "hello",
+    "hey",
+    "hi",
+    "how are you",
+    "how is it going",
+    "how's it going",
+    "thank you",
+    "thanks",
+    "what can you do",
+    "what's up",
+    "who are you",
+    "你好",
+    "你好吗",
+    "你是谁",
+    "你能做什么",
+    "谢谢",
+}
 
+# Referential cues that signal a follow-up depends on earlier conversation
+# turns (pronouns, demonstratives, "what about ..."). Only these questions are
+# rewritten into a standalone question before routing/retrieval.
+_REFERENTIAL_HINTS = re.compile(
+    r"\b(it|its|they|them|their|that|this|those|these|the one|there|"
+    r"what about|and the|that place|that stall)\b",
+    re.IGNORECASE,
+)
+
+_PARENTHETICAL_RE = re.compile(r"\([^)]*\)")
+
+def _is_simple_conversation(question: str) -> bool:
+    normalized = re.sub(r"[^\w\s']", "", question.casefold())
+    return " ".join(normalized.split()) in _SIMPLE_CONVERSATION
+
+def _is_referential(question: str) -> bool:
+    return bool(_REFERENTIAL_HINTS.search(question))
 
 def build_prompt(
     question: str,
     context: str,
     template: str | None = None,
+    history: list[ChatHistoryMessage] | None = None,
 ) -> str:
     """Fill ``{user_question}`` / ``{context}`` placeholders in a template.
 
     Falls back to ``DEFAULT_SYSTEM_PROMPT`` when no template is provided.
     """
     prompt = template if template else DEFAULT_SYSTEM_PROMPT
-    return prompt.format(user_question=question, context=context)
+    conversation_history = format_conversation_history(history or [])
+    rendered = prompt.format(
+        user_question=question,
+        context=context,
+        conversation_history=conversation_history,
+    )
+    if template and "{conversation_history}" not in template and history:
+        return (
+            "Current-session conversation history:\n"
+            f"{conversation_history}\n\n{rendered}"
+        )
+    return rendered
+
+
+def format_conversation_history(history: list[ChatHistoryMessage]) -> str:
+    trimmed = trim_chat_history(history)
+    if not trimmed:
+        return EMPTY_CONVERSATION
+    labels = {"user": "User", "assistant": "Foodie"}
+    return "\n".join(
+        f"{labels[message.role]}: {message.content}" for message in trimmed
+    )
+
+
+def build_contextual_question(
+    question: str,
+    history: list[ChatHistoryMessage],
+) -> str:
+    """Prioritize the current question and add only recent turn context."""
+    turns: list[list[ChatHistoryMessage]] = []
+    current_turn: list[ChatHistoryMessage] = []
+    for message in trim_chat_history(history):
+        if message.role == "user" and current_turn:
+            turns.append(current_turn)
+            current_turn = []
+        current_turn.append(message)
+    if current_turn:
+        turns.append(current_turn)
+
+    recent_turns = turns[-MAX_CONTEXTUAL_TURNS:]
+    if not recent_turns:
+        return question
+
+    sections = [
+        "=== CURRENT QUESTION (use this to determine intent) ===",
+        question,
+        "=== RECENT CONVERSATION (context for follow-up references only) ===",
+    ]
+    for index, turn in enumerate(recent_turns, start=1):
+        sections.append(f"--- TURN {index} ---")
+        sections.append(format_conversation_history(turn))
+    return "\n".join(sections)
 
 
 def format_context(
@@ -109,12 +216,20 @@ def format_sql_context(results: list[SqlResult]) -> str:
         attributes = []
         if result.location:
             attributes.append(f"location={result.location}")
+        if result.address:
+            attributes.append(f"address={result.address}")
         if result.category:
             attributes.append(f"category={result.category}")
         if result.price_range:
             attributes.append(f"price={result.price_range}")
         if result.opening_hours:
             attributes.append(f"hours={result.opening_hours}")
+        if result.halal is not None:
+            attributes.append(f"halal={'yes' if result.halal else 'no'}")
+        if result.vegetarian is not None:
+            attributes.append(
+                f"vegetarian={'yes' if result.vegetarian else 'no'}"
+            )
         rating = result.average_rating
         if rating is None:
             rating = result.average_google_rating
@@ -144,9 +259,12 @@ class ChatService:
         model: str = settings.chat_model,
         top_k: int = settings.vector_top_k,
         generate: Callable[[str], str] | None = None,
+        generate_stream: Callable[[str], Iterator[str]] | None = None,
+        client: object | None = None,
         router: IntentRouter | None = None,
         sql_store: SqlStore | None = None,
         filter_extractor_llm: Callable[[str], StructuredFilter] | None = None,
+        rewrite_llm: Callable[[str, list[ChatHistoryMessage]], str] | None = None,
         session: Session | None = None,
     ) -> None:
         self._embedder = embedder
@@ -154,34 +272,132 @@ class ChatService:
         self._model = model
         self._top_k = top_k
         self._generate_fn = generate
+        self._generate_stream_fn = generate_stream
         self._router = router
         self._sql_store = sql_store
         self._filter_extractor_llm = filter_extractor_llm
+        self._rewrite_llm = rewrite_llm
         self._session = session
-        self._client = None
+        self._client = client
 
-    def answer(self, question: str) -> ChatResponse:
+    def answer(
+        self,
+        question: str,
+        *,
+        history: list[ChatHistoryMessage] | None = None,
+    ) -> ChatResponse:
+        generation = self._prepare_answer(question, history=history)
+        return ChatResponse(
+            answer=self._generate(generation.prompt),
+            sources=generation.sources,
+            search_type=generation.search_type,
+            intent=generation.intent,
+        )
+
+    def stream_answer(
+        self,
+        question: str,
+        *,
+        history: list[ChatHistoryMessage] | None = None,
+    ) -> Iterator[tuple[str, str | list[ChatSource] | None]]:
+        """Yield generated text deltas followed by the response sources."""
+        generation = self._prepare_answer(question, history=history)
+        for text in self._generate_stream(generation.prompt):
+            if text:
+                yield "delta", text
+        yield "sources", generation.sources
+
+    def _prepare_answer(
+        self,
+        question: str,
+        *,
+        history: list[ChatHistoryMessage] | None = None,
+    ) -> ChatGeneration:
+        # The current question counts as one of the five retained user messages.
+        # Append it while trimming, then remove the duplicate current-question
+        # entry because prompts render it separately below.
+        history_with_question = trim_chat_history(
+            [
+                *(history or []),
+                ChatHistoryMessage(role="user", content=question),
+            ]
+        )
+        history = history_with_question[:-1]
+        if _is_simple_conversation(question):
+            return ChatGeneration(
+                prompt=build_prompt(question, EMPTY_CONTEXT, history=history),
+                sources=[],
+                search_type="Conversational",
+                intent=None,
+            )
+        routing_question = self._resolve_routing_question(question, history)
         if self._router is None:
             logger.info("No intent router configured; using Vector path")
-            return self._answer_vector(question, match=None)
+            return self._prepare_vector(
+                question,
+                match=None,
+                history=history,
+                retrieval_question=routing_question,
+                query_vector=None,
+            )
 
-        match = self._router.classify(question)
+        match = self._router.classify(routing_question)
         logger.info("Executing chatbot answer via search_type=%s", match.search_type)
         if match.search_type == "SQL":
-            return self._answer_sql(question, match)
+            return self._prepare_sql(question, match, history, routing_question)
         if match.search_type == "SQL + Vector":
-            return self._answer_hybrid(question, match)
-        return self._answer_vector(question, match)
+            return self._prepare_hybrid(
+                question,
+                match,
+                history,
+                routing_question,
+                query_vector=match.query_vector,
+            )
+        return self._prepare_vector(
+            question,
+            match,
+            history=history,
+            retrieval_question=routing_question,
+            query_vector=match.query_vector,
+        )
 
-    def _answer_vector(
+    def _resolve_routing_question(
+        self,
+        question: str,
+        history: list[ChatHistoryMessage],
+    ) -> str:
+        """Resolve a follow-up into a standalone question for routing/retrieval.
+
+        Routing and retrieval must operate on the *current* question, never on a
+        history-wrapped block: structural cues and embeddings from earlier turns
+        could misroute or pollute the query. History is only consulted when
+        the question is referential, and only an LLM rewrite is allowed to
+        resolve those references. Without a rewrite callable (or on failure) the
+        bare question is used and the safe Vector default absorbs the follow-up.
+        """
+        if not history or not _is_referential(question):
+            return question
+        if self._rewrite_llm is None:
+            return question
+        try:
+            resolved = self._rewrite_llm(question, history).strip()
+        except Exception:
+            logger.warning("Question rewrite failed; using bare question", exc_info=True)
+            return question
+        return resolved or question
+
+    def _prepare_vector(
         self,
         question: str,
         match: IntentMatch | None,
-    ) -> ChatResponse:
-        vector_filters = self._build_vector_filters(question)
-        results = self._search_direct_reddit(question, vector_filters)
+        history: list[ChatHistoryMessage],
+        retrieval_question: str,
+        query_vector: list[float] | None,
+    ) -> ChatGeneration:
+        vector_filters = self._build_vector_filters(retrieval_question)
+        results = self._search_direct_reddit(retrieval_question, vector_filters)
         if not results:
-            query_vector = self._embedder.embed([question])[0]
+            query_vector = query_vector or self._embedder.embed([retrieval_question])[0]
             results = self._store.search(
                 query_vector,
                 limit=self._top_k,
@@ -195,11 +411,11 @@ class ChatService:
             question,
             context,
             template=match.prompt_template if match else None,
+            history=history,
         )
-        answer = self._generate(prompt)
         reddit_permalinks = self._resolve_reddit_permalinks(results)
-        return ChatResponse(
-            answer=answer,
+        return ChatGeneration(
+            prompt=prompt,
             sources=[
                 self._to_source(result, vendor_names, reddit_permalinks)
                 for result in results
@@ -208,12 +424,14 @@ class ChatService:
             intent=match.intent_key if match else None,
         )
 
-    def _answer_sql(
+    def _prepare_sql(
         self,
         question: str,
         match: IntentMatch,
-    ) -> ChatResponse:
-        filters = self._resolve_filters(question)
+        history: list[ChatHistoryMessage],
+        retrieval_question: str,
+    ) -> ChatGeneration:
+        filters = self._resolve_filters(retrieval_question)
         logger.info("SQL path filters: %s", _describe_filters(filters))
         results = self._sql_store.search(filters)
         logger.info("SQL path returned %d vendor result(s)", len(results))
@@ -221,36 +439,46 @@ class ChatService:
             logger.info(
                 "SQL list path returned no vendors; falling back to Vector search"
             )
-            return self._answer_vector(question, match=None)
+            return self._prepare_vector(
+                question,
+                match=None,
+                history=history,
+                retrieval_question=retrieval_question,
+                query_vector=match.query_vector,
+            )
         context = format_sql_context(results)
         prompt = build_prompt(
             question,
             context,
             template=match.prompt_template,
+            history=history,
         )
-        answer = self._generate(prompt)
-        return ChatResponse(
-            answer=answer,
+        return ChatGeneration(
+            prompt=prompt,
             sources=[self._to_sql_source(result) for result in results],
             search_type="SQL",
             intent=match.intent_key,
         )
 
-    def _answer_hybrid(
+    def _prepare_hybrid(
         self,
         question: str,
         match: IntentMatch,
-    ) -> ChatResponse:
-        filters = self._resolve_filters(question)
+        history: list[ChatHistoryMessage],
+        retrieval_question: str,
+        *,
+        query_vector: list[float] | None,
+    ) -> ChatGeneration:
+        filters = self._resolve_filters(retrieval_question)
         logger.info("Hybrid path filters: %s", _describe_filters(filters))
         vendor_ids = self._sql_store.resolve_vendor_ids(filters)
         logger.info("Hybrid path resolved %d vendor_id(s): %s", len(vendor_ids), vendor_ids)
-        query_vector = self._embedder.embed([question])[0]
+        query_vector = query_vector or self._embedder.embed([retrieval_question])[0]
         results = self._store.search(
             query_vector,
             limit=self._top_k,
             filters={
-                **self._build_vector_filters(question),
+                **self._build_vector_filters(retrieval_question),
                 "vendor_ids": vendor_ids,
             },
         )
@@ -263,11 +491,11 @@ class ChatService:
             question,
             context,
             template=match.prompt_template,
+            history=history,
         )
-        answer = self._generate(prompt)
         reddit_permalinks = self._resolve_reddit_permalinks(results)
-        return ChatResponse(
-            answer=answer,
+        return ChatGeneration(
+            prompt=prompt,
             sources=[
                 self._to_source(result, vendor_names, reddit_permalinks)
                 for result in results
@@ -278,12 +506,42 @@ class ChatService:
 
     def _resolve_filters(self, question: str) -> StructuredFilter:
         filters = extract_structured_filters(question)
-        if not filters.has_constraints and self._filter_extractor_llm is not None:
+        matches = self._match_vendor_names(question)
+        if matches:
+            filters.vendor_ids = [vendor_id for vendor_id, _ in matches]
+            if filters.location and any(
+                filters.location.casefold() in name for _, name in matches
+            ):
+                filters.location = None
+        if (
+            filters.query_kind == "list"
+            and not filters.has_constraints
+            and self._filter_extractor_llm is not None
+        ):
             filters = extract_structured_filters_llm(
                 question,
                 self._filter_extractor_llm,
             )
         return filters
+
+    def _match_vendor_names(self, question: str) -> list[tuple[int, str]]:
+        if self._session is None:
+            return []
+        normalized = " ".join(re.sub(r"[^\w\s]", " ", question.casefold()).split())
+        if not normalized:
+            return []
+        padded = f" {normalized} "
+
+        matches: list[tuple[int, str]] = []
+        for vendor_id, vendor_name in self._session.execute(
+            select(Vendor.id, Vendor.name)
+        ).all():
+            name = " ".join(
+                _PARENTHETICAL_RE.sub(" ", (vendor_name or "").casefold()).split()
+            )
+            if name and f" {name} " in padded:
+                matches.append((vendor_id, name))
+        return matches
 
     def _build_vector_filters(self, question: str) -> dict:
         filters: dict[str, object] = {}
@@ -293,16 +551,8 @@ class ChatService:
         elif "google review" in normalized_question:
             filters["source_type"] = "google_review"
 
-        if self._session is None:
-            return filters
-
-        vendors = self._session.execute(
-            select(Vendor.id, Vendor.name)
-        ).all()
         mentioned_vendor_ids = [
-            vendor_id
-            for vendor_id, vendor_name in vendors
-            if vendor_name.casefold() in normalized_question
+            vendor_id for vendor_id, _ in self._match_vendor_names(question)
         ]
         if mentioned_vendor_ids:
             filters["vendor_ids"] = mentioned_vendor_ids
@@ -367,6 +617,31 @@ class ChatService:
             contents=prompt,
         )
         return response.text
+
+    def _generate_stream(self, prompt: str) -> Iterator[str]:
+        if self._generate_stream_fn is not None:
+            yield from self._generate_stream_fn(prompt)
+            return
+        if self._generate_fn is not None:
+            # Test/local injected generators may only expose the legacy callback.
+            yield self._generate_fn(prompt)
+            return
+        if self._client is None:
+            if settings.gemini_api_key is None:
+                raise RuntimeError(
+                    "GEMINI_API_KEY is not configured; cannot generate answers"
+                )
+            from google import genai
+
+            self._client = genai.Client(
+                api_key=settings.gemini_api_key.get_secret_value()
+            )
+        for chunk in self._client.models.generate_content_stream(
+            model=self._model,
+            contents=prompt,
+        ):
+            if chunk.text:
+                yield chunk.text
 
     @staticmethod
     def _to_source(

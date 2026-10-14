@@ -48,7 +48,7 @@ def test_review_author_can_upload_and_read_images(
     uploads_root = tmp_path / "uploads"
     monkeypatch.setattr(image_storage, "UPLOADS_ROOT", uploads_root)
     author, _, review = _seed_review(session)
-    headers = {"X-Dev-User-Id": str(author.id)}
+    headers = {"Authorization": f"Bearer {author.id}"}
 
     jpeg_response = client.post(
         f"/reviews/{review.id}/images",
@@ -102,7 +102,7 @@ def test_review_image_upload_requires_owner_and_existing_review(
     session: Session,
 ) -> None:
     _, other_user, review = _seed_review(session)
-    headers = {"X-Dev-User-Id": str(other_user.id)}
+    headers = {"Authorization": f"Bearer {other_user.id}"}
 
     forbidden = client.post(
         f"/reviews/{review.id}/images",
@@ -127,7 +127,7 @@ def test_review_image_upload_validates_file_and_limit(
 ) -> None:
     monkeypatch.setattr(image_storage, "UPLOADS_ROOT", tmp_path / "uploads")
     author, _, review = _seed_review(session)
-    headers = {"X-Dev-User-Id": str(author.id)}
+    headers = {"Authorization": f"Bearer {author.id}"}
 
     empty = client.post(
         f"/reviews/{review.id}/images",
@@ -197,8 +197,8 @@ def test_review_image_update_and_delete_manage_file_and_permissions(
     uploads_root = tmp_path / "uploads"
     monkeypatch.setattr(image_storage, "UPLOADS_ROOT", uploads_root)
     author, other_user, review = _seed_review(session)
-    author_headers = {"X-Dev-User-Id": str(author.id)}
-    other_headers = {"X-Dev-User-Id": str(other_user.id)}
+    author_headers = {"Authorization": f"Bearer {author.id}"}
+    other_headers = {"Authorization": f"Bearer {other_user.id}"}
 
     first_response = client.post(
         f"/reviews/{review.id}/images",

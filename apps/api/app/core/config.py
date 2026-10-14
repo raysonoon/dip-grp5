@@ -12,7 +12,9 @@ class Settings(BaseSettings):
     seed_test_display_name: str = "Test User"
     seed_test_email_address: str = "test-user@local.invalid"
     seed_test_password: SecretStr = SecretStr("test")
-    dev_auth_enabled: bool = False
+    supabase_jwks_url: str | None = None # No none for prod?
+    supabase_jwt_issuer: str | None = None
+    supabase_jwt_audience: str = "authenticated"
 
     storage_backend: str = "local"
     # future migration to Cloudflare R2 object storage for images

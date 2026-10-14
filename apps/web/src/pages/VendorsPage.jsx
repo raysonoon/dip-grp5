@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 
-import { DEV_USER_ID } from "../api/client";
 import {
   createReview,
   deleteReview,
@@ -11,6 +11,7 @@ import {
   reviewImageUrl,
   updateReview,
   uploadReviewImage,
+  voteReview,
 } from "../api/reviews";
 import { fetchVendorById } from "../api/vendors";
 
@@ -170,6 +171,13 @@ function UploadDropzone({ onFilesSelected, label }) {
 }
 
 export default function VendorsPage() {
+  const {
+    localUserId,
+    localUserRole,
+    user,
+    loading: authLoading,
+  } = useAuth();
+  const canVote = !authLoading && user !== null;
   const { vendorId } = useParams();
   const numericVendorId = Number(vendorId);
   const isValidVendorId = Number.isInteger(numericVendorId) && numericVendorId > 0;
@@ -190,6 +198,7 @@ export default function VendorsPage() {
   const [actionError, setActionError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [busyReviewId, setBusyReviewId] = useState(null);
+  const [votingReviewId, setVotingReviewId] = useState(null);
   const [reorderingReviewId, setReorderingReviewId] = useState(null);
   const [deletingReviewId, setDeletingReviewId] = useState(null);
   const [editingReviewId, setEditingReviewId] = useState(null);
@@ -272,6 +281,35 @@ export default function VendorsPage() {
   const changeReviewPage = (nextOffset) => {
     setActionError("");
     setReviewOffset(nextOffset);
+  };
+
+  const handleVoteReview = async (reviewId, vote) => {
+    if (!canVote) return;
+    if (votingReviewId === reviewId) return;
+
+    setVotingReviewId(reviewId);
+    setActionError("");
+
+    try {
+      const result = await voteReview(reviewId, vote);
+
+      setReviews((currentReviews) =>
+        currentReviews.map((review) =>
+          review.id === reviewId
+            ? {
+                ...review,
+                upvote_count: result.upvote_count,
+                downvote_count: result.downvote_count,
+                current_user_vote: result.current_user_vote,
+              }
+            : review,
+        ),
+      );
+    } catch (error) {
+      setActionError(displayError(error));
+    } finally {
+      setVotingReviewId(null);
+    }
   };
 
   const addNewFiles = (files) => setNewFiles((prev) => [...prev, ...files]);
@@ -542,7 +580,8 @@ export default function VendorsPage() {
           <p className="text-muted-foreground">No reviews yet. Be the first to leave one.</p>
         )}
         {!isLoading && !loadError && reviews.map((review) => {
-          const isOwnReview = review.user.id === DEV_USER_ID;
+          const isOwnReview = review.user.id === localUserId;
+          const canDeleteReview = isOwnReview || localUserRole === "admin";
           const isEditing = editingReviewId === review.id;
           const isBusy = busyReviewId === review.id;
           const isReordering = reorderingReviewId === review.id;
@@ -679,19 +718,69 @@ export default function VendorsPage() {
                   ))}
                 </div>
               )}
+              
+              {!isEditing && (
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <span className="text-sm text-muted-foreground">
+                    Helpful?
+                  </span>
 
-              {isOwnReview && !isEditing && (
-                <div className="flex gap-2 mt-3">
                   <button
                     type="button"
-                    disabled={isBusy}
-                    className={`px-3 py-1.5 rounded-lg border border-border text-sm font-medium ${
-                      isBusy ? "cursor-default opacity-70" : "cursor-pointer hover:bg-muted"
+                    disabled={!canVote || votingReviewId === review.id}
+                    onClick={() => handleVoteReview(review.id, "up")}
+                    aria-pressed={review.current_user_vote === "up"}
+                    aria-label={canVote ? "Mark review as helpful" : "Sign in to vote on reviews"}
+                    title={canVote ? undefined : "Sign in to vote on reviews"}
+                    className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${
+                      review.current_user_vote === "up"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border hover:bg-muted"
+                    } ${
+                      !canVote || votingReviewId === review.id
+                        ? "cursor-not-allowed opacity-60"
+                        : "cursor-pointer"
                     }`}
-                    onClick={() => beginEditing(review)}
                   >
-                    Edit
+                    👍 {review.upvote_count}
                   </button>
+
+                  <button
+                    type="button"
+                    disabled={!canVote || votingReviewId === review.id}
+                    onClick={() => handleVoteReview(review.id, "down")}
+                    aria-pressed={review.current_user_vote === "down"}
+                    aria-label={canVote ? "Mark review as not helpful" : "Sign in to vote on reviews"}
+                    title={canVote ? undefined : "Sign in to vote on reviews"}
+                    className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${
+                      review.current_user_vote === "down"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border hover:bg-muted"
+                    } ${
+                      !canVote || votingReviewId === review.id
+                        ? "cursor-not-allowed opacity-60"
+                        : "cursor-pointer"
+                    }`}
+                  >
+                    👎 {review.downvote_count}
+                  </button>
+                </div>
+              )}
+
+              {canDeleteReview && !isEditing && (
+                <div className="flex gap-2 mt-3">
+                  {isOwnReview && (
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      className={`px-3 py-1.5 rounded-lg border border-border text-sm font-medium ${
+                        isBusy ? "cursor-default opacity-70" : "cursor-pointer hover:bg-muted"
+                      }`}
+                      onClick={() => beginEditing(review)}
+                    >
+                      Edit
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={deletingReviewId === review.id}

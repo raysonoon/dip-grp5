@@ -147,7 +147,7 @@ def test_review_endpoints_sync_create_update_and_delete(
     user, vendor = _seed_user_and_vendor(session)
     recorder = RecordingSync()
     app.dependency_overrides[get_review_knowledge_sync] = lambda: recorder
-    headers = {"X-Dev-User-Id": str(user.id)}
+    headers = {"Authorization": f"Bearer {user.id}"}
 
     created = client.post(
         "/reviews",
@@ -184,7 +184,7 @@ def test_review_writes_persist_when_embedding_sync_fails(
 
     created = client.post(
         "/reviews",
-        headers={"X-Dev-User-Id": str(user.id)},
+        headers={"Authorization": f"Bearer {user.id}"},
         json={"vendor_id": vendor.id, "rating": 4, "comment": "Persist review"},
     )
 
@@ -196,7 +196,7 @@ def test_review_writes_persist_when_embedding_sync_fails(
 
     updated = client.patch(
         f"/reviews/{review_id}",
-        headers={"X-Dev-User-Id": str(user.id)},
+        headers={"Authorization": f"Bearer {user.id}"},
         json={"rating": 5, "comment": "Persist update"},
     )
 
