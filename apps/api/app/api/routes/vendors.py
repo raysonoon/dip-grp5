@@ -145,6 +145,7 @@ def list_vendors(
                 price_range=vendor.price_range,
                 halal=vendor.halal,
                 vegetarian=vendor.vegetarian,
+                dishes=vendor.dishes,
                 average_google_rating=(
                     None
                     if vendor.average_google_rating is None
