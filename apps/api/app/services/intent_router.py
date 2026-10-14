@@ -11,7 +11,9 @@ The router maps a user question to a ``ChatbotPrompt`` intent and its
 """
 
 import logging
+from collections import OrderedDict
 from dataclasses import dataclass
+from threading import Lock
 from typing import Callable
 
 from sqlalchemy import select
@@ -41,10 +43,15 @@ class IntentMatch:
     prompt_template: str | None = None
     tier: int = 0
     similarity: float | None = None
+    query_vector: list[float] | None = None
 
 
 class IntentRouter:
     """Classify a user question into a chatbot intent and search path."""
+
+    _prompt_embedding_cache: OrderedDict[tuple, list[list[float]]] = OrderedDict()
+    _prompt_embedding_cache_lock = Lock()
+    _prompt_embedding_cache_limit = 8
 
     def __init__(
         self,
@@ -58,9 +65,6 @@ class IntentRouter:
         self._embedder = embedder
         self._classify_llm = classify_llm
         self._threshold = threshold
-        self._embedding_cache: list[tuple[list[float], ChatbotPrompt]] | None = (
-            None
-        )
 
     def classify(self, question: str) -> IntentMatch:
         logger.info("Classifying chatbot question: %r", question)
@@ -72,18 +76,20 @@ class IntentRouter:
             return tier1
 
         try:
-            tier2 = self._tier2(question, prompts)
+            tier2, query_vector = self._tier2(question, prompts)
         except Exception:
             logger.warning(
                 "Embedding intent routing unavailable; falling back to LLM routing",
                 exc_info=True,
             )
             tier2 = None
+            query_vector = None
         if tier2 is not None:
             self._log_match(question, tier2)
             return tier2
 
         result = self._tier3(question, prompts)
+        result.query_vector = query_vector
         self._log_match(question, result)
         return result
 
@@ -112,6 +118,12 @@ class IntentRouter:
             ).all()
         )
 
+    def warm_prompt_embeddings(self) -> int:
+        """Populate the shared prompt cache without classifying a question."""
+        prompts = [prompt for prompt in self._load_prompts() if prompt.question_text]
+        self._prompt_embeddings(prompts)
+        return len(prompts)
+
     def _tier1(
         self,
         question: str,
@@ -134,17 +146,13 @@ class IntentRouter:
         self,
         question: str,
         prompts: list[ChatbotPrompt],
-    ) -> IntentMatch | None:
+    ) -> tuple[IntentMatch | None, list[float] | None]:
         if self._embedder is None:
-            return None
-        cache = self._embedding_cache
-        if cache is None:
-            texts = [prompt.question_text for prompt in prompts if prompt.question_text]
-            vectors = self._embedder.embed(texts) if texts else []
-            cache = list(zip(vectors, prompts))
-            self._embedding_cache = cache
+            return None, None
+        eligible_prompts = [prompt for prompt in prompts if prompt.question_text]
+        cache = self._prompt_embeddings(eligible_prompts)
         if not cache:
-            return None
+            return None, None
 
         query_vector = self._embedder.embed([question])[0]
         best = min(
@@ -155,8 +163,39 @@ class IntentRouter:
         if similarity > self._threshold:
             match = self._from_prompt(best[1], tier=2)
             match.similarity = similarity
-            return match
-        return None
+            match.query_vector = query_vector
+            return match, query_vector
+        return None, query_vector
+
+    def _prompt_embeddings(
+        self,
+        prompts: list[ChatbotPrompt],
+    ) -> list[tuple[list[float], ChatbotPrompt]]:
+        if not prompts:
+            return []
+        embedder_key = getattr(self._embedder, "cache_key", id(self._embedder))
+        prompt_key = tuple(
+            (
+                prompt.id,
+                prompt.updated_at.isoformat() if prompt.updated_at else None,
+                prompt.question_text,
+            )
+            for prompt in prompts
+        )
+        cache_key = (embedder_key, prompt_key)
+        with self._prompt_embedding_cache_lock:
+            vectors = self._prompt_embedding_cache.get(cache_key)
+            if vectors is not None:
+                self._prompt_embedding_cache.move_to_end(cache_key)
+        if vectors is None:
+            texts = [prompt.question_text for prompt in prompts]
+            vectors = self._embedder.embed(texts)
+            with self._prompt_embedding_cache_lock:
+                self._prompt_embedding_cache[cache_key] = vectors
+                self._prompt_embedding_cache.move_to_end(cache_key)
+                while len(self._prompt_embedding_cache) > self._prompt_embedding_cache_limit:
+                    self._prompt_embedding_cache.popitem(last=False)
+        return list(zip(vectors, prompts))
 
     def _tier3(
         self,

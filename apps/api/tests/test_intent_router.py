@@ -40,6 +40,15 @@ class FailingEmbedder(Embedder):
         raise RuntimeError("embedding quota exhausted")
 
 
+class SharedCountingEmbedder(Embedder):
+    cache_key = ("test", "shared-counting", DIMENSION)
+    calls: list[list[str]] = []
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
+        return [_vector(0) for _ in texts]
+
+
 def _seed_prompt(
     session: Session,
     *,
@@ -175,3 +184,29 @@ def test_exact_match_wins_over_embedding(session: Session) -> None:
     match = router.classify("which place has the best food?")
     assert match.tier == 1
     assert match.search_type == "Vector"
+
+
+def test_prompt_embeddings_are_reused_across_router_instances(
+    session: Session,
+) -> None:
+    _seed_prompt(
+        session,
+        intent_key="Q-CACHE",
+        question_text="Which place has the best food?",
+        search_type="Vector",
+    )
+    SharedCountingEmbedder.calls = []
+
+    first = IntentRouter(session, embedder=SharedCountingEmbedder())
+    second = IntentRouter(session, embedder=SharedCountingEmbedder())
+
+    assert first.warm_prompt_embeddings() == 1
+    second.classify("Where is the best meal?")
+
+    prompt_batches = [
+        call
+        for call in SharedCountingEmbedder.calls
+        if call == ["Which place has the best food?"]
+    ]
+    assert len(prompt_batches) == 1
+    assert len(SharedCountingEmbedder.calls) == 2

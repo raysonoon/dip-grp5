@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from app.schemas.chat import ChatHistoryMessage
 from app.services.chat import ChatService, format_sql_context
 from app.services.embedding import Embedder
 from app.services.intent_router import IntentRouter
@@ -22,6 +23,17 @@ def _vector(marker: float) -> list[float]:
 
 class FakeEmbedder(Embedder):
     def embed(self, texts: list[str]) -> list[list[float]]:
+        return [_vector(0.1) for _ in texts]
+
+
+class RecordingEmbedder(Embedder):
+    cache_key = ("test", "recording-chat-routing", DIMENSION)
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
         return [_vector(0.1) for _ in texts]
 
 
@@ -69,6 +81,8 @@ def test_format_sql_context_lists_attributes() -> None:
     rendered = format_sql_context([result])
     assert "[1] Halal Nook" in rendered
     assert "location=North Spine" in rendered
+    assert "halal=yes" in rendered
+    assert "vegetarian=no" in rendered
     assert "rating=4.5" in rendered
 
 
@@ -114,6 +128,93 @@ def test_router_none_keeps_vector_only_behavior() -> None:
     assert response.search_type == "Vector"
     assert response.intent is None
     assert response.sources[0].source_type == "internal_review"
+
+
+def test_simple_greeting_skips_routing_and_retrieval() -> None:
+    class ExplodingRouter:
+        def classify(self, _question: str):
+            raise AssertionError("simple greetings must not invoke routing")
+
+    class ExplodingEmbedder(Embedder):
+        def embed(self, _texts: list[str]) -> list[list[float]]:
+            raise AssertionError("simple greetings must not invoke embeddings")
+
+    service = ChatService(
+        ExplodingEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "Hello!",
+        router=ExplodingRouter(),
+    )
+
+    response = service.answer("Hello!")
+
+    assert response.answer == "Hello!"
+    assert response.search_type == "Conversational"
+    assert response.sources == []
+
+
+def test_food_question_with_greeting_keeps_full_routing(session) -> None:
+    _seed_prompt(
+        session,
+        intent_key="Q-HELLO-FOOD",
+        question_text="Hello, what food is good at NTU?",
+        search_type="Vector",
+    )
+    embedder = RecordingEmbedder()
+    service = ChatService(
+        embedder,
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "Answer",
+        router=IntentRouter(session, embedder=embedder),
+        sql_store=PgSqlStore(session),
+    )
+
+    response = service.answer("Hello, can you recommend good food at NTU?")
+
+    assert response.search_type == "Vector"
+    assert embedder.calls
+
+
+def test_router_query_embedding_is_reused_for_vector_retrieval(session) -> None:
+    _seed_prompt(
+        session,
+        intent_key="Q-REUSE",
+        question_text="Which place has the best food?",
+        search_type="Vector",
+    )
+    embedder = RecordingEmbedder()
+    service = ChatService(
+        embedder,
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "Answer",
+        router=IntentRouter(session, embedder=embedder),
+        sql_store=PgSqlStore(session),
+    )
+
+    service.answer("What place has the best food around?")
+
+    assert len(embedder.calls) == 2
+    assert embedder.calls[0] == ["Which place has the best food?"]
+    assert embedder.calls[1] == ["What place has the best food around?"]
+
+
+def test_structural_count_skips_llm_filter_extraction(session) -> None:
+    filter_calls: list[str] = []
+    service = ChatService(
+        FakeEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "There are no vendors.",
+        router=_make_router(session),
+        sql_store=PgSqlStore(session),
+        filter_extractor_llm=lambda question: (
+            filter_calls.append(question) or StructuredFilter()
+        ),
+    )
+
+    response = service.answer("How many vendors are there?")
+
+    assert response.search_type == "SQL"
+    assert filter_calls == []
 
 
 def test_vector_path_filters_explicit_source_and_vendor_mentions(session) -> None:
@@ -293,6 +394,8 @@ def test_sql_path_returns_vendor_sources(session) -> None:
     assert response.search_type == "SQL"
     assert response.sources[0].source_type == "vendor"
     assert response.sources[0].vendor_name == "Halal Nook"
+    assert "Halal Nook" in captured["prompt"]
+    assert "halal=yes" in captured["prompt"]
 
 
 def test_empty_sql_list_falls_back_to_vector_for_dish_terms(session) -> None:
@@ -465,3 +568,254 @@ def test_hybrid_filters_source_type() -> None:
         filters={"source_type": "internal_review"},
     )
     assert [r.source_id for r in results] == ["1"]
+
+
+def test_greeting_with_history_does_not_route_or_retrieve() -> None:
+    class ExplodingRouter:
+        def classify(self, _question: str):
+            raise AssertionError("greetings must not invoke routing")
+
+    class ExplodingEmbedder(Embedder):
+        def embed(self, _texts: list[str]) -> list[list[float]]:
+            raise AssertionError("greetings must not invoke embeddings")
+
+    service = ChatService(
+        ExplodingEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "I'm doing well!",
+        router=ExplodingRouter(),
+    )
+    history = [
+        ChatHistoryMessage(role="user", content="how many halal stalls are there?"),
+        ChatHistoryMessage(role="assistant", content="There are 17 halal stalls."),
+    ]
+
+    response = service.answer("how are you?", history=history)
+
+    assert response.search_type == "Conversational"
+    assert response.sources == []
+
+
+def test_history_structural_cue_does_not_force_sql(session) -> None:
+    # The history contains "how many" (a structural SQL cue), but the current
+    # question is unrelated and self-contained, so routing must use the bare
+    # question rather than inheriting SQL from history.
+    _seed_prompt(
+        session,
+        intent_key="Q-VIBE",
+        question_text="what is the vibe at quad cafe?",
+        search_type="Vector",
+    )
+    embedder = RecordingEmbedder()
+    service = ChatService(
+        embedder,
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "Answer",
+        router=IntentRouter(session, embedder=embedder),
+        sql_store=PgSqlStore(session),
+    )
+    history = [
+        ChatHistoryMessage(role="user", content="how many halal stalls are there?"),
+        ChatHistoryMessage(role="assistant", content="There are 17 halal stalls."),
+    ]
+
+    response = service.answer("what is the vibe at quad cafe?", history=history)
+
+    assert response.search_type == "Vector"
+    assert embedder.calls[0] == ["what is the vibe at quad cafe?"]
+
+
+def test_referential_followup_routes_on_rewritten_question(session) -> None:
+    _seed_prompt(
+        session,
+        intent_key="Q-VIBE",
+        question_text="what is the vibe at quad cafe?",
+        search_type="Vector",
+    )
+    embedder = RecordingEmbedder()
+    rewrite_calls: list[tuple[str, list[ChatHistoryMessage]]] = []
+
+    def rewrite(question: str, history: list[ChatHistoryMessage]) -> str:
+        rewrite_calls.append((question, history))
+        return "what is the vibe at quad cafe?"
+
+    service = ChatService(
+        embedder,
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "Answer",
+        router=IntentRouter(session, embedder=embedder),
+        sql_store=PgSqlStore(session),
+        rewrite_llm=rewrite,
+    )
+    history = [
+        ChatHistoryMessage(role="user", content="tell me about quad cafe"),
+        ChatHistoryMessage(role="assistant", content="Quad Cafe is central."),
+    ]
+
+    response = service.answer("what about the vibe there?", history=history)
+
+    assert rewrite_calls and rewrite_calls[0][0] == "what about the vibe there?"
+    assert response.search_type == "Vector"
+    assert (response.intent or "").casefold() == "q-vibe"
+    assert embedder.calls[0] == ["what is the vibe at quad cafe?"]
+
+
+def test_non_referential_question_skips_rewrite(session) -> None:
+    def rewrite(_question: str, _history: list[ChatHistoryMessage]) -> str:
+        raise AssertionError("self-contained questions must not be rewritten")
+
+    service = ChatService(
+        FakeEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "Answer",
+        router=_make_router(session),
+        sql_store=PgSqlStore(session),
+        rewrite_llm=rewrite,
+    )
+    history = [
+        ChatHistoryMessage(role="user", content="hello"),
+        ChatHistoryMessage(role="assistant", content="Hi!"),
+    ]
+
+    response = service.answer("Where can I find halal food?", history=history)
+
+    assert response.search_type == "Vector"
+
+
+def test_referential_followup_without_rewriter_uses_bare_question(session) -> None:
+    embedder = RecordingEmbedder()
+    service = ChatService(
+        embedder,
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "Answer",
+        router=IntentRouter(session, embedder=embedder),
+        sql_store=PgSqlStore(session),
+    )
+    history = [
+        ChatHistoryMessage(role="user", content="what is the vibe at quad cafe?"),
+        ChatHistoryMessage(role="assistant", content="Quad Cafe is central."),
+    ]
+
+    response = service.answer("what about the vibe there?", history=history)
+
+    assert response.search_type == "Vector"
+    assert embedder.calls[0] == ["what about the vibe there?"]
+    assert all(
+        "===" not in text and "TURN" not in text
+        for call in embedder.calls
+        for text in call
+    )
+
+
+def test_match_vendor_names_strips_parenthetical(session) -> None:
+    from app.models import Vendor
+
+    vendor = Vendor(name="Quad Cafe (SBS)", location="SBS")
+    session.add(vendor)
+    session.commit()
+
+    service = ChatService(
+        FakeEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda prompt: prompt,
+        session=session,
+    )
+
+    matched = service._match_vendor_names("where is quad cafe?")
+
+    assert [vendor_id for vendor_id, _ in matched] == [vendor.id]
+
+
+def test_match_vendor_names_ignores_location_only_question(session) -> None:
+    from app.models import Vendor
+
+    session.add(Vendor(name="Halal Nook", location="North Spine"))
+    session.commit()
+
+    service = ChatService(
+        FakeEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda prompt: prompt,
+        session=session,
+    )
+
+    assert service._match_vendor_names("what food is in north spine?") == []
+
+
+def test_sql_path_resolves_vendor_name_for_location_question(session) -> None:
+    from app.models import Vendor
+
+    session.add(
+        Vendor(
+            name="Quad Cafe (SBS)",
+            location="SBS",
+            unit_code="SBS-B1N-QUAD",
+            address="School of Biological Sciences, 60 Nanyang Drive",
+            category="Canteen",
+        )
+    )
+    session.commit()
+    _seed_prompt(
+        session,
+        intent_key="Q-LOC",
+        question_text="where is quad cafe?",
+        search_type="SQL",
+    )
+    captured: dict[str, str] = {}
+
+    def fake_generate(prompt: str) -> str:
+        captured["prompt"] = prompt
+        return "Quad Cafe is located at SBS."
+
+    service = ChatService(
+        FakeEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=fake_generate,
+        router=_make_router(session),
+        sql_store=PgSqlStore(session),
+        session=session,
+    )
+
+    response = service.answer("where is quad cafe?")
+
+    assert response.search_type == "SQL"
+    assert response.sources[0].vendor_name == "Quad Cafe (SBS)"
+    assert response.sources[0].location == "SBS"
+    assert "location=SBS" in captured["prompt"]
+    assert "School of Biological Sciences" in captured["prompt"]
+
+
+def test_vendor_named_question_skips_llm_filter_extraction(session) -> None:
+    from app.models import Vendor
+
+    session.add(
+        Vendor(name="Encik Tan", location="North Spine", category="Malay")
+    )
+    session.commit()
+    _seed_prompt(
+        session,
+        intent_key="Q-ENCIK",
+        question_text="where is encik tan?",
+        search_type="SQL",
+    )
+    filter_calls: list[str] = []
+
+    service = ChatService(
+        FakeEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "Encik Tan is at North Spine.",
+        router=_make_router(session),
+        sql_store=PgSqlStore(session),
+        filter_extractor_llm=lambda question: (
+            filter_calls.append(question)
+            or StructuredFilter(cuisine="Encik Tan")
+        ),
+        session=session,
+    )
+
+    response = service.answer("where is encik tan?")
+
+    assert filter_calls == []
+    assert response.search_type == "SQL"
+    assert response.sources[0].vendor_name == "Encik Tan"
+    assert response.sources[0].location == "North Spine"

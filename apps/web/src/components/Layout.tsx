@@ -1,58 +1,25 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Outlet } from "react-router-dom";
-import { Bot, Send, X } from "lucide-react";
-import { askChat, chatErrorMessage } from "../api/chat";
+import { Bot, RotateCcw, Send, Square, X } from "lucide-react";
 import ChatMessageContent from "./ChatMessageContent";
+import { useChatSession } from "../hooks/useChatSession";
 import Footer from "./Footer";
 import Header from "./Header";
-
-type ChatMessage = {
-  role: "user" | "bot";
-  text: string;
-  sources?: unknown[];
-};
 
 // -------------------------------------------------------------
 // 1. Floating Foodie Chatbot Component
 // -------------------------------------------------------------
 export function FoodieChat() {
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      role: "bot",
-      text: "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!",
-    },
-  ]);
-  const [chatInput, setChatInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
+  const {
+    input: chatInput,
+    isGenerating: isTyping,
+    messages: chatMessages,
+    sendMessage,
+    setInput: setChatInput,
+    startNewSession: startNewChat,
+    stopResponse,
+  } = useChatSession();
   const [chatOpen, setChatOpen] = useState(false);
-  const chatRequestPending = useRef(false);
-
-  async function sendMessage(text: string) {
-    const question = text.trim();
-    if (!question || chatRequestPending.current) return;
-
-    chatRequestPending.current = true;
-    setChatMessages((prev) => [...prev, { role: "user", text: question }]);
-    setChatInput("");
-    setIsTyping(true);
-
-    try {
-      const response = await askChat(question);
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "bot", text: response.answer, sources: response.sources },
-      ]);
-    } catch (error) {
-      console.error("Chat request failed", error);
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "bot", text: chatErrorMessage(error) },
-      ]);
-    } finally {
-      chatRequestPending.current = false;
-      setIsTyping(false);
-    }
-  }
 
   return (
     <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end gap-3">
@@ -72,14 +39,25 @@ export function FoodieChat() {
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setChatOpen(false)}
-              className="text-muted-foreground hover:text-foreground transition-colors p-1"
-              aria-label="Close chat"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={startNewChat}
+                className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                aria-label="Start a new chat session"
+                title="New chat"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setChatOpen(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                aria-label="Close chat"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Chat Messages */}
@@ -132,14 +110,27 @@ export function FoodieChat() {
                 placeholder="Ask anything about campus food..."
                 className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40 transition-colors"
               />
-              <button
-                type="button"
-                onClick={() => sendMessage(chatInput)}
-                disabled={isTyping}
-                className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center hover:opacity-90 transition-opacity flex-shrink-0"
-              >
-                <Send className="w-4 h-4 text-primary-foreground" />
-              </button>
+              {isTyping ? (
+                <button
+                  type="button"
+                  onClick={stopResponse}
+                  aria-label="Stop generating response"
+                  title="Stop"
+                  className="w-10 h-10 rounded-xl bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity flex-shrink-0"
+                >
+                  <Square className="w-4 h-4 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => sendMessage(chatInput)}
+                  disabled={!chatInput.trim()}
+                  aria-label="Send message"
+                  className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center hover:opacity-90 disabled:opacity-50 transition-opacity flex-shrink-0"
+                >
+                  <Send className="w-4 h-4 text-primary-foreground" />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -149,7 +140,7 @@ export function FoodieChat() {
       <button
         type="button"
         onClick={() => setChatOpen((o) => !o)}
-        className="flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-primary text-primary-foreground font-semibold text-sm shadow-lg hover:opacity-90 transition-opacity"
+        className="flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-primary text-primary-foreground font-semibold text-sm shadow-lg cursor-pointer hover:opacity-90 transition-opacity"
         aria-label="Open Foodie chatbot"
       >
         {chatOpen ? <X className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
