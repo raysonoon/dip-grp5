@@ -84,8 +84,12 @@ _OPEN_HOURS_KEYWORDS = {
 _NEGATION_BEFORE_KEYWORD_RE = re.compile(
     r"(?:\bnot\s+open(?:\s+on)?|"
     r"\bnot(?:\s+(?:a|an|at|in|near|on|too|very))?|"
+    r"\b(?:do|does|did|ca|is|are|was|were|should|could|would)n['\u2019]?t|"
+    r"\bwon['\u2019]t|"
     r"\bclosed(?:\s+on)?|\bno|\bnon|"
     r"\bwithout(?:\s+any)?)"
+    r"(?:\s+(?:want|like|get|have|eat|order|try|find|serve|recommend|"
+    r"prefer|need|looking))?"
     r"[\s\-\u2010-\u2015]*$"
 )
 _TOP_N_RE = re.compile(
@@ -137,6 +141,14 @@ _CUISINE_REQUEST_WORDS = {
     "which",
     "without",
     "you",
+    "are",
+    "did",
+    "do",
+    "does",
+    "is",
+    "there",
+    "was",
+    "were",
 }
 _CUISINE_BOUNDARY_WORDS = {
     "craving",
@@ -151,23 +163,111 @@ _CUISINE_BOUNDARY_WORDS = {
     "serves",
     "serving",
     "want",
+    "eat",
+    "like",
+    "list",
+    "looking",
+    "show",
+    "suggest",
 }
-_NON_CUISINE_DESCRIPTORS = {
+_CUISINE_STOP_WORDS = {
     "affordable",
     "best",
+    "biggest",
+    "campus",
     "cheap",
+    "cheaper",
+    "cheapest",
     "delicious",
     "expensive",
+    "famous",
+    "favorite",
+    "favourite",
+    "freshest",
     "good",
+    "great",
     "halal",
+    "healthiest",
     "healthy",
+    "late",
+    "near",
+    "nearby",
     "nice",
+    "nicest",
+    "night",
+    "ntu",
+    "popular",
     "premium",
     "pricey",
+    "spiciest",
     "spicy",
+    "student",
+    "students",
+    "tastiest",
     "tasty",
+    "trending",
+    "value",
     "vegan",
     "vegetarian",
+    "worst",
+}
+
+
+def _vocabulary_tokens(mapping: dict[str, str | None]) -> set[str]:
+    return {
+        token for key in mapping for token in key.casefold().split()
+    }
+
+
+_CUISINE_REJECTION_WORDS = (
+    _CUISINE_STOP_WORDS
+    | _vocabulary_tokens(_OPEN_HOURS_KEYWORDS)
+    | _vocabulary_tokens(_BUDGET_KEYWORDS)
+    | VEGETARIAN_KEYWORDS
+    | HALAL_KEYWORDS
+)
+_CUISINE_LOCATION_RE = re.compile(
+    r"(?<!\w)(?:"
+    + "|".join(
+        re.escape(key.casefold())
+        for key in sorted(LOCATION_KEYWORDS, key=len, reverse=True)
+    )
+    + r")(?!\w)"
+)
+_CUISINE_PHRASE_BLOCKERS = {
+    "what",
+    "when",
+    "where",
+    "why",
+    "who",
+    "whom",
+    "whose",
+    "how",
+    "but",
+    "and",
+    "or",
+    "versus",
+    "vs",
+    "prefer",
+}
+_CUISINE_REQUEST_CUES = _CUISINE_BOUNDARY_WORDS | {
+    "any",
+    "some",
+    "which",
+    "is",
+    "are",
+    "was",
+    "were",
+    "do",
+    "does",
+    "did",
+    "there",
+    "not",
+    "no",
+    "without",
+    "don't",
+    "doesn't",
+    "didn't",
 }
 
 
@@ -222,6 +322,25 @@ class StructuredFilter:
 def _keyword_matches(question: str, keyword: str) -> list[re.Match[str]]:
     pattern = rf"(?<!\w){re.escape(keyword.casefold())}(?!\w)"
     return list(re.finditer(pattern, question.casefold()))
+
+
+def _has_cuisine_request_cue(prefix: str) -> bool:
+    """Report whether a request/boundary verb introduces a cuisine phrase.
+
+    Walks backwards over filler words (``the``/``for``/``i`` ...) and returns
+    ``True`` when the phrase is led by a request cue such as ``find`` or
+    ``any``. This keeps bare noun phrases from becoming cuisines while still
+    supporting verb-less requests.
+    """
+    for match in reversed(
+        list(re.finditer(r"[A-Za-z][A-Za-z'\u2019-]*", prefix))
+    ):
+        folded = match.group(0).casefold().replace("\u2019", "'")
+        if folded in _CUISINE_REQUEST_CUES:
+            return True
+        if folded not in _CUISINE_REQUEST_WORDS:
+            return False
+    return False
 
 
 def _keyword_is_negated(question: str, start: int) -> bool:
@@ -290,7 +409,7 @@ def _extract_explicit_cuisine_phrase(
             re.finditer(r"[A-Za-z][A-Za-z'\u2019-]*", raw_phrase)
         )
         words = [word_match.group(0) for word_match in word_matches]
-        if not words or words[-1].casefold() in _NON_CUISINE_DESCRIPTORS:
+        if not words or words[-1].casefold() in _CUISINE_REJECTION_WORDS:
             continue
 
         start_index = 0
@@ -299,14 +418,19 @@ def _extract_explicit_cuisine_phrase(
                 start_index = index + 1
         while start_index < len(words) and (
             words[start_index].casefold() in _CUISINE_REQUEST_WORDS
-            or words[start_index].casefold() in _NON_CUISINE_DESCRIPTORS
+            or words[start_index].casefold() in _CUISINE_REJECTION_WORDS
         ):
             start_index += 1
 
         candidate_words = words[start_index:]
-        if not candidate_words or all(
-            word.casefold() in _NON_CUISINE_DESCRIPTORS
+        if not candidate_words or any(
+            word.casefold()
+            in _CUISINE_REJECTION_WORDS | _CUISINE_PHRASE_BLOCKERS
             for word in candidate_words
+        ):
+            continue
+        if _CUISINE_LOCATION_RE.search(
+            " ".join(word.casefold() for word in candidate_words)
         ):
             continue
 
@@ -314,6 +438,10 @@ def _extract_explicit_cuisine_phrase(
             match.start("phrase") + word_matches[start_index].start()
         )
         if _keyword_is_negated(question, candidate_start) != negated:
+            continue
+        if candidate_start != 0 and not _has_cuisine_request_cue(
+            question[:candidate_start]
+        ):
             continue
         return " ".join(candidate_words).title()
     return None

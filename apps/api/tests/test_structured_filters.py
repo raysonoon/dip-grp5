@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.structured_filters import (
     LOCATION_KEYWORDS,
     SIMILARITY_THRESHOLD,
@@ -191,3 +193,90 @@ def test_llm_fallback_uses_extractor() -> None:
     custom = extract_structured_filters("halal food")
     filters = extract_structured_filters_llm("anything", extractor=lambda q: custom)
     assert filters.halal is True
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("Vietnamese food", "Vietnamese"),
+        ("Vietnamese food please", "Vietnamese"),
+        ("any Vietnamese food?", "Vietnamese"),
+        ("which Vietnamese food", "Vietnamese"),
+        ("Where can I find Vietnamese food?", "Vietnamese"),
+        ("I want Vietnamese food", "Vietnamese"),
+        ("I'm looking for Vietnamese food", "Vietnamese"),
+        ("Is there Vietnamese food?", "Vietnamese"),
+        ("recommend Middle Eastern food", "Middle Eastern"),
+        ("Where can I find South East Asian food?", "South East Asian"),
+    ],
+)
+def test_explicit_cuisine_phrase_accepts_bare_and_verb_less_requests(
+    question: str,
+    expected: str,
+) -> None:
+    assert extract_structured_filters(question).cuisine == expected
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "NTU food",
+        "campus food",
+        "nearby food",
+        "near food",
+        "popular food",
+        "trending food",
+        "famous food",
+        "favourite food",
+        "favorite food",
+        "great food",
+        "worst food",
+        "value food",
+        "student food",
+        "late night food",
+        "cheapest food",
+        "cheap food",
+        "affordable food",
+        "expensive food",
+        "halal food",
+        "vegan food",
+        "vegetarian food",
+        "library food",
+        "Sunday food",
+        "What is the cheapest food in NTU?",
+        "What is the Vietnamese food",
+        "What is the freshest food",
+        "I love Vietnamese food",
+    ],
+)
+def test_explicit_cuisine_phrase_rejects_generic_and_vocabulary_words(
+    question: str,
+) -> None:
+    filters = extract_structured_filters(question)
+    assert filters.cuisine is None, question
+    assert filters.exclude_cuisine is None, question
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "near North Spine food",
+        "library food",
+        "Sunday food",
+    ],
+)
+def test_location_and_open_hours_words_never_become_cuisine(
+    question: str,
+) -> None:
+    assert extract_structured_filters(question).cuisine is None
+
+
+def test_contracted_cuisine_negation_becomes_exclusion() -> None:
+    filters = extract_structured_filters("I don't want Vietnamese food")
+    assert filters.cuisine is None
+    assert filters.exclude_cuisine == "Vietnamese"
+
+    not_filters = extract_structured_filters("not Vietnamese food")
+    assert not_filters.cuisine is None
+    assert not_filters.exclude_cuisine == "Vietnamese"
+
