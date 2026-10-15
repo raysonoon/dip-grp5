@@ -13,6 +13,7 @@ import FoodPreferencesOnboarding from "./components/FoodPreferencesOnboarding";
 import { fetchMyPreferences } from "./api/preferences.js";
 import { useAuth } from "./contexts/AuthContext";
 import VendorMap from "./pages/VendorMap";
+import MapPage from "./pages/MapPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import {
   Search,
