@@ -30,6 +30,8 @@ from app.schemas import (
     VendorImageUpdate,
     VendorListItem,
     VendorListRead,
+    VendorNearbyItem,
+    VendorNearbyRead,
 )
 from app.services.vendor_search import build_vendor_search_plan
 
@@ -59,6 +61,36 @@ def _vendor_coordinates(vendor: Vendor) -> VendorCoordinates | None:
         return None
     point = to_shape(vendor.map_coordinates)
     return VendorCoordinates(type="Point", coordinates=[point.x, point.y])
+
+
+def _vendor_list_item(vendor: Vendor, review_count: int) -> VendorListItem:
+    return VendorListItem(
+        id=vendor.id,
+        name=vendor.name,
+        location=vendor.location,
+        unit_code=vendor.unit_code,
+        image_url=(vendor.images[0].image_url if vendor.images else None),
+        category=vendor.category,
+        opening_hours=vendor.opening_hours,
+        price_range=vendor.price_range,
+        halal=vendor.halal,
+        vegetarian=vendor.vegetarian,
+        average_google_rating=(
+            None
+            if vendor.average_google_rating is None
+            else float(vendor.average_google_rating)
+        ),
+        created_at=vendor.created_at,
+        updated_at=vendor.updated_at,
+        average_rating=(
+            None
+            if vendor.average_rating is None
+            else float(vendor.average_rating)
+        ),
+        review_count=review_count,
+        images=[_vendor_image_read(image) for image in vendor.images],
+        map_coordinates=_vendor_coordinates(vendor),
+    )
 
 
 def _get_vendor(vendor_id: int, session: DbSession) -> Vendor:
@@ -131,48 +163,9 @@ def list_vendors(
         .limit(limit)
     ).all()
 
-    items = []
-    for vendor, review_count in rows:
-        items.append(
-            VendorListItem(
-                id=vendor.id,
-                name=vendor.name,
-                location=vendor.location,
-                unit_code=vendor.unit_code,
-                image_url=(vendor.images[0].image_url if vendor.images else None),
-                category=vendor.category,
-                opening_hours=vendor.opening_hours,
-                price_range=vendor.price_range,
-                halal=vendor.halal,
-                vegetarian=vendor.vegetarian,
-                average_google_rating=(
-                    None
-                    if vendor.average_google_rating is None
-                    else float(vendor.average_google_rating)
-                ),
-                created_at=vendor.created_at,
-                updated_at=vendor.updated_at,
-                average_rating=(
-                    None
-                    if vendor.average_rating is None
-                    else float(vendor.average_rating)
-                ),
-                review_count=review_count,
-                images=[
-                    VendorImageRead(
-                        id=image.id,
-                        vendor_id=image.vendor_id,
-                        image_url=image.image_url,
-                        mime_type=image.mime_type,
-                        file_size_bytes=image.file_size_bytes,
-                        display_order=image.display_order,
-                        created_at=image.created_at,
-                    )
-                    for image in vendor.images
-                ],
-                map_coordinates=_vendor_coordinates(vendor),
-            )
-        )
+    items = [
+        _vendor_list_item(vendor, review_count) for vendor, review_count in rows
+    ]
 
     return VendorListRead(
         items=items,
@@ -180,6 +173,55 @@ def list_vendors(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/nearby", response_model=VendorNearbyRead)
+def list_nearby_vendors(
+    session: DbSession,
+    lat: Annotated[float, Query(ge=-90, le=90)],
+    lng: Annotated[float, Query(ge=-180, le=180)],
+    max_distance_m: Annotated[float, Query(gt=0, le=5000)] = 2000,
+    min_rating: Annotated[float, Query(ge=0, le=5)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+) -> VendorNearbyRead:
+    """Vendors within max_distance_m of a point, nearest first.
+
+    Distance is computed by PostGIS on each vendor's geography column, so it
+    is in metres and accounts for the curvature of the earth.
+    """
+    user_point = func.ST_GeogFromText(f"POINT({lng:.7f} {lat:.7f})")
+    distance = func.ST_Distance(Vendor.map_coordinates, user_point)
+    rating = func.coalesce(Vendor.average_rating, Vendor.average_google_rating)
+
+    filters = [
+        Vendor.map_coordinates.is_not(None),
+        func.ST_DWithin(Vendor.map_coordinates, user_point, max_distance_m),
+    ]
+    if min_rating > 0:
+        filters.append(rating >= min_rating)
+
+    rows = session.execute(
+        select(
+            Vendor,
+            func.count(Review.id).label("review_count"),
+            distance.label("distance_m"),
+        )
+        .options(selectinload(Vendor.images))
+        .outerjoin(Review, Review.vendor_id == Vendor.id)
+        .where(*filters)
+        .group_by(Vendor.id)
+        .order_by(distance.asc(), Vendor.id.asc())
+        .limit(limit)
+    ).all()
+
+    items = [
+        VendorNearbyItem(
+            **_vendor_list_item(vendor, review_count).model_dump(),
+            distance_m=float(distance_m),
+        )
+        for vendor, review_count, distance_m in rows
+    ]
+    return VendorNearbyRead(items=items, total=len(items))
 
 
 @router.get("/filters")
