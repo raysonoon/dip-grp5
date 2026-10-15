@@ -118,6 +118,27 @@ function configureSession(context, accessToken = "test-access-token") {
   });
 }
 
+test("the latest picker result is sent as context without changing the question or persisting", async (context) => {
+  configureSession(context, null);
+  const originalFetch = globalThis.fetch;
+  context.after(() => { globalThis.fetch = originalFetch; });
+  const requests = [];
+  globalThis.fetch = async (_path, options) => {
+    requests.push(JSON.parse(options.body));
+    return streamResponse(['event: delta\ndata: "A food idea."\n\nevent: sources\ndata: []\n\n']);
+  };
+  await streamChat("What did I roll?", { foodPick: "Roti prata" });
+  await streamChat("What did I roll?");
+  await streamChat("", { foodPick: "Poke bowls", action: "recommend_pick" });
+  assert.equal(requests[0].question, "What did I roll?");
+  assert.equal(requests[0].food_pick, "Roti prata");
+  assert.deepEqual(requests[0].history, []);
+  assert.equal("food_pick" in requests[1], false);
+  assert.equal(requests[2].action, "recommend_pick");
+  assert.equal(requests[2].food_pick, "Poke bowls");
+  assert.equal("question" in requests[2], false);
+});
+
 test("streamChat sends auth and incrementally parses fragmented SSE events", async (context) => {
   configureSession(context, "42");
   const originalFetch = globalThis.fetch;
@@ -226,7 +247,7 @@ test("chat history keeps the newest five messages for each role", () => {
   );
 });
 
-test("streamChat forwards a caller abort signal without a fixed timeout", async (context) => {
+test("streamChat preserves caller cancellation", async (context) => {
   configureSession(context, "42");
   const originalFetch = globalThis.fetch;
   context.after(() => {
@@ -246,6 +267,29 @@ test("streamChat forwards a caller abort signal without a fixed timeout", async 
   controller.abort();
 
   await assert.rejects(request, (error) => error.name === "AbortError");
+});
+
+test("streamChat rejects a partial answer when the final sources event is missing", async (context) => {
+  configureSession(context, null);
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () => streamResponse([
+    'event: delta\ndata: "Partial answer"\n\n',
+  ]);
+
+  const updates = [];
+  await assert.rejects(
+    streamChat("Interrupted question", {
+      onDelta: (_delta, answer) => updates.push(answer),
+    }),
+    (error) => (
+      error instanceof ChatResponseError
+      && /before sources arrived/.test(error.message)
+    ),
+  );
+  assert.deepEqual(updates, ["Partial answer"]);
 });
 
 test("the API client distinguishes network, HTTP, malformed-body, and timeout errors", async (context) => {
@@ -307,4 +351,142 @@ test("chat errors map to non-blocking retry messages", () => {
   assert.match(chatErrorMessage(new ApiTimeoutError(1)), /too long/i);
   assert.match(chatErrorMessage(new ApiError("failed", 500, null)), /try again/i);
   assert.match(chatErrorMessage(new ChatResponseError("bad response")), /unexpected/i);
+});
+
+function replaceFetch(context, fetch) {
+  context.mock.method(globalThis, "fetch", fetch);
+}
+
+test("chat times out while waiting for headers and aborts the request", async (context) => {
+  configureSession(context, null);
+  let signal;
+  replaceFetch(context, (_path, options) => {
+    signal = options.signal;
+    return new Promise(() => {});
+  });
+  await assert.rejects(streamChat("Hello", { idleTimeoutMs: 10 }), ApiTimeoutError);
+  assert.equal(signal.aborted, true);
+});
+
+test("chat deadline includes a stalled authentication lookup", async (context) => {
+  configureSession(context, null);
+  Object.defineProperty(supabase.auth, "getSession", {
+    configurable: true,
+    value: () => new Promise(() => {}),
+  });
+  replaceFetch(context, () => { throw new Error("fetch must not run"); });
+  await assert.rejects(streamChat("Hello", { idleTimeoutMs: 10 }), ApiTimeoutError);
+});
+
+test("chat times out on a silent stream and on a stream that stalls after a delta", async (context) => {
+  configureSession(context, null);
+  for (const partial of [false, true]) {
+    let cancelled = false;
+    const updates = [];
+    replaceFetch(context, async () => new Response(new ReadableStream({
+      start(controller) {
+        if (partial) controller.enqueue(new TextEncoder().encode('event: delta\ndata: "Partial"\n\n'));
+      },
+      cancel() { cancelled = true; },
+    }), { headers: { "Content-Type": "text/event-stream" } }));
+    await assert.rejects(streamChat("Hello", {
+      idleTimeoutMs: 10,
+      onDelta: (_delta, answer) => updates.push(answer),
+    }), ApiTimeoutError);
+    assert.equal(cancelled, true);
+    assert.deepEqual(updates, partial ? ["Partial"] : []);
+  }
+});
+
+test("chat times out even while reading an HTTP error body", async (context) => {
+  configureSession(context, null);
+  replaceFetch(context, async () => ({
+    ok: false, status: 503, json: () => new Promise(() => {}),
+  }));
+  await assert.rejects(streamChat("Hello", { idleTimeoutMs: 10 }), ApiTimeoutError);
+});
+
+test("chat completes on final sources without waiting for the connection to close", async (context) => {
+  configureSession(context, null);
+  let cancelled = false;
+  replaceFetch(context, async () => new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(
+        'event: delta\ndata: "Complete answer"\n\nevent: sources\ndata: []\n\n',
+      ));
+    },
+    cancel() { cancelled = true; },
+  }), { headers: { "Content-Type": "text/event-stream" } }));
+  assert.deepEqual(await streamChat("Hello", { idleTimeoutMs: 100 }), {
+    answer: "Complete answer", sources: [],
+  });
+  assert.equal(cancelled, true);
+});
+
+test("server error events reject partial answers and a subsequent request succeeds", async (context) => {
+  configureSession(context, null);
+  for (const partial of [false, true]) {
+    replaceFetch(context, async () => streamResponse([
+      ...(partial ? ['event: delta\ndata: "Partial"\n\n'] : []),
+      'event: error\ndata: {"code":"chat_unavailable","message":"private diagnostics"}\n\n',
+    ]));
+    await assert.rejects(streamChat("Hello"), (error) => (
+      error instanceof ApiError && error.status === 503
+      && !error.message.includes("private diagnostics")
+    ));
+  }
+  replaceFetch(context, async () => streamResponse([
+    'event: delta\ndata: "Recovered"\n\nevent: sources\ndata: []\n\n',
+  ]));
+  assert.equal((await streamChat("Try again")).answer, "Recovered");
+});
+
+test("chat handles HTTP 503 without exposing server details in its UI message", async (context) => {
+  configureSession(context, null);
+  replaceFetch(context, async () => jsonResponse({ detail: "private diagnostic" }, 503));
+  await assert.rejects(streamChat("Hello"), (error) => (
+    error instanceof ApiError && error.status === 503
+    && /try again/i.test(chatErrorMessage(error))
+    && !chatErrorMessage(error).includes("private diagnostic")
+  ));
+});
+
+test("stopping a partial stream cancels its reader and preserves AbortError", async (context) => {
+  configureSession(context, null);
+  let cancelled = false;
+  const controller = new AbortController();
+  replaceFetch(context, async () => new Response(new ReadableStream({
+    start(stream) {
+      stream.enqueue(new TextEncoder().encode('event: delta\ndata: "Partial"\n\n'));
+    },
+    cancel() { cancelled = true; },
+  }), { headers: { "Content-Type": "text/event-stream" } }));
+  await assert.rejects(streamChat("Hello", {
+    signal: controller.signal,
+    onDelta: () => controller.abort(),
+  }), (error) => error.name === "AbortError");
+  assert.equal(cancelled, true);
+});
+
+test("active streams reset idle timeout but cannot run beyond the total deadline", async (context) => {
+  configureSession(context, null);
+  let timer;
+  let cancelled = false;
+  context.after(() => clearInterval(timer));
+  replaceFetch(context, async () => new Response(new ReadableStream({
+    start(controller) {
+      timer = setInterval(() => controller.enqueue(new TextEncoder().encode(
+        'event: delta\ndata: "word "\n\n',
+      )), 5);
+    },
+    cancel() { clearInterval(timer); cancelled = true; },
+  }), { headers: { "Content-Type": "text/event-stream" } }));
+  let chunks = 0;
+  await assert.rejects(streamChat("Hello", {
+    idleTimeoutMs: 30,
+    timeoutMs: 80,
+    onDelta: () => { chunks += 1; },
+  }), (error) => error instanceof ApiTimeoutError && error.timeoutMs === 80);
+  assert.ok(chunks > 1);
+  assert.equal(cancelled, true);
 });

@@ -1,14 +1,17 @@
+import json
 import logging
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 
+from google.genai import types
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models import GoogleReview, RedditComment, Vendor
 from app.schemas.chat import ChatHistoryMessage, ChatResponse, ChatSource, trim_chat_history
+from app.services.chat_client import create_chat_client
 from app.services.embedding import Embedder
 from app.services.intent_router import IntentMatch, IntentRouter
 from app.services.retrieval import KnowledgeResult, KnowledgeStore
@@ -28,6 +31,46 @@ from app.services.vendor_matching import (
 
 logger = logging.getLogger(__name__)
 
+FOODIE_VOICE = (
+    "You are Foodie, NTUmmy's friendly AI food buddy. Help someone decide "
+    "what to eat, with the relaxed, lively tone of a short text to a friend. "
+    "Match their language, use contractions, and keep the reply to one to "
+    "three short sentences, usually under 45 words. A little Singlish or one "
+    "emoji is fine when natural; don't force either. No numbered lists unless "
+    "asked, self-introductions, canned laughter, or customer-service wording. "
+    "Stay kind; don't tease or belittle the user. "
+    "For meal suggestions, prefer one or two matching campus vendors when "
+    "the supplied evidence supports them, then mention the food to try. "
+    "Otherwise offer suitable general dish ideas without inventing a stall. "
+    "Start with useful suggestions, not a paraphrase of the "
+    "request or 'you could explore other options'. Respect every stated "
+    "dislike and exclusion: don't suggest rejected foods or bring up rejected "
+    "vendors just to explain why they don't fit. Don't end every reply with "
+    "a question. If needed, ask one useful follow-up such as location. "
+    "For general cravings, you can suggest dish types from ordinary food "
+    "knowledge. These are ideas, not a claim that a particular campus stall "
+    "serves them. If retrieved context only covers excluded foods, leave "
+    "that context out of the reply and offer suitable general food ideas. "
+    "For specific vendors, menus, prices, hours, reviews, and dietary "
+    "suitability, use only retrieved evidence and keep its numbered citations. "
+    "Don't invent campus availability or put a citation on an unsupported "
+    "suggestion. Be honest when specific information is missing. "
+    "A current-session food picker event is a random draw you may recall, "
+    "not a saved preference or evidence of a vendor's menu. Use it when "
+    "relevant. For the latest draw, use latest_food_pick from the current "
+    "request; it supersedes older draw results in conversation history. "
+    "Do not repeat an earlier assistant answer instead of reading the latest "
+    "event. A new explicit food request takes precedence over the draw. "
+    "If no picker event is supplied, say you don't have a draw recorded in "
+    "this session; don't guess a result or claim the user never rolled. "
+    "The food picker is a scrolling list, not a wheel. Don't add unrelated "
+    "food suggestions to a question that only asks about session memory. "
+    "Do not claim personal eating experiences or to be human. If asked who "
+    "you are, answer honestly that you are an AI."
+)
+
+PICKER_RETRY_MESSAGE = "I couldn't check a matching stall just now. Give it another go in a moment?"
+
 
 @dataclass(frozen=True)
 class ChatGeneration:
@@ -44,7 +87,10 @@ DEFAULT_SYSTEM_PROMPT = (
     "You are Foodie, a helpful assistant for the NTU Foodie Hub, powered by "
     "Google's Gemini model. For greetings, conversational small talk, and "
     "questions about your identity or capabilities, answer normally without "
-    "requiring supporting context. For questions about NTU campus food, vendors, "
+    "requiring supporting context. General dish ideas for a craving may use "
+    "ordinary food knowledge, without claiming that a campus vendor serves "
+    "them or attaching unsupported citations. Respect the user's exclusions. "
+    "For specific questions about NTU campus food, vendors, "
     "menus, opening hours, or reviews, use only the information in the context "
     "below. If that context does not contain the requested campus-food facts, say "
     "that you do not have enough information rather than inventing an answer. "
@@ -627,13 +673,13 @@ def format_context(
     return "\n\n".join(lines)
 
 
-def format_sql_context(results: list[SqlResult]) -> str:
+def format_sql_context(results: list[SqlResult], *, start_index: int = 1) -> str:
     """Render structured SQL rows into a numbered context block."""
     if not results:
         return EMPTY_CONTEXT
 
     lines = []
-    for index, result in enumerate(results, start=1):
+    for index, result in enumerate(results, start=start_index):
         if result.count is not None:
             lines.append(f"[{index}] (count): {result.count}")
             continue
@@ -690,7 +736,7 @@ class ChatService:
         router: IntentRouter | None = None,
         sql_store: SqlStore | None = None,
         filter_extractor_llm: Callable[[str], StructuredFilter] | None = None,
-        rewrite_llm: Callable[[str, list[ChatHistoryMessage]], str] | None = None,
+        rewrite_llm: Callable[..., str] | None = None,
         session: Session | None = None,
     ) -> None:
         self._embedder = embedder
@@ -712,14 +758,24 @@ class ChatService:
         question: str,
         *,
         history: list[ChatHistoryMessage] | None = None,
+        food_pick: str | None = None,
+        recommend_pick: bool = False,
     ) -> ChatResponse:
-        generation = self._prepare_answer(question, history=history)
+        generation = (
+            self._prepare_picker_recommendation(food_pick, history or [])
+            if recommend_pick and food_pick else self._prepare_answer(question, history=history, food_pick=food_pick)
+        )
+        answer = generation.direct_answer
+        if answer is None:
+            try:
+                answer = self._generate(self._with_food_pick(generation.prompt, food_pick, recommend_pick=recommend_pick))
+                if not answer or not answer.strip():
+                    raise ValueError("Empty model answer")
+            except Exception:
+                logger.warning("Chat generation failed; returning retrieved facts", exc_info=True)
+                answer = PICKER_RETRY_MESSAGE if recommend_pick else self._fallback_answer(generation.sources)
         return ChatResponse(
-            answer=(
-                generation.direct_answer
-                if generation.direct_answer is not None
-                else self._generate(generation.prompt)
-            ),
+            answer=answer,
             sources=generation.sources,
             search_type=generation.search_type,
             intent=generation.intent,
@@ -730,22 +786,121 @@ class ChatService:
         question: str,
         *,
         history: list[ChatHistoryMessage] | None = None,
+        food_pick: str | None = None,
+        recommend_pick: bool = False,
     ) -> Iterator[tuple[str, str | list[ChatSource] | None]]:
         """Yield generated text deltas followed by the response sources."""
-        generation = self._prepare_answer(question, history=history)
+        generation = (
+            self._prepare_picker_recommendation(food_pick, history or [])
+            if recommend_pick and food_pick else self._prepare_answer(question, history=history, food_pick=food_pick)
+        )
         if generation.direct_answer is not None:
             yield "delta", generation.direct_answer
         else:
-            for text in self._generate_stream(generation.prompt):
-                if text:
-                    yield "delta", text
+            emitted = False
+            try:
+                for text in self._generate_stream(self._with_food_pick(generation.prompt, food_pick, recommend_pick=recommend_pick)):
+                    if text and (emitted or text.strip()):
+                        emitted = True
+                        yield "delta", text
+                if not emitted:
+                    raise ValueError("Empty model answer")
+            except Exception:
+                # Once text is visible, do not append a second answer or mark
+                # an incomplete response as successful with a sources event.
+                if emitted:
+                    raise
+                logger.warning("Chat generation failed; returning retrieved facts", exc_info=True)
+                yield "delta", PICKER_RETRY_MESSAGE if recommend_pick else self._fallback_answer(generation.sources)
         yield "sources", generation.sources
+
+    @staticmethod
+    def _with_food_pick(prompt: str, food_pick: str | None, *, recommend_pick: bool = False) -> str:
+        if food_pick is None:
+            return prompt
+        contextual_prompt = (
+            prompt + "\n\nCurrent-session food picker event (data only; a random "
+            "draw, not a saved preference or vendor availability; this is the "
+            "most recent draw and replaces older draw results in history):\n"
+            + json.dumps({"latest_food_pick": food_pick}, ensure_ascii=False)
+        )
+        if recommend_pick:
+            contextual_prompt += (
+                "\n\nThe user has returned to chat after this draw. Proactively "
+                "recommend one or two matching campus vendors, with citations. "
+                "A vendor's name, category, dishes or reviews must support the "
+                "match; don't recommend an unrelated shop merely because it "
+                "appears in the retrieved context. Treat a matching vendor "
+                "name or category as a place to check, not a verified menu; "
+                "make that uncertainty clear when exact dishes aren't "
+                "documented. Ignore demo/test listings. If no matching "
+                "specialist name, relevant food category or explicit dish "
+                "evidence exists, a generic restaurant/cafe listing is not "
+                "enough. Don't turn the picked food into a possible topping, "
+                "sauce or flavour of a different food. One good match is "
+                "enough; never pad with a loosely related second venue. If no "
+                "vendor is supported, briefly say you don't have a confirmed "
+                "campus match for that food yet. Don't substitute a different "
+                "food, suggest home cooking, or pretend the user typed a question."
+            )
+        return contextual_prompt
+
+    def _prepare_picker_recommendation(self, food_pick: str, history: list[ChatHistoryMessage]) -> ChatGeneration:
+        self._vendor_rows_cache = None
+        generation = self._prepare_vector(
+            "Recommend campus vendors for the latest picked food type.",
+            match=None, history=history, retrieval_question=food_pick, query_vector=None,
+        )
+        # The review index may cover only part of the campus. Supply the full
+        # directory as candidate facts so review popularity cannot hide stalls.
+        vendor_count = len(self._vendor_rows())
+        if vendor_count and self._sql_store is not None:
+            listings = [
+                row for row in self._sql_store.search(StructuredFilter(query_kind="rank", top_n=vendor_count))
+                if (row.category or "").casefold() not in {"demo", "test"}
+            ]
+            if listings:
+                listing_context = format_sql_context(listings, start_index=len(generation.sources) + 1)
+                generation = replace(
+                    generation,
+                    prompt=generation.prompt + "\n\nCampus vendor directory (candidate facts; exact menus may be unknown):\n" + listing_context,
+                    sources=[*generation.sources, *(self._to_sql_source(row) for row in listings)],
+                    search_type="SQL + Vector",
+                )
+        return generation
+
+    @staticmethod
+    def _fallback_answer(sources: list[ChatSource]) -> str:
+        """Show retrieved evidence without requiring another model call."""
+        facts: list[str] = []
+        for index, source in enumerate(sources, start=1):
+            if source.count is not None:
+                fact = f"Matching vendors: {source.count}"
+            elif source.source_type == "vendor":
+                details = [value for value in (
+                    source.location, source.unit_code, source.category,
+                    source.price_range, source.opening_hours,
+                ) if value]
+                fact = ": ".join(filter(None, (
+                    source.vendor_name, "; ".join(details),
+                )))
+            else:
+                fact = ": ".join(filter(None, (source.vendor_name, source.excerpt)))
+            if fact:
+                facts.append(f"- {fact} [{index}]")
+        if not facts:
+            return "Foodie is temporarily unavailable. Please try again in a moment."
+        return (
+            "I couldn't generate a full answer right now. "
+            "Here is the information I found:\n\n" + "\n".join(facts)
+        )
 
     def _prepare_answer(
         self,
         question: str,
         *,
         history: list[ChatHistoryMessage] | None = None,
+        food_pick: str | None = None,
     ) -> ChatGeneration:
         # Keep vendor data stable and query it at most once per answer.
         self._vendor_rows_cache = None
@@ -781,7 +936,7 @@ class ChatService:
                 intent=None,
             )
         else:
-            routing_question = self._resolve_routing_question(question, history)
+            routing_question = self._resolve_routing_question(question, history, food_pick=food_pick)
         if self._router is None:
             logger.info("No intent router configured; using Vector path")
             return self._prepare_vector(
@@ -967,22 +1122,27 @@ class ChatService:
         self,
         question: str,
         history: list[ChatHistoryMessage],
+        *,
+        food_pick: str | None = None,
     ) -> str:
         """Resolve a follow-up into a standalone question for routing/retrieval.
 
         Routing and retrieval must operate on the *current* question, never on a
         history-wrapped block: structural cues and embeddings from earlier turns
-        could misroute or pollute the query. History is only consulted when
-        the question is referential, and only an LLM rewrite is allowed to
-        resolve those references. Without a rewrite callable (or on failure) the
+        could misroute or pollute the query. Only the rewriter receives history
+        or a picker event to resolve references; it must preserve explicit new
+        topics. Without a rewrite callable (or on failure) the
         bare question is used and the safe Vector default absorbs the follow-up.
         """
-        if not history or not _is_referential(question):
+        if food_pick is None and (not history or not _is_referential(question)):
             return question
         if self._rewrite_llm is None:
             return question
         try:
-            resolved = self._rewrite_llm(question, history).strip()
+            resolved = (
+                self._rewrite_llm(question, history, food_pick=food_pick)
+                if food_pick is not None else self._rewrite_llm(question, history)
+            ).strip()
         except Exception:
             logger.warning("Question rewrite failed; using bare question", exc_info=True)
             return question
@@ -1632,14 +1792,11 @@ class ChatService:
                 raise RuntimeError(
                     "GEMINI_API_KEY is not configured; cannot generate answers"
                 )
-            from google import genai
-
-            self._client = genai.Client(
-                api_key=settings.gemini_api_key.get_secret_value()
-            )
+            self._client = create_chat_client()
         response = self._client.models.generate_content(
             model=self._model,
             contents=prompt,
+            config=types.GenerateContentConfig(system_instruction=FOODIE_VOICE),
         )
         return response.text
 
@@ -1656,14 +1813,11 @@ class ChatService:
                 raise RuntimeError(
                     "GEMINI_API_KEY is not configured; cannot generate answers"
                 )
-            from google import genai
-
-            self._client = genai.Client(
-                api_key=settings.gemini_api_key.get_secret_value()
-            )
+            self._client = create_chat_client()
         for chunk in self._client.models.generate_content_stream(
             model=self._model,
             contents=prompt,
+            config=types.GenerateContentConfig(system_instruction=FOODIE_VOICE),
         ):
             if chunk.text:
                 yield chunk.text

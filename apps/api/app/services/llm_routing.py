@@ -95,20 +95,31 @@ def build_filter_extractor(
 def build_question_rewriter(
     client: object,
     model: str = settings.chat_model,
-) -> Callable[[str, list[ChatHistoryMessage]], str]:
+) -> Callable[..., str]:
     """Return a rewriter that resolves a follow-up into a standalone question."""
 
-    def rewrite(question: str, history: list[ChatHistoryMessage]) -> str:
+    def rewrite(question: str, history: list[ChatHistoryMessage], *, food_pick: str | None = None) -> str:
         history_text = "\n".join(
             f"{'User' if message.role == 'user' else 'Foodie'}: {message.content}"
             for message in history
+        )
+        picker_context = (
+            "Latest food picker event in this session (random dish idea, not a "
+            "vendor or saved preference): " + json.dumps(food_pick) + "\n\n"
+            if food_pick else ""
         )
         instruction = (
             "Rewrite the user's latest question into a single standalone "
             "question that resolves any references (pronouns, 'the one', "
             "'what about ...') to the conversation history. Preserve the "
             "user's intent and any names, places, or filters already stated. "
+            "Use a food picker event only if the question refers to it; do not "
+            "override a new explicit topic or food preference. Preserve the "
+            "fact that a picked food is a dish type, not a business name. "
+            "The supplied picker event is newer than any draw mentioned in "
+            "history; use it when resolving references to the latest draw. "
             "Reply with only the rewritten question and no explanation.\n\n"
+            f"{picker_context}"
             f"Conversation history:\n{history_text or '(none)'}\n\n"
             f"Latest question: {question}"
         )
