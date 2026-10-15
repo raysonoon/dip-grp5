@@ -153,21 +153,30 @@ export function FoodieChat() {
 // -------------------------------------------------------------
 // 2. Shared Layout Component
 // -------------------------------------------------------------
-export default function Layout() {
+type LayoutProps = {
+  preferenceStatus: "pending" | "completed" | "skipped" | null;
+  openPreferences: () => void;
+};
+
+export default function Layout({
+  preferenceStatus,
+  openPreferences,
+}: LayoutProps) {
   return (
     <div className="min-h-screen supports-[height:100dvh]:min-h-dvh flex flex-col bg-background text-foreground font-sans">
-      {/* Sticky Header Nav */}
       <Header />
 
-      {/* Renders current active page view */}
       <main className="flex-1">
-        <Outlet />
+        <Outlet
+          context={{
+            preferenceStatus,
+            openPreferences,
+          }}
+        />
       </main>
 
-      {/* ── FOOTER ───────────────────────────────────── */}
       <Footer />
 
-      {/* Shared Floating Chatbot Widget */}
       <FoodieChat />
     </div>
   );

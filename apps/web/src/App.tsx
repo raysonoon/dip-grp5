@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Routes, Route, Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Routes, Route, Link } from "react-router-dom";
 import Layout, { FoodieChat } from "./components/Layout";
 import Footer from "./components/Footer";
 import Header from "./components/Header";
@@ -9,16 +9,18 @@ import { fetchVendors } from "./api/vendors";
 import SignInPage from "./pages/SignInPage";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
+import FoodPreferencesOnboarding from "./components/FoodPreferencesOnboarding";
+import { fetchMyPreferences } from "./api/preferences.js";
+import { useAuth } from "./contexts/AuthContext";
 import VendorMap from "./pages/VendorMap";
+import MapPage from "./pages/MapPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import {
-  Search,
   Star,
   MapPin,
   ChevronRight,
   Clock,
   TrendingUp,
-  //ThumbsUp,//
 } from "lucide-react";
 
 const BODY_FONT = "'Plus Jakarta Sans', sans-serif";
@@ -69,12 +71,13 @@ function computeTrendingScore(
   },
   maxReviewCount: number,
   minCreatedAt: number,
-  maxCreatedAt: number,
+  maxCreatedAt: number
 ) {
   const created = new Date(vendor.created_at).getTime();
   const recency =
     (created - minCreatedAt) / Math.max(maxCreatedAt - minCreatedAt, 1);
-  const reviews = maxReviewCount > 0 ? vendor.review_count / maxReviewCount : 0;
+  const reviews =
+    maxReviewCount > 0 ? vendor.review_count / maxReviewCount : 0;
   const rating = vendor.average_rating ?? vendor.average_google_rating ?? 0;
   const ratingScore = Math.min(1, rating / 5);
   return (
@@ -109,8 +112,6 @@ function StarRow({
 
 function HomePage() {
   const [reviewsPaused, setReviewsPaused] = useState(false);
-  const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState("");
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [reviewSlide, setReviewSlide] = useState(0);
@@ -170,12 +171,12 @@ function HomePage() {
         }
 
         const createdTimes = vendors.map((vendor) =>
-          new Date(vendor.created_at).getTime(),
+          new Date(vendor.created_at).getTime()
         );
         const minCreatedAt = Math.min(...createdTimes);
         const maxCreatedAt = Math.max(...createdTimes);
         const maxReviewCount = Math.max(
-          ...vendors.map((vendor) => vendor.review_count),
+          ...vendors.map((vendor) => vendor.review_count)
         );
 
         const ranked = vendors
@@ -185,7 +186,7 @@ function HomePage() {
               vendor,
               maxReviewCount,
               minCreatedAt,
-              maxCreatedAt,
+              maxCreatedAt
             ),
           }))
           .sort((a, b) => b.score - a.score)
@@ -195,7 +196,6 @@ function HomePage() {
         const withTopReviews = await Promise.all(
           ranked.map(async (vendor) => {
             try {
-              // Only the first review's comment is used, so one review is enough.
               const page = await fetchVendorReviews(vendor.id, {
                 limit: 1,
                 signal: controller.signal,
@@ -204,7 +204,7 @@ function HomePage() {
             } catch {
               return { ...vendor, topReview: null };
             }
-          }),
+          })
         );
 
         setTrendingVendors(withTopReviews);
@@ -218,13 +218,6 @@ function HomePage() {
 
     return () => controller.abort();
   }, []);
-
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const query = searchQuery.trim();
-    if (!query) return;
-    navigate(`/food?q=${encodeURIComponent(query)}`);
-  }
 
   return (
     <div
@@ -258,50 +251,11 @@ function HomePage() {
               <span className="block text-primary italic">Favourite Stall</span>
             </h1>
 
-            <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
+            <p className="text-lg text-muted-foreground mb-12 leading-relaxed">
               Discover hidden gems across 13 canteens, a variety of cafes, fast
               food outlets and restaurants — rated, reviewed, and recommended by
               your fellow NTU foodies.
             </p>
-
-            {/* Search bar */}
-            <form className="flex gap-3 mb-7" onSubmit={submitSearch}>
-              <div className="flex-1 flex items-center gap-3 px-4 py-3 rounded-xl bg-card border border-border focus-within:border-primary/40 transition-colors">
-                <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search for stalls, dishes, canteens..."
-                  className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none flex-1"
-                />
-              </div>
-              <button
-                type="submit"
-                className="px-5 py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-opacity"
-              >
-                Search
-              </button>
-            </form>
-
-            {/* Quick tags */}
-            <div className="flex flex-wrap gap-2 mb-10">
-              {[
-                "🍗 Chicken Rice",
-                "🍜 Ban Mian",
-                "🌶️ Mala",
-                "🍱 Bento",
-                "🥘 Economy Rice",
-                "🍣 Japanese",
-              ].map((tag) => (
-                <button
-                  key={tag}
-                  className="px-3 py-1.5 rounded-full text-xs border border-border text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all duration-200"
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
 
             {/* Stats */}
             <div className="flex gap-10">
@@ -496,7 +450,6 @@ function HomePage() {
                           <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-bold flex-shrink-0">
                             {review.user.display_name.charAt(0).toUpperCase()}
                           </div>
-
                           <div className="min-w-0">
                             <div className="text-sm font-semibold truncate">
                               {review.user.display_name}
@@ -506,7 +459,6 @@ function HomePage() {
                             </div>
                           </div>
                         </div>
-
                         <div className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
                           <Clock className="w-3 h-3" />
                           {new Date(review.created_at).toLocaleDateString()}
@@ -515,11 +467,9 @@ function HomePage() {
 
                       <div className="flex items-center gap-2 mb-3">
                         <StarRow rating={review.rating} />
-
                         <span className="text-xs text-muted-foreground">
                           at
                         </span>
-
                         <span className="text-xs font-semibold text-primary truncate">
                           {review.vendor.name}
                         </span>
@@ -569,18 +519,122 @@ function HomePage() {
 }
 
 function App() {
-  return (
-    <Routes>
-      <Route path="/" element={<HomePage />} />
+  const { session, loading } = useAuth();
 
-      <Route element={<Layout />}>
-        <Route path="/food" element={<FoodPage />} />
-        <Route path="/vendors/:vendorId" element={<VendorsPage />} />
-        <Route path="signin" element={<SignInPage />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Route>
-      
-    </Routes>
+  const [preferenceStatus, setPreferenceStatus] = useState<
+    "pending" | "completed" | "skipped" | null
+  >(null);
+
+  const [preferenceLoadError, setPreferenceLoadError] = useState(false);
+  const [preferenceRetry, setPreferenceRetry] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadPreferences() {
+      if (loading) return;
+
+      if (!session) {
+        setPreferenceStatus(null);
+        return;
+      }
+
+      try {
+        setPreferenceLoadError(false);
+
+        const preferences = await fetchMyPreferences();
+
+        if (!active) return;
+
+        if (!preferences) {
+          setPreferenceStatus("pending");
+          return;
+        }
+
+        if (
+          preferences.onboarding_status === "completed" ||
+          preferences.onboarding_status === "skipped"
+        ) {
+          setPreferenceStatus(preferences.onboarding_status);
+        } else {
+          setPreferenceStatus("pending");
+        }
+      } catch (error) {
+        console.error("Unable to load food preferences", error);
+
+        if (!active) return;
+
+        setPreferenceLoadError(true);
+      }
+    }
+
+    void loadPreferences();
+
+    return () => {
+      active = false;
+    };
+  }, [session, loading, preferenceRetry]);
+
+  return (
+    <>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+
+        <Route
+          element={
+            <Layout
+              preferenceStatus={preferenceStatus}
+              openPreferences={() => setPreferenceStatus("pending")}
+            />
+          }
+        >
+          <Route path="/food" element={<FoodPage />} />
+          <Route path="/map" element={<MapPage />} />
+          <Route path="/vendors/:vendorId" element={<VendorsPage />} />
+          <Route path="signin" element={<SignInPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+      </Routes>
+
+      {preferenceLoadError && (
+        <div className="fixed bottom-6 right-6 z-[110] w-[min(92vw,380px)] rounded-xl border border-border bg-card p-4 shadow-xl">
+          <p className="text-sm font-semibold text-foreground">
+            Unable to load food preferences
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            You can retry loading your preferences or close this message.
+          </p>
+
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setPreferenceLoadError(false)}
+              className="rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              Close
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPreferenceLoadError(false);
+                setPreferenceRetry((current) => current + 1);
+              }}
+              className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      {session && preferenceStatus === "pending" && (
+        <FoodPreferencesOnboarding
+          onFinished={(status) => setPreferenceStatus(status)}
+        />
+      )}
+    </>
   );
 }
 

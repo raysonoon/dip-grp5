@@ -33,6 +33,43 @@ function redditUrl(permalink) {
   }
 }
 
+
+function googleMapsUrl(mapsUrl) {
+  if (!mapsUrl) return null;
+
+  try {
+    const url = new URL(mapsUrl);
+
+    if (url.protocol !== "https:") return null;
+
+    const hostname = url.hostname.toLowerCase();
+    const pathname = url.pathname.toLowerCase();
+
+    const isGoogleMapsHost =
+      hostname === "maps.google.com" ||
+      /^maps\.google\.[a-z.]+$/.test(hostname);
+
+    const isGoogleMapsPath =
+      (hostname === "www.google.com" ||
+        /^www\.google\.[a-z.]+$/.test(hostname) ||
+        /^google\.[a-z.]+$/.test(hostname)) &&
+      pathname.startsWith("/maps");
+
+    const isMapsShortLink =
+      hostname === "maps.app.goo.gl" ||
+      (hostname === "goo.gl" && pathname.startsWith("/maps"));
+
+    if (!isGoogleMapsHost && !isGoogleMapsPath && !isMapsShortLink) {
+      return null;
+    }
+
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+
 function CitationPopover({ source, citationNumber, showVendorLink }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
@@ -41,7 +78,9 @@ function CitationPopover({ source, citationNumber, showVendorLink }) {
   const [placement, setPlacement] = useState(null);
   const externalUrl = source.source_type === "reddit"
     ? redditUrl(source.permalink)
-    : null;
+    : source.source_type === "google_review"
+      ? googleMapsUrl(source.maps_url)
+      : null;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -187,7 +226,9 @@ function CitationPopover({ source, citationNumber, showVendorLink }) {
                 rel="noreferrer"
                 className="mt-2 inline-flex items-center gap-1 font-semibold text-primary hover:underline"
               >
-                Open Reddit comment
+                {source.source_type === "google_review"
+                  ? "Open Google review"
+                  : "Open Reddit comment"}
                 <ExternalLink className="h-3 w-3" aria-hidden="true" />
               </a>
             )}
@@ -223,7 +264,10 @@ function decorateText(text, sources, answerText) {
       const citations = citationNumbers(citationMatch[1]);
       parts.push(...citations.map((citationNumber) => {
         const source = sources[citationNumber - 1];
+
         if (!source) return `[${citationNumber}]`;
+
+        if (source.source_type === "count") return null;
 
         const vendorMentioned = source.vendor_name
           ? answerText.toLocaleLowerCase().includes(source.vendor_name.toLocaleLowerCase())

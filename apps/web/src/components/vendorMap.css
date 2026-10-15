@@ -1,0 +1,15 @@
+.vendor-pin-wrapper { background: transparent; border: 0; }
+.vendor-pin {
+  display: block; width: 14px; height: 14px; margin: 2px;
+  border-radius: 50%; background: #e11d48; border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+.vendor-pin--selected {
+  width: 20px; height: 20px; margin: 0; background: #2563eb;
+  animation: vendor-pin-pulse 1.4s ease-out infinite;
+}
+@keyframes vendor-pin-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.6); }
+  100% { box-shadow: 0 0 0 14px rgba(37, 99, 235, 0); }
+}
+.vendor-popup a { display: inline-block; margin-top: 6px; font-weight: 600; }
