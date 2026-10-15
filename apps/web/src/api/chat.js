@@ -125,8 +125,8 @@ function parseSources(value) {
   return value.map(parseSource);
 }
 
-export const CHAT_IDLE_TIMEOUT_MS = 15_000;
-export const CHAT_REQUEST_TIMEOUT_MS = 15_000;
+export const CHAT_IDLE_TIMEOUT_MS = 30_000;
+export const CHAT_REQUEST_TIMEOUT_MS = 30_000;
 
 export async function streamChat(
   question,

@@ -263,7 +263,7 @@ retrieved facts with numbered sources; without evidence it asks the user to retr
 Failures during retrieval or after a partial answer send an SSE `error` event
 without a success `sources` event. Server diagnostics stay in backend logs.
 
-The web client stops waiting after 15 seconds overall (including authentication
+The web client stops waiting after 30 seconds overall (including authentication
 and response-body reads), with the same limit for idle streams. It cancels the stream,
 shows a retry message, and allows another question. Partial failed turns are not
 saved to conversation history. A final `sources` event completes the request even
