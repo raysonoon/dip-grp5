@@ -163,9 +163,49 @@ def list_vendors(
         .limit(limit)
     ).all()
 
-    items = [
-        _vendor_list_item(vendor, review_count) for vendor, review_count in rows
-    ]
+    items = []
+    for vendor, review_count in rows:
+        items.append(
+            VendorListItem(
+                id=vendor.id,
+                name=vendor.name,
+                location=vendor.location,
+                unit_code=vendor.unit_code,
+                image_url=(vendor.images[0].image_url if vendor.images else None),
+                category=vendor.category,
+                opening_hours=vendor.opening_hours,
+                price_range=vendor.price_range,
+                halal=vendor.halal,
+                vegetarian=vendor.vegetarian,
+                dishes=vendor.dishes,
+                average_google_rating=(
+                    None
+                    if vendor.average_google_rating is None
+                    else float(vendor.average_google_rating)
+                ),
+                created_at=vendor.created_at,
+                updated_at=vendor.updated_at,
+                average_rating=(
+                    None
+                    if vendor.average_rating is None
+                    else float(vendor.average_rating)
+                ),
+                review_count=review_count,
+                images=[
+                    VendorImageRead(
+                        id=image.id,
+                        vendor_id=image.vendor_id,
+                        image_url=image.image_url,
+                        mime_type=image.mime_type,
+                        file_size_bytes=image.file_size_bytes,
+                        display_order=image.display_order,
+                        created_at=image.created_at,
+                    )
+                    for image in vendor.images
+                ],
+                map_coordinates=_vendor_coordinates(vendor),
+            )
+        )
 
     return VendorListRead(
         items=items,
