@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+from sqlalchemy import event
+
 from app.schemas.chat import ChatHistoryMessage
 from app.services.chat import ChatService, format_sql_context
 from app.services.embedding import Embedder
@@ -63,6 +65,41 @@ def _seed_prompt(
         )
     )
     session.commit()
+
+
+def test_vendor_rows_are_loaded_once_per_answer(session) -> None:
+    vendor_selects: list[str] = []
+
+    def record_vendor_select(
+        _connection,
+        _cursor,
+        statement,
+        _parameters,
+        _context,
+        _executemany,
+    ) -> None:
+        if "FROM vendors" in statement:
+            vendor_selects.append(statement)
+
+    event.listen(session.bind, "before_cursor_execute", record_vendor_select)
+    try:
+        service = ChatService(
+            FakeEmbedder(),
+            FakeKnowledgeStore(items=[]),
+            generate=lambda _prompt: "No results",
+            session=session,
+        )
+        service.answer("What should I eat?")
+        assert len(vendor_selects) == 1
+
+        service.answer("What else should I eat?")
+        assert len(vendor_selects) == 2
+    finally:
+        event.remove(
+            session.bind,
+            "before_cursor_execute",
+            record_vendor_select,
+        )
 
 
 def test_format_sql_context_lists_attributes() -> None:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from difflib import SequenceMatcher
+from functools import lru_cache
 import re
 import unicodedata
 
@@ -327,6 +328,22 @@ def _build_alias_index(
     }
 
 
+@lru_cache(maxsize=32)
+def _build_default_alias_index(
+    vendors: tuple[VendorEntry, ...],
+) -> dict[str, tuple[VendorEntry, ...]]:
+    return _build_alias_index(list(vendors), CHAT_VENDOR_ALIASES)
+
+
+def _get_alias_index(
+    vendors: list[VendorEntry],
+    aliases: Mapping[str, str],
+) -> dict[str, tuple[VendorEntry, ...]]:
+    if aliases is CHAT_VENDOR_ALIASES:
+        return _build_default_alias_index(tuple(vendors))
+    return _build_alias_index(vendors, aliases)
+
+
 def match_vendor_mentions(
     text: str,
     vendors: Iterable[VendorEntry],
@@ -348,7 +365,7 @@ def match_vendor_mentions(
         return []
 
     prepared = _prepare_vendors(vendors)
-    alias_index = _build_alias_index(prepared, aliases)
+    alias_index = _get_alias_index(prepared, aliases)
     matches: dict[int, tuple[int, int, VendorEntry]] = {}
 
     # Longer aliases win a same-position tie.  This matters for forms such as
@@ -396,7 +413,7 @@ def resolve_vendor_names(
     """Resolve LLM-produced vendor names and return unresolved inputs too."""
 
     prepared = _prepare_vendors(vendors)
-    alias_index = _build_alias_index(prepared, aliases)
+    alias_index = _get_alias_index(prepared, aliases)
     matches: list[VendorEntry] = []
     unresolved: list[str] = []
     matched_ids: set[int] = set()
@@ -472,7 +489,7 @@ def suggest_vendor_names(
         return []
 
     prepared = _prepare_vendors(vendors)
-    alias_index = _build_alias_index(prepared, aliases)
+    alias_index = _get_alias_index(prepared, aliases)
     forms_by_vendor: dict[int, set[str]] = {
         vendor_id: set(_vendor_name_forms(vendor_name))
         for vendor_id, vendor_name in prepared
