@@ -589,6 +589,7 @@ function App() {
           }
         >
           <Route path="/food" element={<FoodPage />} />
+          <Route path="/map" element={<MapPage />} />
           <Route path="/vendors/:vendorId" element={<VendorsPage />} />
           <Route path="signin" element={<SignInPage />} />
           <Route path="*" element={<NotFoundPage />} />
