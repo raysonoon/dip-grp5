@@ -336,3 +336,10 @@ def test_contracted_cuisine_negation_becomes_exclusion() -> None:
     assert not_filters.cuisine is None
     assert not_filters.exclude_cuisine == "Vietnamese"
 
+
+@pytest.mark.parametrize("question", [
+    "Where is Gelare?", "How many vendors are there?", "hello", "library food",
+])
+def test_query_without_explicit_cuisine_returns_no_cuisine(question) -> None:
+    assert extract_structured_filters(question).cuisine is None
+
