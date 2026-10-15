@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
-
+import { Link, useOutletContext, useSearchParams } from "react-router-dom";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  X,
+} from "lucide-react";
 import { apiUrl } from "../api/client";
 import { fetchVendorFilters, fetchVendorPage } from "../api/vendors";
 
@@ -137,6 +141,8 @@ function FilterSelect({ label, placeholder, value, options, onChange }) {
 export default function FoodPage() {
   const PAGE_LIMIT = 12;
 
+  const { preferenceStatus, openPreferences } = useOutletContext();
+  const [showPreferencesBanner, setShowPreferencesBanner] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
   const urlQuery = searchParams.get("q") ?? "";
   const [searchTerm, setSearchTerm] = useState(urlQuery);
@@ -245,6 +251,38 @@ export default function FoodPage() {
         </h1>
         <p className="text-muted-foreground">Explore and review food vendors across NTU canteens</p>
       </header>
+
+      {preferenceStatus === "skipped" && showPreferencesBanner && (
+        <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              Get more personalised food recommendations
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Tell us your food preferences so Foodie can recommend places that suit you.
+            </p>
+          </div>
+
+        <div className="flex flex-shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={openPreferences}
+            className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
+          >
+            Set preferences
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowPreferencesBanner(false)}
+            aria-label="Dismiss preferences reminder"
+            className="p-1 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    )}
 
       <div className="flex gap-3 mb-6 flex-wrap">
         <input

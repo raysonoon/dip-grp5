@@ -20,6 +20,10 @@ export default defineConfig({
         target: `http://localhost:${API_PORT}`,
         changeOrigin: true,
       },
+      "/preferences": {
+        target: `http://localhost:${API_PORT}`,
+        changeOrigin: true,
+      },
       "/chat": {
         target: `http://localhost:${API_PORT}`,
         changeOrigin: true,

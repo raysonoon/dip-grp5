@@ -9,6 +9,9 @@ import { fetchVendors } from "./api/vendors";
 import SignInPage from "./pages/SignInPage";
 import FoodPage from "./pages/FoodPage";
 import VendorsPage from "./pages/VendorsPage";
+import FoodPreferencesOnboarding from "./components/FoodPreferencesOnboarding";
+import { fetchMyPreferences } from "./api/preferences.js";
+import { useAuth } from "./contexts/AuthContext";
 import VendorMap from "./pages/VendorMap";
 import MapPage from "./pages/MapPage";
 import NotFoundPage from "./pages/NotFoundPage";
@@ -570,19 +573,121 @@ function HomePage() {
 }
 
 function App() {
-  return (
-    <Routes>
-      <Route path="/" element={<HomePage />} />
+  const { session, loading } = useAuth();
 
-      <Route element={<Layout />}>
-        <Route path="/food" element={<FoodPage />} />
-        <Route path="/vendors/:vendorId" element={<VendorsPage />} />
-        <Route path="signin" element={<SignInPage />} />
-        <Route path="/map" element={<MapPage />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Route>
-      
-    </Routes>
+  const [preferenceStatus, setPreferenceStatus] = useState<
+    "pending" | "completed" | "skipped" | null
+  >(null);
+
+  const [preferenceLoadError, setPreferenceLoadError] = useState(false);
+  const [preferenceRetry, setPreferenceRetry] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadPreferences() {
+      if (loading) return;
+
+      if (!session) {
+        setPreferenceStatus(null);
+        return;
+      }
+
+      try {
+        setPreferenceLoadError(false);
+
+        const preferences = await fetchMyPreferences();
+
+        if (!active) return;
+
+        if (!preferences) {
+          setPreferenceStatus("pending");
+          return;
+        }
+
+        if (
+          preferences.onboarding_status === "completed" ||
+          preferences.onboarding_status === "skipped"
+        ) {
+          setPreferenceStatus(preferences.onboarding_status);
+        } else {
+          setPreferenceStatus("pending");
+        }
+      } catch (error) {
+        console.error("Unable to load food preferences", error);
+
+        if (!active) return;
+
+        setPreferenceLoadError(true);
+      }
+    }
+
+    void loadPreferences();
+
+    return () => {
+      active = false;
+    };
+  }, [session, loading, preferenceRetry]);
+
+  return (
+    <>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+
+        <Route
+          element={
+            <Layout
+              preferenceStatus={preferenceStatus}
+              openPreferences={() => setPreferenceStatus("pending")}
+            />
+          }
+        >
+          <Route path="/food" element={<FoodPage />} />
+          <Route path="/vendors/:vendorId" element={<VendorsPage />} />
+          <Route path="signin" element={<SignInPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+      </Routes>
+
+      {preferenceLoadError && (
+        <div className="fixed bottom-6 right-6 z-[110] w-[min(92vw,380px)] rounded-xl border border-border bg-card p-4 shadow-xl">
+          <p className="text-sm font-semibold text-foreground">
+            Unable to load food preferences
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            You can retry loading your preferences or close this message.
+          </p>
+
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setPreferenceLoadError(false)}
+              className="rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              Close
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPreferenceLoadError(false);
+                setPreferenceRetry((current) => current + 1);
+              }}
+              className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      {session && preferenceStatus === "pending" && (
+        <FoodPreferencesOnboarding
+          onFinished={(status) => setPreferenceStatus(status)}
+        />
+      )}
+    </>
   );
 }
 

@@ -16,6 +16,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.review import Review
+    from app.models.user_food_preferences import UserFoodPreferences
 
 
 class User(Base):
@@ -66,6 +67,12 @@ class User(Base):
     )
 
     reviews: Mapped[list["Review"]] = relationship(back_populates="user")
+
+    food_preferences: Mapped["UserFoodPreferences | None"] = relationship(
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
     @validates("email_address")
     def normalize_email_address(self, _key: str, value: str) -> str:
