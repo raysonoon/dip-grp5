@@ -27,9 +27,14 @@ def stream_chat(
 
     def events() -> Iterator[str]:
         try:
+            picker_context = {"food_pick": payload.food_pick} if payload.food_pick else {}
+            logger.info("Chat picker result: %r", payload.food_pick)
+            if payload.action == "recommend_pick":
+                picker_context["recommend_pick"] = True
             for event, data in service.stream_answer(
-                payload.question,
+                payload.question or "",
                 history=payload.history,
+                **picker_context,
             ):
                 if event == "sources":
                     sources = [source.model_dump(mode="json") for source in data]

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { normalizeChatQuestion, streamChat } from "../api/chat";
+import { normalizeChatQuestion, streamChat, trimChatHistory } from "../api/chat";
 import { useAuth } from "../contexts/AuthContext";
 import {
   chatFailureMessage,
@@ -8,7 +8,7 @@ import {
   removePendingRequestMessages,
 } from "./chatSessionState.js";
 
-const ANONYMOUS_CHAT_GREETING = "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!";
+const ANONYMOUS_CHAT_GREETING = "Hey! Time to eat 🍜 What do you want to eat today?";
 
 type ChatHistoryMessage = {
   role: "user" | "assistant";
@@ -29,12 +29,12 @@ function createChatSessionId() {
 
 function initialChatMessages(displayName: string | null): ChatUiMessage[] {
   const greeting = displayName
-    ? `Hey ${displayName}! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!`
+    ? `Hey ${displayName}! Time to eat 🍜 What are you craving today?`
     : ANONYMOUS_CHAT_GREETING;
   return [{ role: "bot", text: greeting }];
 }
 
-export function useChatSession() {
+export function useChatSession({ foodPick }: { foodPick?: string } = {}) {
   const { user } = useAuth();
   const metadataDisplayName = typeof user?.user_metadata?.display_name === "string"
     && user.user_metadata.display_name.trim()
@@ -64,20 +64,22 @@ export function useChatSession() {
 
   useEffect(() => () => activeControllerRef.current?.abort(), []);
 
-  async function sendMessage(text: string) {
-    const question = normalizeChatQuestion(text);
-    if (!question || requestPendingRef.current) return;
+  async function sendMessage(text: string, { fromPicker = false }: { fromPicker?: boolean } = {}) {
+    const question = fromPicker ? "" : normalizeChatQuestion(text);
+    if ((!question && !fromPicker) || (fromPicker && !foodPick) || requestPendingRef.current) return;
 
     const controller = new AbortController();
     const requestId = ++requestIdRef.current;
     const historyForRequest = historyRef.current;
     activeControllerRef.current = controller;
     requestPendingRef.current = true;
-    setMessages((previous) => [
-      ...previous,
-      { role: "user", text: question, requestId },
-    ]);
-    setInput("");
+    if (!fromPicker) {
+      setMessages((previous) => [
+        ...previous,
+        { role: "user", text: question, requestId },
+      ]);
+      setInput("");
+    }
     setIsGenerating(true);
 
     let hasStreamMessage = false;
@@ -85,6 +87,8 @@ export function useChatSession() {
       const response = await streamChat(question, {
         history: historyForRequest,
         sessionId: sessionIdRef.current,
+        foodPick,
+        action: fromPicker ? "recommend_pick" : undefined,
         signal: controller.signal,
         onDelta: (_delta: string, answer: string) => {
           if (controller.signal.aborted || requestId !== requestIdRef.current) return;
@@ -106,11 +110,9 @@ export function useChatSession() {
         },
       });
       if (controller.signal.aborted || requestId !== requestIdRef.current) return;
-      historyRef.current = completeChatHistory(
-        historyForRequest,
-        question,
-        response.answer,
-      );
+      historyRef.current = fromPicker
+        ? trimChatHistory([...historyForRequest, { role: "assistant", content: response.answer }])
+        : completeChatHistory(historyForRequest, question, response.answer);
       setMessages((previous) => {
         if (!hasStreamMessage) {
           return [...previous, { role: "bot", text: response.answer, sources: response.sources }];
@@ -167,6 +169,7 @@ export function useChatSession() {
     isGenerating,
     messages,
     sendMessage,
+    recommendFoodPick: () => sendMessage("", { fromPicker: true }),
     setInput,
     startNewSession,
     stopResponse,
