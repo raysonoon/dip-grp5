@@ -59,6 +59,7 @@ class VendorListItem(BaseModel):
     price_range: str | None
     halal: bool | None
     vegetarian: bool | None
+    dishes: str | None
     average_google_rating: float | None
     created_at: datetime
     updated_at: datetime
@@ -66,6 +67,17 @@ class VendorListItem(BaseModel):
     review_count: int
     images: list[VendorImageRead]
     map_coordinates: VendorCoordinates | None
+
+
+class VendorNearbyItem(VendorListItem):
+    """A vendor plus its PostGIS distance, in metres, from the requested point."""
+
+    distance_m: float
+
+
+class VendorNearbyRead(BaseModel):
+    items: list[VendorNearbyItem]
+    total: int
 
 
 class VendorListRead(BaseModel):

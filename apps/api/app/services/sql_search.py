@@ -147,7 +147,13 @@ def _build_predicates(filters: StructuredFilter) -> list:
     if filters.vegetarian is not None:
         predicates.append(Vendor.vegetarian.is_(filters.vegetarian))
     if filters.cuisine:
-        predicates.append(Vendor.category.ilike(f"%{filters.cuisine}%"))
+        pattern = f"%{filters.cuisine}%"
+        predicates.append(
+            or_(
+                Vendor.category.ilike(pattern),
+                Vendor.dishes.ilike(pattern),
+            )
+        )
     if filters.exclude_cuisine:
         predicates.append(
             not_(

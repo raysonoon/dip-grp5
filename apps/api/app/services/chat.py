@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import RedditComment, Vendor
+from app.models import GoogleReview, RedditComment, Vendor
 from app.schemas.chat import ChatHistoryMessage, ChatResponse, ChatSource, trim_chat_history
 from app.services.embedding import Embedder
 from app.services.intent_router import IntentMatch, IntentRouter
@@ -1025,10 +1025,17 @@ class ChatService:
             history=history,
         )
         reddit_permalinks = self._resolve_reddit_permalinks(results)
+        google_maps_urls = self._resolve_google_review_maps_urls(results)
+
         return ChatGeneration(
             prompt=prompt,
             sources=[
-                self._to_source(result, vendor_names, reddit_permalinks)
+                self._to_source(
+                    result,
+                    vendor_names,
+                    reddit_permalinks,
+                    google_maps_urls,
+                )
                 for result in results
             ],
             search_type="Vector",
@@ -1206,10 +1213,16 @@ class ChatService:
             history=history,
         )
         reddit_permalinks = self._resolve_reddit_permalinks(results)
+        google_maps_urls = self._resolve_google_review_maps_urls(results)
         return ChatGeneration(
             prompt=prompt,
             sources=[
-                self._to_source(result, vendor_names, reddit_permalinks)
+                self._to_source(
+                    result,
+                    vendor_names,
+                    reddit_permalinks,
+                    google_maps_urls,
+                )
                 for result in results
             ],
             search_type="SQL + Vector",
@@ -1652,6 +1665,7 @@ class ChatService:
         result: KnowledgeResult,
         vendor_names: dict[int, str],
         reddit_permalinks: dict[str, str | None],
+        google_maps_urls: dict[str, str | None],
     ) -> ChatSource:
         content = result.content
         excerpt = content[:EXCERPT_CHARS] + "…" if len(content) > EXCERPT_CHARS else content
@@ -1668,6 +1682,11 @@ class ChatService:
             permalink=(
                 reddit_permalinks.get(result.source_id)
                 if result.source_type == "reddit" and result.source_id is not None
+                else None
+            ),
+            maps_url=(
+                google_maps_urls.get(result.source_id)
+                if result.source_type == "google_review" and result.source_id is not None
                 else None
             ),
         )
@@ -1694,6 +1713,39 @@ class ChatService:
             ).where(RedditComment.reddit_comment_id.in_(source_ids))
         ).all()
         return {source_id: permalink for source_id, permalink in rows}
+
+
+    def _resolve_google_review_maps_urls(
+        self,
+        results: list[KnowledgeResult],
+    ) -> dict[str, str | None]:
+        if self._session is None:
+            return {}
+
+        source_ids = {
+            result.source_id
+            for result in results
+            if result.source_type == "google_review"
+            and result.source_id is not None
+        }
+
+        if not source_ids:
+            return {}
+
+        rows = self._session.execute(
+            select(
+                GoogleReview.external_review_id,
+                GoogleReview.maps_url,
+            ).where(
+                GoogleReview.external_review_id.in_(source_ids)
+            )
+        ).all()
+
+        return {
+            source_id: maps_url
+            for source_id, maps_url in rows
+        }
+
 
     @staticmethod
     def _to_sql_source(result: SqlResult) -> ChatSource:

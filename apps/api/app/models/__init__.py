@@ -5,6 +5,7 @@ from app.models.reddit_comment import RedditComment
 from app.models.review_vote import ReviewVote
 from app.models.user import User
 from app.models.vendor import Vendor, VendorImage
+from app.models.user_food_preferences import UserFoodPreferences
 
 __all__ = [
     "ChatbotPrompt",
@@ -16,5 +17,6 @@ __all__ = [
     "Vendor",
     "VendorImage",
     "RedditComment",
+    "UserFoodPreferences",
 ]
 

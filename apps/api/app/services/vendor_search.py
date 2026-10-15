@@ -252,6 +252,10 @@ def build_vendor_search_plan(
         config,
         func.coalesce(Vendor.location, ""),
     )
+    dishes_vector = func.to_tsvector(
+        config,
+        func.coalesce(Vendor.dishes, ""),
+    )
     fuzzy_document = func.lower(
         func.trim(
             func.concat_ws(
