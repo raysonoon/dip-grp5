@@ -74,6 +74,7 @@ class ChatSource(BaseModel):
     vendor_name: str | None = None
     excerpt: str | None = None
     permalink: str | None = None
+    maps_url: str | None = None
     location: str | None = None
     unit_code: str | None = None
     category: str | None = None
