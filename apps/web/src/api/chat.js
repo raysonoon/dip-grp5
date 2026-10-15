@@ -70,6 +70,26 @@ export function parseChatResponse(value) {
 }
 
 export const MAX_CHAT_MESSAGES_PER_ROLE = 5;
+export const MAX_CHAT_QUESTION_LENGTH = 2_000;
+export const MAX_CHAT_HISTORY_CONTENT_LENGTH = 4_000;
+
+function boundedText(value, maxLength) {
+  const trimmed = value.trim();
+  let clipped = trimmed.slice(0, maxLength);
+  const finalCodeUnit = clipped.charCodeAt(clipped.length - 1);
+  if (finalCodeUnit >= 0xD800 && finalCodeUnit <= 0xDBFF) {
+    clipped = clipped.slice(0, -1);
+  }
+  return clipped;
+}
+
+export function normalizeChatQuestion(value) {
+  return boundedText(value, MAX_CHAT_QUESTION_LENGTH);
+}
+
+export function normalizeChatHistoryContent(value) {
+  return boundedText(value, MAX_CHAT_HISTORY_CONTENT_LENGTH);
+}
 
 export function trimChatHistory(history) {
   const kept = new Set();
@@ -79,7 +99,13 @@ export function trimChatHistory(history) {
       .filter((index) => index >= 0);
     indexes.slice(-MAX_CHAT_MESSAGES_PER_ROLE).forEach((index) => kept.add(index));
   }
-  return history.filter((_message, index) => kept.has(index));
+  return history
+    .filter((_message, index) => kept.has(index))
+    .map((message) => ({
+      ...message,
+      content: normalizeChatHistoryContent(message.content),
+    }))
+    .filter((message) => message.content);
 }
 
 function parseEventBlock(block) {
@@ -99,11 +125,65 @@ function parseSources(value) {
   return value.map(parseSource);
 }
 
+export const CHAT_IDLE_TIMEOUT_MS = 30_000;
+export const CHAT_REQUEST_TIMEOUT_MS = 30_000;
+
 export async function streamChat(
+  question,
+  /** @type {{ history?: Array<{ role: "user" | "assistant", content: string }>, sessionId?: string, signal?: AbortSignal, onDelta?: (delta: string, answer: string) => void, idleTimeoutMs?: number, timeoutMs?: number }} */
+  {
+    signal,
+    idleTimeoutMs = CHAT_IDLE_TIMEOUT_MS,
+    timeoutMs = CHAT_REQUEST_TIMEOUT_MS,
+    ...options
+  } = {},
+) {
+  const controller = new AbortController();
+  let idleTimer;
+  const abortFromCaller = () => controller.abort(
+    signal.reason ?? new DOMException("The operation was aborted", "AbortError"),
+  );
+  const aborted = new Promise((_resolve, reject) => {
+    controller.signal.addEventListener("abort", () => reject(controller.signal.reason), {
+      once: true,
+    });
+  });
+  const resetIdleTimeout = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => controller.abort(new ApiTimeoutError(idleTimeoutMs)), idleTimeoutMs);
+  };
+  const totalTimer = setTimeout(() => controller.abort(new ApiTimeoutError(timeoutMs)), timeoutMs);
+  resetIdleTimeout();
+  if (signal?.aborted) abortFromCaller();
+  else signal?.addEventListener("abort", abortFromCaller, { once: true });
+
+  try {
+    // Race the whole operation so even a stalled auth lookup or response body
+    // cannot leave the chat waiting after the deadline or a user cancellation.
+    return await Promise.race([
+      readChatStream(question, {
+        ...options,
+        signal: controller.signal,
+        onProgress: resetIdleTimeout,
+      }),
+      aborted,
+    ]);
+  } catch (error) {
+    if (controller.signal.aborted) throw controller.signal.reason;
+    if (error instanceof TypeError) throw new ApiNetworkError("Chat connection interrupted", error);
+    throw error;
+  } finally {
+    clearTimeout(idleTimer);
+    clearTimeout(totalTimer);
+    signal?.removeEventListener("abort", abortFromCaller);
+    controller.abort();
+  }
+}
+
+async function readChatStream(
   /** @type {string} */
   question,
-  /** @type {{ history?: Array<{ role: "user" | "assistant", content: string }>, sessionId?: string, signal?: AbortSignal, onDelta?: (delta: string, answer: string) => void }} */
-  { history = [], sessionId, signal, onDelta = () => {} } = {},
+  { history = [], sessionId, signal, onDelta = () => {}, onProgress },
 ) {
   const accessToken = await getAccessToken();
   if (signal?.aborted) {
@@ -118,9 +198,9 @@ export async function streamChat(
       method: "POST",
       headers,
       body: JSON.stringify({
-      session_id: sessionId,
-      question,
-      history: trimChatHistory(history),
+        session_id: sessionId,
+        question,
+        history: trimChatHistory(history),
       }),
       signal,
     });
@@ -171,26 +251,41 @@ export async function streamChat(
       await onDelta(data, answer);
     } else if (parsed.event === "sources") {
       sources = parseSources(data);
+    } else if (parsed.event === "error") {
+      // Only expose a stable public message, never server diagnostics.
+      throw new ApiError("Foodie is temporarily unavailable", 503, null);
     }
   }
 
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    buffer = buffer.replaceAll("\r\n", "\n");
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary >= 0) {
-      await handleBlock(buffer.slice(0, boundary));
-      buffer = buffer.slice(boundary + 2);
-      boundary = buffer.indexOf("\n\n");
+  const cancelReader = () => { void reader.cancel().catch(() => {}); };
+  signal.addEventListener("abort", cancelReader, { once: true });
+  try {
+    while (true) {
+      signal.throwIfAborted();
+      const { done, value } = await reader.read();
+      signal.throwIfAborted();
+      if (value?.length) onProgress();
+      buffer += decoder.decode(value, { stream: !done });
+      buffer = buffer.replaceAll("\r\n", "\n");
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0) {
+        await handleBlock(buffer.slice(0, boundary));
+        buffer = buffer.slice(boundary + 2);
+        if (sources !== null) return { answer, sources };
+        boundary = buffer.indexOf("\n\n");
+      }
+      if (done) break;
     }
-    if (done) break;
+    if (buffer.trim()) await handleBlock(buffer.trim());
+    if (sources === null) {
+      throw new ChatResponseError("Chat API stream ended before sources arrived");
+    }
+    return { answer, sources };
+  } finally {
+    signal.removeEventListener("abort", cancelReader);
+    cancelReader();
+    reader.releaseLock();
   }
-  if (buffer.trim()) await handleBlock(buffer.trim());
-  if (sources === null) {
-    throw new ChatResponseError("Chat API stream ended before sources arrived");
-  }
-  return { answer, sources };
 }
 
 export function chatErrorMessage(error) {

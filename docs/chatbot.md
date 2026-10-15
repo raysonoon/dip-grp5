@@ -255,6 +255,20 @@ Each source carries `source_type`, `source_id`, `vendor_id`, `vendor_name`
 SQL-path sources use `source_type="vendor"` (structured attributes) or
 `source_type="count"`.
 
+Chat requests use a Gemini HTTP timeout of 10 seconds per call, configurable via
+`CHAT_REQUEST_TIMEOUT_MS`, with automatic SDK retries disabled for interactive
+generation, routing, and embeddings. Offline embedding jobs keep their existing
+retry policy. If generation fails before any text arrives, Foodie displays the
+retrieved facts with numbered sources; without evidence it asks the user to retry.
+Failures during retrieval or after a partial answer send an SSE `error` event
+without a success `sources` event. Server diagnostics stay in backend logs.
+
+The web client stops waiting after 30 seconds overall (including authentication
+and response-body reads), with the same limit for idle streams. It cancels the stream,
+shows a retry message, and allows another question. Partial failed turns are not
+saved to conversation history. A final `sources` event completes the request even
+if the connection does not close immediately.
+
 ### Ingestion
 
 `reindex` reads directly from the relational tables:
