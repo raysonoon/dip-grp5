@@ -97,6 +97,15 @@ _EXPLICIT_CUISINE_PHRASE_RE = re.compile(
     r"food\b",
     re.IGNORECASE,
 )
+# Open-ended cuisine adjectives commonly use demonym-style suffixes.  Keeping
+# this fallback morphological makes it conservative without growing a list of
+# phrases that happened to be misclassified.  Ambiguous phrases are left for
+# the existing LLM extractor instead of becoming restrictive SQL predicates.
+_CUISINE_NAME_ENDING_RE = re.compile(
+    r"(?:an|ean|ian|ese|ish|ic|i|ern)\Z",
+    re.IGNORECASE,
+)
+_CUISINE_CLAUSE_BOUNDARY_RE = re.compile(r"\b(?:but|or)\b", re.IGNORECASE)
 _CUISINE_REQUEST_WORDS = {
     "a",
     "an",
@@ -284,39 +293,104 @@ def _extract_explicit_cuisine_phrase(
     per cuisine. Generic request/adjective words are removed conservatively.
     """
 
+    filter_keywords = (
+        *LOCATION_KEYWORDS,
+        *_BUDGET_KEYWORDS,
+        *_OPEN_HOURS_KEYWORDS,
+        *VEGETARIAN_KEYWORDS,
+        *HALAL_KEYWORDS,
+    )
+
     for match in _EXPLICIT_CUISINE_PHRASE_RE.finditer(question):
         raw_phrase = match.group("phrase")
-        word_matches = list(
-            re.finditer(r"[A-Za-z][A-Za-z'\u2019-]*", raw_phrase)
-        )
-        words = [word_match.group(0) for word_match in word_matches]
-        if not words or words[-1].casefold() in _NON_CUISINE_DESCRIPTORS:
-            continue
+        boundaries = list(_CUISINE_CLAUSE_BOUNDARY_RE.finditer(raw_phrase))
+        ranges: list[tuple[int, int]] = []
+        start = 0
+        for boundary in boundaries:
+            ranges.append((start, boundary.start()))
+            start = boundary.end()
+        ranges.append((start, len(raw_phrase)))
 
-        start_index = 0
-        for index, word in enumerate(words):
-            if word.casefold() in _CUISINE_BOUNDARY_WORDS:
-                start_index = index + 1
+        for start, end in ranges:
+            value = _extract_cuisine_clause(
+                question,
+                raw_phrase[start:end],
+                match.start("phrase") + start,
+                filter_keywords=filter_keywords,
+                negated=negated,
+            )
+            if value is not None:
+                return value
+    return None
+
+
+def _extract_cuisine_clause(
+    question: str,
+    raw_phrase: str,
+    phrase_start: int,
+    *,
+    filter_keywords: tuple[str, ...],
+    negated: bool,
+) -> str | None:
+    """Extract one cuisine candidate without absorbing other filter spans."""
+
+    word_matches = list(
+        re.finditer(r"[A-Za-z][A-Za-z'\u2019-]*", raw_phrase)
+    )
+    words = [word_match.group(0) for word_match in word_matches]
+    if not words or words[-1].casefold() in _NON_CUISINE_DESCRIPTORS:
+        return None
+
+    start_index = 0
+    for index, word in enumerate(words):
+        if word.casefold() in _CUISINE_BOUNDARY_WORDS:
+            start_index = index + 1
+
+    while start_index < len(words):
+        previous_index = start_index
         while start_index < len(words) and (
             words[start_index].casefold() in _CUISINE_REQUEST_WORDS
             or words[start_index].casefold() in _NON_CUISINE_DESCRIPTORS
         ):
             start_index += 1
+        if start_index >= len(words):
+            return None
 
-        candidate_words = words[start_index:]
-        if not candidate_words or all(
-            word.casefold() in _NON_CUISINE_DESCRIPTORS
-            for word in candidate_words
-        ):
-            continue
-
-        candidate_start = (
-            match.start("phrase") + word_matches[start_index].start()
+        suffix_start = word_matches[start_index].start()
+        suffix = raw_phrase[suffix_start:]
+        filter_end = max(
+            (
+                keyword_match.end()
+                for keyword in filter_keywords
+                for keyword_match in _keyword_matches(suffix, keyword)
+                if keyword_match.start() == 0
+            ),
+            default=0,
         )
-        if _keyword_is_negated(question, candidate_start) != negated:
-            continue
-        return " ".join(candidate_words).title()
-    return None
+        if filter_end:
+            absolute_end = suffix_start + filter_end
+            while (
+                start_index < len(words)
+                and word_matches[start_index].start() < absolute_end
+            ):
+                start_index += 1
+
+        if start_index == previous_index:
+            break
+
+    candidate_words = words[start_index:]
+    if not candidate_words or all(
+        word.casefold() in _NON_CUISINE_DESCRIPTORS
+        for word in candidate_words
+    ):
+        return None
+    if _CUISINE_NAME_ENDING_RE.search(candidate_words[-1]) is None:
+        return None
+
+    candidate_start = phrase_start + word_matches[start_index].start()
+    if _keyword_is_negated(question, candidate_start) != negated:
+        return None
+    return " ".join(candidate_words).title()
 
 
 def _extract_cuisine(question: str, *, negated: bool = False) -> str | None:

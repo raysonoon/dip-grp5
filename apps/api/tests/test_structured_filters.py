@@ -39,6 +39,62 @@ def test_cuisine_and_location_keywords_require_word_boundaries() -> None:
     assert extract_structured_filters("Japanese food").cuisine == "Japanese"
 
 
+def test_generic_food_descriptions_do_not_become_cuisine_filters() -> None:
+    cheapest = extract_structured_filters(
+        "Which stall has the cheapest food?"
+    )
+    assert cheapest.cuisine is None
+    assert cheapest.sort == "price_asc"
+
+    late_night = extract_structured_filters("late night food")
+    assert late_night.cuisine is None
+    assert late_night.open_hours == "late"
+
+    campus = extract_structured_filters("What's the best campus food?")
+    assert campus.cuisine is None
+    assert campus.sort == "rating"
+
+    location = extract_structured_filters(
+        "Where can I find North Spine food?"
+    )
+    assert location.cuisine is None
+    assert location.location == "North Spine"
+
+    assert extract_structured_filters("NTU food").cuisine is None
+
+
+def test_open_ended_cuisine_phrases_still_use_structured_filter() -> None:
+    assert (
+        extract_structured_filters("Vietnamese food").cuisine
+        == "Vietnamese"
+    )
+    assert (
+        extract_structured_filters("Where can I find Middle Eastern food?")
+        .cuisine
+        == "Middle Eastern"
+    )
+    assert (
+        extract_structured_filters("Show me South East Asian food").cuisine
+        == "South East Asian"
+    )
+
+
+def test_other_filters_and_clauses_do_not_leak_into_cuisine() -> None:
+    late = extract_structured_filters("late night Vietnamese food")
+    assert late.cuisine == "Vietnamese"
+    assert late.open_hours == "late"
+
+    location = extract_structured_filters("North Spine Vietnamese food")
+    assert location.cuisine == "Vietnamese"
+    assert location.location == "North Spine"
+
+    contrast = extract_structured_filters(
+        "Vietnamese but not Chinese food"
+    )
+    assert contrast.cuisine == "Vietnamese"
+    assert contrast.exclude_cuisine == "Chinese"
+
+
 def test_all_location_keywords_avoid_prefix_collisions() -> None:
     for keyword, expected in LOCATION_KEYWORDS.items():
         filters = extract_structured_filters(f"food near {keyword}")
