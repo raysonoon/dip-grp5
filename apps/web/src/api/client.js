@@ -48,6 +48,17 @@ export class ApiAuthConfigurationError extends Error {
 
 export function apiUrl(path) {
   if (/^https?:\/\//i.test(path)) return path;
+
+  // Convert stored vendor image paths to the backend image endpoint.
+  const vendorImageMatch = path.match(
+    /^\/media\/vendor_images\/(\d+)\/(\d+)\.[a-zA-Z0-9]+$/
+  );
+
+  if (vendorImageMatch) {
+    const [, vendorId, imageId] = vendorImageMatch;
+    return `${API_BASE_URL}/vendors/${vendorId}/images/${imageId}`;
+  }
+
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${API_BASE_URL}${normalizedPath}`;
 }
