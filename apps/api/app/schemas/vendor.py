@@ -69,6 +69,17 @@ class VendorListItem(BaseModel):
     map_coordinates: VendorCoordinates | None
 
 
+class VendorNearbyItem(VendorListItem):
+    """A vendor plus its PostGIS distance, in metres, from the requested point."""
+
+    distance_m: float
+
+
+class VendorNearbyRead(BaseModel):
+    items: list[VendorNearbyItem]
+    total: int
+
+
 class VendorListRead(BaseModel):
     items: list[VendorListItem]
     total: int
