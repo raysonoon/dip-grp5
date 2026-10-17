@@ -81,6 +81,23 @@ MOJIBAKE_MARKERS = (
     "\u00f0\u0178",
 )
 
+LOCATION_ALIASES: dict[str, str] = {
+    "tamarind hall": "Nanyang Crescent",
+    "saraca hall": "Nanyang Crescent",
+    "hall 8": "Nanyang Crescent",
+    "tanjong": "North Hill",
+    "tanjong hall": "North Hill",
+    "binjai": "North Hill",
+    "binjai hall": "North Hill",
+    "banyan hall": "North Hill",
+}
+
+
+def _normalize_location(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = " ".join(value.split())
+    return LOCATION_ALIASES.get(cleaned.lower(), cleaned)
 
 GOOGLE_VENDOR_CORE_FIELD_MAP = (
     ("name", "name"),
@@ -413,7 +430,9 @@ def seed_ntu_vendors(
                         directory_id,
                     )
 
-                vendor_directory_data[target_field] = value
+                if target_field == "location":
+                    value = _normalize_location(value)
+                    vendor_directory_data[target_field] = value
 
             if skip_new_vendor:
                 print(
