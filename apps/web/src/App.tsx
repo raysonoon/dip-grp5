@@ -15,6 +15,7 @@ import { useAuth } from "./contexts/AuthContext";
 import VendorMap from "./pages/VendorMap";
 import MapPage from "./pages/MapPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import AccountPage from "./pages/AccountPage";
 import {
   Star,
   MapPin,
@@ -591,6 +592,7 @@ function App() {
           <Route path="/food" element={<FoodPage />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/vendors/:vendorId" element={<VendorsPage />} />
+          <Route path="/account" element={<AccountPage />} />
           <Route path="signin" element={<SignInPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
