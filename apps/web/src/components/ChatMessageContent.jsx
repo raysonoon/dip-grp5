@@ -11,7 +11,7 @@ import { CITATION_MARKER_PATTERN, citationNumbers } from "./citationMarkers.js";
 // linked inline, so vendor and count sources render no marker.
 const SOURCE_LABELS = {
   google_review: "Google review",
-  internal_review: "NTU Foodie review",
+  internal_review: "NTUmmy review",
   reddit: "Reddit comment",
 };
 
