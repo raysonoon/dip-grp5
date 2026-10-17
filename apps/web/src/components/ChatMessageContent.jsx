@@ -7,12 +7,12 @@ import remarkBreaks from "remark-breaks";
 
 import { CITATION_MARKER_PATTERN, citationNumbers } from "./citationMarkers.js";
 
+// Only these source types get a citation marker. Vendor names are already
+// linked inline, so vendor and count sources render no marker.
 const SOURCE_LABELS = {
-  count: "Count",
   google_review: "Google review",
   internal_review: "NTU Foodie review",
   reddit: "Reddit comment",
-  vendor: "Vendor",
 };
 
 function escapeRegExp(value) {
@@ -200,7 +200,7 @@ function CitationPopover({ source, citationNumber, showVendorLink }) {
             style={placement ? { top: placement.top, left: placement.left } : undefined}
           >
             <span className="mb-1 block font-semibold text-primary">
-              {SOURCE_LABELS[source.source_type] ?? source.source_type}
+              {SOURCE_LABELS[source.source_type]}
             </span>
             {source.vendor_name && (
               source.vendor_id != null ? (
@@ -267,7 +267,7 @@ function decorateText(text, sources, answerText) {
 
         if (!source) return `[${citationNumber}]`;
 
-        if (source.source_type === "count") return null;
+        if (!Object.hasOwn(SOURCE_LABELS, source.source_type)) return null;
 
         const vendorMentioned = source.vendor_name
           ? answerText.toLocaleLowerCase().includes(source.vendor_name.toLocaleLowerCase())
