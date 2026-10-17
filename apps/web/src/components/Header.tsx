@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ChevronDown, LogOut, Menu, Utensils, X, Search, Store } from "lucide-react";
+import { ChevronDown, LogOut, Menu, Utensils, X, Search, Store, UserRound } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
 const QUICK_SEARCH_TAGS = [
@@ -64,6 +64,18 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
             <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
               {user.email}
             </div>
+            <Link
+              to="/account"
+              onClick={() => {
+                setAccountMenuOpen(false);
+                setMobileMenuOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground cursor-pointer hover:bg-muted hover:text-foreground transition-colors"
+              role="menuitem"
+            >
+              <UserRound className="h-4 w-4" />
+              Account
+            </Link>
             <button
               type="button"
               onClick={handleSignOut}
