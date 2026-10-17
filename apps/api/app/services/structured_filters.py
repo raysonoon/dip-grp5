@@ -101,15 +101,6 @@ _EXPLICIT_CUISINE_PHRASE_RE = re.compile(
     r"food\b",
     re.IGNORECASE,
 )
-# Open-ended cuisine adjectives commonly use demonym-style suffixes.  Keeping
-# this fallback morphological makes it conservative without growing a list of
-# phrases that happened to be misclassified.  Ambiguous phrases are left for
-# the existing LLM extractor instead of becoming restrictive SQL predicates.
-_CUISINE_NAME_ENDING_RE = re.compile(
-    r"(?:an|ean|ian|ese|ish|ic|i|ern)\Z",
-    re.IGNORECASE,
-)
-_CUISINE_CLAUSE_BOUNDARY_RE = re.compile(r"\b(?:but|or)\b", re.IGNORECASE)
 _CUISINE_REQUEST_WORDS = {
     "a",
     "an",
@@ -412,14 +403,6 @@ def _extract_explicit_cuisine_phrase(
     per cuisine. Generic request/adjective words are removed conservatively.
     """
 
-    filter_keywords = (
-        *LOCATION_KEYWORDS,
-        *_BUDGET_KEYWORDS,
-        *_OPEN_HOURS_KEYWORDS,
-        *VEGETARIAN_KEYWORDS,
-        *HALAL_KEYWORDS,
-    )
-
     for match in _EXPLICIT_CUISINE_PHRASE_RE.finditer(question):
         raw_phrase = match.group("phrase")
         word_matches = list(
@@ -429,42 +412,15 @@ def _extract_explicit_cuisine_phrase(
         if not words or words[-1].casefold() in _CUISINE_REJECTION_WORDS:
             continue
 
-    start_index = 0
-    for index, word in enumerate(words):
-        if word.casefold() in _CUISINE_BOUNDARY_WORDS:
-            start_index = index + 1
-
-    while start_index < len(words):
-        previous_index = start_index
+        start_index = 0
+        for index, word in enumerate(words):
+            if word.casefold() in _CUISINE_BOUNDARY_WORDS:
+                start_index = index + 1
         while start_index < len(words) and (
             words[start_index].casefold() in _CUISINE_REQUEST_WORDS
             or words[start_index].casefold() in _CUISINE_REJECTION_WORDS
         ):
             start_index += 1
-        if start_index >= len(words):
-            return None
-
-        suffix_start = word_matches[start_index].start()
-        suffix = raw_phrase[suffix_start:]
-        filter_end = max(
-            (
-                keyword_match.end()
-                for keyword in filter_keywords
-                for keyword_match in _keyword_matches(suffix, keyword)
-                if keyword_match.start() == 0
-            ),
-            default=0,
-        )
-        if filter_end:
-            absolute_end = suffix_start + filter_end
-            while (
-                start_index < len(words)
-                and word_matches[start_index].start() < absolute_end
-            ):
-                start_index += 1
-
-        if start_index == previous_index:
-            break
 
         candidate_words = words[start_index:]
         if not candidate_words or any(
