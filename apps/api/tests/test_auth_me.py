@@ -3,7 +3,6 @@ from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.api.routes.auth import RECENT_REVIEWS_LIMIT
 from app.models import Review, User, Vendor
 
 
@@ -19,7 +18,32 @@ def create_user(session: Session, email: str) -> User:
     return user
 
 
-def test_me_lists_recent_reviews_most_recent_first(
+def auth(user: User) -> dict[str, str]:
+    return {"Authorization": f"Bearer {user.id}"}
+
+
+def test_me_returns_profile_only(
+    client: TestClient,
+    session: Session,
+) -> None:
+    user = create_user(session, "profile@example.com")
+    vendor = Vendor(name="Profile Stall")
+    session.add(vendor)
+    session.flush()
+    session.add(Review(user_id=user.id, vendor_id=vendor.id, rating_half_steps=8))
+    session.commit()
+
+    response = client.get("/auth/me", headers=auth(user))
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": user.id,
+        "display_name": "Account User",
+        "role": "user",
+    }
+
+
+def test_my_reviews_lists_own_reviews_most_recent_first(
     client: TestClient,
     session: Session,
 ) -> None:
@@ -58,41 +82,24 @@ def test_me_lists_recent_reviews_most_recent_first(
     )
     session.commit()
 
-    response = client.get(
-        "/auth/me",
-        headers={"Authorization": f"Bearer {user.id}"},
-    )
+    response = client.get("/auth/me/reviews", headers=auth(user))
 
     assert response.status_code == 200
     body = response.json()
-    assert body["id"] == user.id
+    assert body["total"] == 2
+    assert body["limit"] == 10
+    assert body["offset"] == 0
     assert [
         (review["vendor"]["name"], review["rating"], review["comment"])
-        for review in body["recent_reviews"]
+        for review in body["items"]
     ] == [
         ("Newer Stall", 5.0, None),
         ("Older Stall", 3.5, "Decent"),
     ]
-    assert body["recent_reviews"][0]["vendor"]["id"] == newer_vendor.id
+    assert body["items"][0]["vendor"]["id"] == newer_vendor.id
 
 
-def test_me_returns_empty_recent_reviews_without_reviews(
-    client: TestClient,
-    session: Session,
-) -> None:
-    user = create_user(session, "no-reviews@example.com")
-    session.commit()
-
-    response = client.get(
-        "/auth/me",
-        headers={"Authorization": f"Bearer {user.id}"},
-    )
-
-    assert response.status_code == 200
-    assert response.json()["recent_reviews"] == []
-
-
-def test_me_limits_recent_reviews(
+def test_my_reviews_paginates_with_limit_and_offset(
     client: TestClient,
     session: Session,
 ) -> None:
@@ -110,19 +117,59 @@ def test_me_limits_recent_reviews(
             comment=f"Visit {index}",
             created_at=now - timedelta(hours=index),
         )
-        for index in range(RECENT_REVIEWS_LIMIT + 3)
+        for index in range(13)
     )
     session.commit()
 
-    response = client.get(
-        "/auth/me",
-        headers={"Authorization": f"Bearer {user.id}"},
-    )
+    first_page = client.get(
+        "/auth/me/reviews",
+        params={"limit": 5, "offset": 0},
+        headers=auth(user),
+    ).json()
+    last_page = client.get(
+        "/auth/me/reviews",
+        params={"limit": 5, "offset": 10},
+        headers=auth(user),
+    ).json()
 
-    reviews = response.json()["recent_reviews"]
-    assert len(reviews) == RECENT_REVIEWS_LIMIT
-    assert reviews[0]["comment"] == "Visit 0"
+    assert first_page["total"] == 13
+    assert [review["comment"] for review in first_page["items"]] == [
+        f"Visit {index}" for index in range(5)
+    ]
+    assert last_page["total"] == 13
+    assert last_page["offset"] == 10
+    assert [review["comment"] for review in last_page["items"]] == [
+        "Visit 10",
+        "Visit 11",
+        "Visit 12",
+    ]
 
 
-def test_me_requires_sign_in(client: TestClient) -> None:
+def test_my_reviews_is_empty_without_reviews(
+    client: TestClient,
+    session: Session,
+) -> None:
+    user = create_user(session, "no-reviews@example.com")
+    session.commit()
+
+    response = client.get("/auth/me/reviews", headers=auth(user))
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 0, "limit": 10, "offset": 0}
+
+
+def test_my_reviews_rejects_invalid_pagination(
+    client: TestClient,
+    session: Session,
+) -> None:
+    user = create_user(session, "bad-page@example.com")
+    session.commit()
+
+    for params in ({"limit": 0}, {"limit": 101}, {"offset": -1}):
+        response = client.get("/auth/me/reviews", params=params, headers=auth(user))
+        assert response.status_code == 422
+
+
+def test_me_endpoints_require_sign_in(client: TestClient) -> None:
     assert client.get("/auth/me").status_code == 401
+    assert client.get("/auth/me/reviews").status_code == 401
