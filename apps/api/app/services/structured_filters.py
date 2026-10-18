@@ -420,6 +420,9 @@ def _extract_explicit_cuisine_phrase(
         *HALAL_KEYWORDS,
     )
 
+    raw_phrase = ""
+    word_matches: list[re.Match[str]] = []
+    words: list[str] = []
     for match in _EXPLICIT_CUISINE_PHRASE_RE.finditer(question):
         raw_phrase = match.group("phrase")
         word_matches = list(
@@ -428,6 +431,9 @@ def _extract_explicit_cuisine_phrase(
         words = [word_match.group(0) for word_match in word_matches]
         if not words or words[-1].casefold() in _CUISINE_REJECTION_WORDS:
             continue
+
+    if not words:
+        return None
 
     start_index = 0
     for index, word in enumerate(words):
