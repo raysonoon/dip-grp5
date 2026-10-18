@@ -521,6 +521,8 @@ function HomePage() {
 
 function App() {
   const { session, loading } = useAuth();
+  
+  const userId = session?.user?.id ?? null;
 
   const [preferenceStatus, setPreferenceStatus] = useState<
     "pending" | "completed" | "skipped" | null
@@ -535,7 +537,7 @@ function App() {
     async function loadPreferences() {
       if (loading) return;
 
-      if (!session) {
+      if (!userId) {
         setPreferenceStatus(null);
         return;
       }
@@ -574,7 +576,7 @@ function App() {
     return () => {
       active = false;
     };
-  }, [session, loading, preferenceRetry]);
+  }, [userId, loading, preferenceRetry]);
 
   return (
     <>

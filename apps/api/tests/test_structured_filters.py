@@ -327,6 +327,21 @@ def test_location_and_open_hours_words_never_become_cuisine(
     assert extract_structured_filters(question).cuisine is None
 
 
+@pytest.mark.parametrize(
+    "question",
+    [
+        "How many halal places are there?",
+        "top 10 best stalls",
+        "Where can I find halal food?",
+        "I want a cheap meal",
+    ],
+)
+def test_cuisine_extraction_without_food_phrase(question: str) -> None:
+    filters = extract_structured_filters(question)
+    assert filters.cuisine is None, question
+    assert filters.exclude_cuisine is None, question
+
+
 def test_contracted_cuisine_negation_becomes_exclusion() -> None:
     filters = extract_structured_filters("I don't want Vietnamese food")
     assert filters.cuisine is None

@@ -38,11 +38,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     async function sync(nextSession: Session | null) {
       const thisRequest = ++requestId;
-      setSession(nextSession);
 
       // Signed out: reset everything.
       if (!nextSession) {
         loadedForUserId = null;
+        setSession(null);
         setLocalUserId(null);
         setLocalUserRole(null);
         setProfileError(null);
@@ -50,11 +50,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Token refresh for the same user: keep the existing profile.
+      // Token refresh for the same user: keep the existing profile and the
+      // current session reference. 
+      // Note: Supabase hands a fresh Session object on
+      // every event (including TOKEN_REFRESHED)
       if (nextSession.user.id === loadedForUserId) {
         setLoading(false);
         return;
       }
+
+      setSession(nextSession);
 
       // New user: clear anything left over from the previous one.
       setLoading(true);
