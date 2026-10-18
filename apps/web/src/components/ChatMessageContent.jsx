@@ -7,8 +7,6 @@ import remarkBreaks from "remark-breaks";
 
 import { CITATION_MARKER_PATTERN, citationNumbers } from "./citationMarkers.js";
 
-// Only these source types get a citation marker. Vendor names are already
-// linked inline, so vendor and count sources render no marker.
 const SOURCE_LABELS = {
   google_review: "Google review",
   internal_review: "NTU Foodie review",
