@@ -197,12 +197,46 @@ def _portable_search_plan(
         )
         order_by = (quality.desc(),) if filters else ()
         return VendorSearchPlan(parsed, tuple(filters), order_by)
+    
+    for token in parsed.lexical_text.split():
+        # Match token as a whole word or exact comma-separated dish item
+        pattern_exact = f"%{token}%"
+        filters.append(
+            or_(
+                Vendor.name.ilike(pattern_exact),
+                Vendor.category.ilike(pattern_exact),
+                Vendor.location.ilike(pattern_exact),
+                Vendor.unit_code.ilike(pattern_exact),
+                # For comma-separated dishes, ensure we match the dish keyword cleanly
+                Vendor.dishes.ilike(f"%{token}%"),
+            )
+        )
+
+    # To strictly prevent "mala" from matching "malay" in portable mode, 
+    # we can add an extra check or refine the ilike pattern with spaces/boundaries if needed:
+    # (e.g. matching space-separated tokens or exact terms)
+
+    normalized_name = func.lower(func.trim(Vendor.name))
+    exact_name = case(
+        (normalized_name == parsed.lexical_text, 1),
+        else_=0,
+    )
+    prefix_name = case(
+        (normalized_name.like(f"{parsed.lexical_text}%"), 1),
+        else_=0,
+    )
+    return VendorSearchPlan(
+        parsed,
+        tuple(filters),
+        (exact_name.desc(), prefix_name.desc()),
+    )
 
     fields = (
         Vendor.name,
         Vendor.category,
         Vendor.location,
         Vendor.unit_code,
+        Vendor.dishes,
     )
     for token in parsed.lexical_text.split():
         pattern = f"%{token}%"
@@ -262,6 +296,7 @@ def build_vendor_search_plan(
                 " ",
                 func.coalesce(Vendor.name, ""),
                 func.coalesce(Vendor.category, ""),
+                func.coalesce(Vendor.dishes, ""),
             )
         )
     )
@@ -308,6 +343,7 @@ def build_vendor_search_plan(
         + func.ts_rank_cd(name_vector, ts_query) * 24.0
         + func.ts_rank_cd(category_vector, ts_query) * 12.0
         + func.ts_rank_cd(location_vector, ts_query) * 6.0
+        + func.ts_rank_cd(dishes_vector, ts_query) * 10.0
         + func.ts_rank_cd(document_vector, ts_query) * 2.0
         + fuzzy_score * 15.0
     )
