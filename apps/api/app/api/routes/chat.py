@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import Iterator
 
 from fastapi import APIRouter
@@ -9,6 +10,7 @@ from app.schemas.chat import ChatRequest
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+logger = logging.getLogger(__name__)
 
 
 def _sse(event: str, data: object) -> str:
@@ -24,15 +26,19 @@ def stream_chat(
     """Stream answer deltas and finish with the sources used by the answer."""
 
     def events() -> Iterator[str]:
-        for event, data in service.stream_answer(
-            payload.question,
-            history=payload.history,
-        ):
-            if event == "sources":
-                sources = [source.model_dump(mode="json") for source in data]
-                yield _sse(event, sources)
-            else:
-                yield _sse(event, data)
+        try:
+            for event, data in service.stream_answer(
+                payload.question,
+                history=payload.history,
+            ):
+                if event == "sources":
+                    sources = [source.model_dump(mode="json") for source in data]
+                    yield _sse(event, sources)
+                else:
+                    yield _sse(event, data)
+        except Exception:
+            logger.exception("Chat stream failed")
+            yield _sse("error", {"code": "chat_unavailable"})
 
     return StreamingResponse(
         events(),

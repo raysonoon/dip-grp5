@@ -110,6 +110,11 @@ _CUISINE_NAME_ENDING_RE = re.compile(
     re.IGNORECASE,
 )
 _CUISINE_CLAUSE_BOUNDARY_RE = re.compile(r"\b(?:but|or)\b", re.IGNORECASE)
+# A clause can end in punctuation before a contrast boundary ("Vietnamese, but
+# not Chinese food"). Strip it so the ancestral suffix check sees the adjective.
+_CUISINE_CLAUSE_TRAILING_PUNCT_RE = re.compile(
+    r"[\s,;:.!?\uff0c\uff1b\uff1a\uff0e\uff01\uff1f]+$"
+)
 _CUISINE_REQUEST_WORDS = {
     "a",
     "an",
@@ -432,45 +437,42 @@ def _extract_explicit_cuisine_phrase(
         if not words or words[-1].casefold() in _CUISINE_REJECTION_WORDS:
             continue
 
-    if not words:
-        return None
+        start_index = 0
+        for index, word in enumerate(words):
+            if word.casefold() in _CUISINE_BOUNDARY_WORDS:
+                start_index = index + 1
 
-    start_index = 0
-    for index, word in enumerate(words):
-        if word.casefold() in _CUISINE_BOUNDARY_WORDS:
-            start_index = index + 1
-
-    while start_index < len(words):
-        previous_index = start_index
-        while start_index < len(words) and (
-            words[start_index].casefold() in _CUISINE_REQUEST_WORDS
-            or words[start_index].casefold() in _CUISINE_REJECTION_WORDS
-        ):
-            start_index += 1
-        if start_index >= len(words):
-            return None
-
-        suffix_start = word_matches[start_index].start()
-        suffix = raw_phrase[suffix_start:]
-        filter_end = max(
-            (
-                keyword_match.end()
-                for keyword in filter_keywords
-                for keyword_match in _keyword_matches(suffix, keyword)
-                if keyword_match.start() == 0
-            ),
-            default=0,
-        )
-        if filter_end:
-            absolute_end = suffix_start + filter_end
-            while (
-                start_index < len(words)
-                and word_matches[start_index].start() < absolute_end
+        while start_index < len(words):
+            previous_index = start_index
+            while start_index < len(words) and (
+                words[start_index].casefold() in _CUISINE_REQUEST_WORDS
+                or words[start_index].casefold() in _CUISINE_REJECTION_WORDS
             ):
                 start_index += 1
+            if start_index >= len(words):
+                break
 
-        if start_index == previous_index:
-            break
+            suffix_start = word_matches[start_index].start()
+            suffix = raw_phrase[suffix_start:]
+            filter_end = max(
+                (
+                    keyword_match.end()
+                    for keyword in filter_keywords
+                    for keyword_match in _keyword_matches(suffix, keyword)
+                    if keyword_match.start() == 0
+                ),
+                default=0,
+            )
+            if filter_end:
+                absolute_end = suffix_start + filter_end
+                while (
+                    start_index < len(words)
+                    and word_matches[start_index].start() < absolute_end
+                ):
+                    start_index += 1
+
+            if start_index == previous_index:
+                break
 
         candidate_words = words[start_index:]
         if not candidate_words or any(
@@ -489,11 +491,20 @@ def _extract_explicit_cuisine_phrase(
         )
         if _keyword_is_negated(question, candidate_start) != negated:
             continue
-        if candidate_start != 0 and not _has_cuisine_request_cue(
-            question[:candidate_start]
-        ):
+        prefix = question[:candidate_start]
+        # A bare request may start with another filter ("late night
+        # Vietnamese food", "North Spine Vietnamese food"). Remove whole
+        # filter phrases before checking the remaining request language.
+        for keyword in sorted(filter_keywords, key=len, reverse=True):
+            prefix = re.sub(
+                rf"(?<!\w){re.escape(keyword)}(?!\w)", " ", prefix,
+                flags=re.IGNORECASE,
+            )
+        if prefix.strip() and not _has_cuisine_request_cue(prefix):
             continue
         return " ".join(candidate_words).title()
+    if not words:
+        return None
     return None
 
 
@@ -501,7 +512,22 @@ def _extract_cuisine(question: str, *, negated: bool = False) -> str | None:
     value = _find_keyword(question, CUISINE_KEYWORDS, negated=negated)
     if value is not None:
         return value
-    return _extract_explicit_cuisine_phrase(question, negated=negated)
+    value = _extract_explicit_cuisine_phrase(question, negated=negated)
+    if value is not None:
+        return value
+    # In "Vietnamese but not Chinese food", the shared word "food" also qualifies the first clause.
+    # Only accept a plausible cuisine adjective, tolerating clause punctuation ("Vietnamese, but not Chinese food").
+    for boundary in _CUISINE_CLAUSE_BOUNDARY_RE.finditer(question):
+        clause = _CUISINE_CLAUSE_TRAILING_PUNCT_RE.sub(
+            "", question[:boundary.start()],
+        )
+        if _CUISINE_NAME_ENDING_RE.search(clause):
+            value = _extract_explicit_cuisine_phrase(
+                f"{clause} food", negated=negated,
+            )
+            if value is not None:
+                return value
+    return None
 
 
 def _extract_location(question: str, *, negated: bool = False) -> str | None:

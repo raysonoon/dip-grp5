@@ -42,7 +42,7 @@ def get_embedder() -> Embedder:
     # Interactive requests must fail fast enough for the web client's timeout.
     # Long retry/backoff remains available to offline reindex jobs, which build
     # their own GoogleEmbedder with the configured retry count.
-    return GoogleEmbedder(api_key=api_key, max_retries=1)
+    return GoogleEmbedder(api_key=api_key, max_retries=1, client=_get_genai_client())
 
 
 def get_knowledge_store(session: DbSession) -> KnowledgeStore:
@@ -51,11 +51,9 @@ def get_knowledge_store(session: DbSession) -> KnowledgeStore:
 
 @lru_cache(maxsize=1)
 def _get_genai_client() -> object | None:
-    if settings.gemini_api_key is None:
-        return None
-    from google import genai
+    from app.services.chat_client import create_chat_client
 
-    return genai.Client(api_key=settings.gemini_api_key.get_secret_value())
+    return create_chat_client()
 
 
 def warm_intent_embeddings() -> int:

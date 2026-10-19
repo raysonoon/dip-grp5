@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     embedding_requests_per_minute: int = 90
     embedding_max_retries: int = 5
     chat_model: str = "gemini-3.5-flash-lite"
+    chat_request_timeout_ms: int = Field(default=10_000, gt=0)
     vector_top_k: int = 8
 
     model_config = SettingsConfigDict(

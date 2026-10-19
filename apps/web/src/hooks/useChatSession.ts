@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
-import { chatErrorMessage, streamChat, trimChatHistory } from "../api/chat";
+import { normalizeChatQuestion, streamChat } from "../api/chat";
 import { useAuth } from "../contexts/AuthContext";
+import {
+  chatFailureMessage,
+  completeChatHistory,
+  removePendingRequestMessages,
+} from "./chatSessionState.js";
 
 const ANONYMOUS_CHAT_GREETING = "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!";
 
@@ -14,6 +19,7 @@ export type ChatUiMessage = {
   role: "user" | "bot";
   text: string;
   sources?: unknown[];
+  requestId?: number;
 };
 
 function createChatSessionId() {
@@ -59,7 +65,7 @@ export function useChatSession() {
   useEffect(() => () => activeControllerRef.current?.abort(), []);
 
   async function sendMessage(text: string) {
-    const question = text.trim();
+    const question = normalizeChatQuestion(text);
     if (!question || requestPendingRef.current) return;
 
     const controller = new AbortController();
@@ -67,11 +73,10 @@ export function useChatSession() {
     const historyForRequest = historyRef.current;
     activeControllerRef.current = controller;
     requestPendingRef.current = true;
-    historyRef.current = trimChatHistory([
-      ...historyForRequest,
-      { role: "user", content: question },
+    setMessages((previous) => [
+      ...previous,
+      { role: "user", text: question, requestId },
     ]);
-    setMessages((previous) => [...previous, { role: "user", text: question }]);
     setInput("");
     setIsGenerating(true);
 
@@ -87,7 +92,10 @@ export function useChatSession() {
           hasStreamMessage = true;
           setMessages((previous) => {
             if (shouldAppend) {
-              return [...previous, { role: "bot", text: answer, sources: [] }];
+              return [
+                ...previous,
+                { role: "bot", text: answer, sources: [], requestId },
+              ];
             }
             return previous.map((message, index) => (
               index === previous.length - 1
@@ -98,10 +106,11 @@ export function useChatSession() {
         },
       });
       if (controller.signal.aborted || requestId !== requestIdRef.current) return;
-      historyRef.current = trimChatHistory([
-        ...historyRef.current,
-        { role: "assistant", content: response.answer },
-      ]);
+      historyRef.current = completeChatHistory(
+        historyForRequest,
+        question,
+        response.answer,
+      );
       setMessages((previous) => {
         if (!hasStreamMessage) {
           return [...previous, { role: "bot", text: response.answer, sources: response.sources }];
@@ -115,11 +124,14 @@ export function useChatSession() {
     } catch (error) {
       if (controller.signal.aborted || requestId !== requestIdRef.current) return;
       console.error("Chat request failed", error);
-      setMessages((previous) => (
-        hasStreamMessage
-          ? previous
-          : [...previous, { role: "bot", text: chatErrorMessage(error) }]
-      ));
+      setMessages((previous) => [
+        ...previous,
+        {
+          role: "bot",
+          text: chatFailureMessage(error, hasStreamMessage),
+          requestId,
+        },
+      ]);
     } finally {
       if (requestId === requestIdRef.current) {
         activeControllerRef.current = null;
@@ -131,10 +143,14 @@ export function useChatSession() {
 
   function stopResponse() {
     if (!requestPendingRef.current) return;
+    const stoppedRequestId = requestIdRef.current;
     requestIdRef.current += 1;
     activeControllerRef.current?.abort();
     activeControllerRef.current = null;
     requestPendingRef.current = false;
+    setMessages((previous) => (
+      removePendingRequestMessages(previous, stoppedRequestId)
+    ));
     setIsGenerating(false);
   }
 
