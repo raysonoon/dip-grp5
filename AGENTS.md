@@ -8,6 +8,23 @@ the relevant app directory.
 
 Run backend commands from `apps/api` with `.venv` active; frontend from `apps/web`.
 
+**Python tests must activate `.venv` in the same shell invocation.** Every shell
+call is a fresh process, so activation does not carry over — combine it with the
+test command and run it from `apps/api`:
+
+```powershell
+# from apps/api
+.\.venv\Scripts\Activate.ps1; python -m pytest tests/test_structured_filters.py -q
+```
+
+macOS/Linux: `source .venv/bin/activate; python -m pytest -q`.
+
+This is wrong — it silently falls back to a global Python without project deps:
+
+```powershell
+cd apps\api && python -m pytest tests/test_structured_filters.py
+```
+
 Backend:
 - `python -m fastapi dev app/main.py` — dev API on :8000
 - `python -m pytest -q` — full suite runs on in-memory SQLite (see `tests/conftest.py`); Docker/Postgres not needed
