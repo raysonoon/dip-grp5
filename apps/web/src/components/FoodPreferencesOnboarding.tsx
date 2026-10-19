@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 
 import { saveMyPreferences } from "../api/preferences.js";
 
-const dietaryOptions = [
+export const dietaryOptions = [
   "Halal",
   "Vegetarian",
   "Vegan",
@@ -15,7 +15,7 @@ const dietaryOptions = [
   "Shellfish allergy",
 ];
 
-const cuisineOptions = [
+export const cuisineOptions = [
   "Chinese",
   "Malay",
   "Indian",
@@ -26,7 +26,7 @@ const cuisineOptions = [
   "Vegetarian",
 ];
 
-const locationOptions = [
+export const locationOptions = [
   "North Spine",
   "South Spine",
   "North Hill",
@@ -40,7 +40,7 @@ const locationOptions = [
   "Saraca Hall",
 ];
 
-const foodPreferenceOptions = [
+export const foodPreferenceOptions = [
   "Coffee",
   "Tea",
   "Bubble tea",
@@ -48,7 +48,7 @@ const foodPreferenceOptions = [
   "Vegetables",
 ];
 
-const lifestyleOptions = [
+export const lifestyleOptions = [
   "High protein",
   "High fibre",
 ];
@@ -57,13 +57,13 @@ type Props = {
   onFinished: (status: "completed" | "skipped") => void;
 };
 
-function toggleValue(values: string[], value: string) {
+export function toggleValue(values: string[], value: string) {
   return values.includes(value)
     ? values.filter((item) => item !== value)
     : [...values, value];
 }
 
-function Chip({
+export function Chip({
   label,
   selected,
   onClick,

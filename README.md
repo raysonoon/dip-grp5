@@ -9,22 +9,27 @@ frontend (`apps/web`).
 ```text
 dip-grp5/
 ├── README.md
+├── AGENTS.md                      # Agent/assistant instructions for this repo
 ├── start-fastapi.bat              # One-click backend launcher (Docker, DB, migrations, API)
-├── data/                          # Source data used for seeding
+├── start-fastapi.sh               # Same launcher for macOS/Linux
+├── data/                          # Source data + scraping scripts used for seeding
 │   ├── fnb-directory-v2.csv
-│   └── google_reviews/
+│   ├── knowledge_chunks.csv       # Committed RAG knowledge-base export
+│   ├── google_reviews/
+│   ├── reddit/
+│   └── vendor_photos/
 ├── diagrams/                      # Architecture and flow diagrams
 │   ├── dip_architecture_220826.jpg
 │   ├── chatbot_rag.jpg
 │   └── chatbot_routing.jpg
 ├── docs/                          # Working documents and design notes
+│   ├── chatbot.md                 # Chatbot RAG vector-search design notes
+│   ├── db-schema.md               # Database tables reference
+│   ├── devops.md                  # Deployment notes (Cloudflare / Cloud Run / Supabase)
 │   ├── DIP AI chatbot questions.xlsx
 │   ├── DIP Chatbot Schema.xlsx
-│   ├── db-schema.md               # Database tables reference
-│   ├── chatbot.md                 # Chatbot RAG vector-search design notes
-│   ├── week-3.md
-│   ├── week-4.md
-│   ├── What Baihao Did wk 3.md
+│   ├── DIP_AI_chatbot_questions_v2.xlsx
+│   ├── week-3.md ... week-9.md
 │   ├── TODO.md
 │   └── Still NEED.txt
 └── apps/
@@ -32,22 +37,26 @@ dip-grp5/
     │   ├── app/
     │   │   ├── main.py            # App entrypoint + router registration
     │   │   ├── api/
-    │   │   │   ├── dependencies.py # Dev auth + DB session dependencies
+    │   │   │   ├── dependencies.py # Auth + DB session dependencies
     │   │   │   └── routes/
-    │   │   │       ├── chat.py    # POST /chat (RAG chatbot)
+    │   │   │       ├── auth.py    # GET /auth/me, /auth/me/reviews
+    │   │   │       ├── chat.py    # POST /chat/stream (RAG chatbot, SSE)
+    │   │   │       ├── preferences.py # Food-preferences endpoints
     │   │   │       ├── reviews.py
     │   │   │       └── vendors.py
     │   │   ├── core/
     │   │   │   ├── config.py      # Pydantic settings (env vars)
     │   │   │   ├── image_storage.py
     │   │   │   ├── image_upload.py
-    │   │   │   └── security.py    # Argon2 password hashing
+    │   │   │   └── security.py    # Argon2 hashing + Supabase JWT verification
     │   │   ├── db/
     │   │   │   ├── base.py        # Shared declarative Base + naming convention
     │   │   │   ├── vector_base.py # Separate Base for pgvector tables
     │   │   │   ├── chatbot_question_data.py  # Curated question rows
     │   │   │   ├── reindex.py     # (Re)build the pgvector index
     │   │   │   ├── seed.py        # Repeatable dev seed
+    │   │   │   ├── seed_reddit.py
+    │   │   │   ├── seed_vendor_images.py
     │   │   │   └── session.py     # Engine + session factory
     │   │   ├── models/            # SQLAlchemy ORM (database tables)
     │   │   ├── schemas/           # Pydantic API request/response DTOs
@@ -56,18 +65,25 @@ dip-grp5/
     │   │       ├── chunking.py
     │   │       ├── embedding.py
     │   │       ├── ingest.py
+    │   │       ├── intent_router.py
+    │   │       ├── llm_routing.py
     │   │       ├── retrieval.py
-    │   │       └── review_knowledge.py
+    │   │       ├── review_knowledge.py
+    │   │       ├── sql_search.py
+    │   │       ├── structured_filters.py
+    │   │       ├── vendor_matching.py
+    │   │       └── vendor_search.py
     │   ├── alembic/               # Database migrations
     │   │   └── versions/
     │   ├── tests/                 # Pytest suite (incl. vector integration tests)
     │   ├── uploads/               # Local image files (vendor/review images)
     │   ├── alembic.ini
     │   ├── compose.yaml           # Local Postgres (pgvector) container
+    │   ├── Dockerfile.postgres    # Postgres image with pgvector/PostGIS extensions
     │   ├── pytest.ini
     │   ├── requirements.txt
     │   └── .env.example
-    └── web/                       # Vite + React (TS) SPA frontend
+    └── web/                       # Vite + React SPA frontend (mixed JS/TS)
         ├── index.html
         ├── package.json           # App dependencies + scripts
         ├── eslint.config.js
@@ -78,13 +94,15 @@ dip-grp5/
         │   └── favicon.svg
         └── src/
             ├── main.tsx
-            ├── App.tsx            # Routes + home page + chat widget
+            ├── App.tsx            # Routes + home page
             ├── index.css          # Imports the styles/ files
             ├── api/               # Fetch API clients + tests
-            ├── data/              # Local fallback vendor data
-            ├── features/          # Domain feature modules
-            ├── lib/               # Shared helpers
-            ├── pages/             # FoodPage, VendorsPage
+            ├── components/        # Shared UI (Layout, Header, chat, map)
+            ├── contexts/          # AuthContext
+            ├── features/          # Domain feature modules (reviews, vendors)
+            ├── hooks/             # useChatSession
+            ├── lib/               # Shared helpers (auth, supabase, maps)
+            ├── pages/             # FoodPage, VendorsPage, MapPage, SignInPage, NotFoundPage
             ├── styles/            # fonts, tailwind, theme
             └── types/             # Frontend TypeScript interfaces
 ```
@@ -191,7 +209,7 @@ python -m fastapi dev app/main.py
 
 Open <http://127.0.0.1:8000/docs> to use the interactive API page.
 
-### Temporary local authentication
+### Authentication
 
 Protected API actions require a signed-in Supabase session. The backend
 verifies the Supabase bearer token and creates or links the corresponding local
@@ -219,16 +237,16 @@ Start the Vite dev server:
 npm run dev
 ```
 
-Open <http://127.0.0.1:5173> in a browser. The Vite server proxies `/chat`,
-`/reviews`, `/vendors`, and `/media` to the FastAPI backend on port `8000`, so
-start the API first (see above).
+Open <http://127.0.0.1:5173> in a browser. The Vite server proxies `/auth`,
+`/preferences`, `/chat`, `/reviews`, `/vendors`, and `/media` to the FastAPI
+backend on port `8000`, so start the API first (see above).
 
 ### Frontend checks
 
 ```powershell
-npm test        # Node test runner for the API clients
-npm run lint    # ESLint
-npm run build   # Production build
+npm test          # Node test runner (API clients, citation markers, vendor ranking)
+npm run lint:fix  # ESLint with auto-fix (the only lint script defined)
+npm run build     # Production build (vite build; does not typecheck)
 ```
 
 ## API reference
@@ -285,6 +303,21 @@ creation time, optional `updated_at`, `is_edited`, and image metadata. Public
 user data exposes `display_name`, not the email address. The list response also
 includes `total`, `limit`, and `offset` so the frontend can build pagination.
 
+### Read your own reviews
+
+`GET /auth/me/reviews` requires a Supabase bearer token and returns the signed-in
+user's reviews, newest first. It is used by the Account page.
+
+| Query parameter | Default | Purpose |
+| --- | ---: | --- |
+| `limit` | `10` | Number of reviews to return; maximum `100` |
+| `offset` | `0` | Number of reviews to skip for pagination |
+
+Each item includes the review `id`, `rating`, optional `comment`, `created_at`,
+and its `vendor` (`id`, `name`). The response also includes `total`, `limit`,
+and `offset`. `GET /auth/me` returns only the profile (`id`, `display_name`,
+`role`).
+
 ### Edit a review
 
 `PATCH /reviews/{review_id}` allows the review author to change the rating,
@@ -324,6 +357,13 @@ not exist. Related `review_images` database records are removed automatically.
 Deleting external image files will be added when the storage provider is
 selected.
 
+### Vote on a review
+
+`POST /reviews/{review_id}/vote` requires a Supabase bearer token. The body is
+`{ "vote": "up" }` or `{ "vote": "down" }`. Voting the same value again removes
+the vote; voting the opposite value switches it. The response returns
+`upvote_count`, `downvote_count`, and `current_user_vote`.
+
 ### List food stalls
 
 `GET /vendors` is public and gives the frontend the available food stalls and
@@ -337,7 +377,9 @@ It supports:
 
 | Query parameter | Default | Purpose |
 | --- | ---: | --- |
-| `q` | none | Search name, location, or category |
+| `q` | none | Free-text search across name, category, location, unit code, and dishes |
+| `location` | none | Filter by location (substring match; `Hall ...` is matched exactly) |
+| `category` | none | Filter by exact category |
 | `limit` | `100` | Number of food stalls to return; maximum `100` |
 | `offset` | `0` | Number of food stalls to skip for pagination |
 
@@ -356,6 +398,13 @@ The stored internal average can also be read independently from Google ratings:
 
 ```text
 GET /vendors/{vendor_id}/average-rating
+```
+
+Geospatial and filter-helper endpoints used by the map and food pages:
+
+```text
+GET /vendors/nearby    # lat, lng, max_distance_m, min_rating, limit
+GET /vendors/filters   # distinct locations and categories
 ```
 
 Vendor image metadata can be managed through these endpoints:
@@ -394,23 +443,27 @@ the multipart `file`, change the form field `display_order`, or do both.
 `DELETE /reviews/{review_id}/images/{image_id}` removes the database record and
 its local file; the review author or an administrator may delete it.
 
-### Chatbot prompt storage
+### Chatbot
 
-The `chatbot_prompts` table first stores the curated example questions used to
-design the chatbot. Each question has a stable key, its original text, a concise
+`POST /chat/stream` is public and streams the RAG chatbot answer as
+server-sent events. It accepts a body of `{ "question": "..." }` (plus optional
+chat history) and an optional Supabase bearer token for personalization. It
+requires `GEMINI_API_KEY`. See [Chatbot RAG design](docs/chatbot.md) for the
+routing paths (`SQL`, `Vector`, `SQL + Vector`) and the ingestion flow.
+
+The `chatbot_prompts` table stores the curated example questions and acts as the
+router config. Each question has a stable key, its original text, a concise
 question scope, a search type (`SQL`, `Vector`, or `SQL + Vector`), source-file
-metadata, an `is_active` switch, and timestamps. `prompt_template` remains
-nullable until prompt authoring begins.
+metadata, an `is_active` switch, and timestamps.
 
 The repeatable development seed imports 59 unique questions from
 `DIP AI chatbot questions.xlsx` and `DIP Chatbot Schema.xlsx`. One exact question
-appears in both files and is stored once with both sources. Prompt lookup APIs
-and the LLM connection are intentionally left for the next chatbot step.
+appears in both files and is stored once with both sources.
 
 ## Tests
 
-Run the backend schema and database integration tests from `apps/api` (venv
-active):
+Run the backend test suite from `apps/api` (venv active). It uses an in-memory
+SQLite database and does not need Docker or PostgreSQL running:
 
 ```powershell
 python -m pytest -q

@@ -15,6 +15,7 @@ import { useAuth } from "./contexts/AuthContext";
 import VendorMap from "./pages/VendorMap";
 import MapPage from "./pages/MapPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import AccountPage from "./pages/AccountPage";
 import {
   Star,
   MapPin,
@@ -520,6 +521,8 @@ function HomePage() {
 
 function App() {
   const { session, loading } = useAuth();
+  
+  const userId = session?.user?.id ?? null;
 
   const [preferenceStatus, setPreferenceStatus] = useState<
     "pending" | "completed" | "skipped" | null
@@ -534,7 +537,7 @@ function App() {
     async function loadPreferences() {
       if (loading) return;
 
-      if (!session) {
+      if (!userId) {
         setPreferenceStatus(null);
         return;
       }
@@ -573,7 +576,7 @@ function App() {
     return () => {
       active = false;
     };
-  }, [session, loading, preferenceRetry]);
+  }, [userId, loading, preferenceRetry]);
 
   return (
     <>
@@ -591,6 +594,7 @@ function App() {
           <Route path="/food" element={<FoodPage />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/vendors/:vendorId" element={<VendorsPage />} />
+          <Route path="/account" element={<AccountPage />} />
           <Route path="signin" element={<SignInPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
