@@ -30,7 +30,7 @@ class UserFoodPreferences(Base):
         unique=True,
     )
 
-    allergies: Mapped[list[str]] = mapped_column(
+    dietary_restrictions: Mapped[list[str]] = mapped_column(
         preference_list_type,
         nullable=False,
         default=list,

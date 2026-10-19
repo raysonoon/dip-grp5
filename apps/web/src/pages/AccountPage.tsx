@@ -24,7 +24,7 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 
 type PreferenceKey =
-  | "allergies"
+  | "dietary_restrictions"
   | "cuisines"
   | "locations"
   | "likes"
@@ -48,7 +48,7 @@ type ReviewsPage = { items: RecentReview[]; total: number };
 const REVIEWS_PAGE_SIZE = 5;
 
 const PREFERENCE_FIELDS: { key: PreferenceKey; label: string; options: string[] }[] = [
-  { key: "allergies", label: "Allergies & dietary restrictions", options: dietaryOptions },
+  { key: "dietary_restrictions", label: "Allergies & dietary restrictions", options: dietaryOptions },
   { key: "cuisines", label: "Cuisines", options: cuisineOptions },
   { key: "locations", label: "Locations", options: locationOptions },
   { key: "likes", label: "Likes", options: foodPreferenceOptions },
@@ -57,7 +57,7 @@ const PREFERENCE_FIELDS: { key: PreferenceKey; label: string; options: string[] 
 ];
 
 const EMPTY_PREFERENCES: Record<PreferenceKey, string[]> = {
-  allergies: [],
+  dietary_restrictions: [],
   cuisines: [],
   locations: [],
   likes: [],
@@ -70,7 +70,7 @@ function pickPreferences(
 ): Record<PreferenceKey, string[]> {
   if (!preferences) return { ...EMPTY_PREFERENCES };
   return {
-    allergies: preferences.allergies ?? [],
+    dietary_restrictions: preferences.dietary_restrictions ?? [],
     cuisines: preferences.cuisines ?? [],
     locations: preferences.locations ?? [],
     likes: preferences.likes ?? [],

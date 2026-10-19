@@ -67,6 +67,7 @@ class VendorListItem(BaseModel):
     review_count: int
     images: list[VendorImageRead]
     map_coordinates: VendorCoordinates | None
+    recommended: bool = False
 
 
 class VendorNearbyItem(VendorListItem):

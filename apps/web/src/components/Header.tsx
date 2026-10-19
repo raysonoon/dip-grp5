@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ChevronDown, LogOut, Menu, Utensils, X, Search, Store, UserRound } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { fetchVendorPage, fetchVendors } from "../api/vendors";
+import { rankTrendingVendors } from "../lib/trendingVendors";
 
 const QUICK_SEARCH_TAGS = [
   { emoji: "🍗", label: "Chicken Rice", query: "Chicken Rice" },
@@ -12,18 +14,13 @@ const QUICK_SEARCH_TAGS = [
   { emoji: "🍣", label: "Japanese", query: "Japanese" },
 ];
 
-const RECOMMENDED_STALLS = [
-  { name: "A Hot Hideout @ Jurong West (NTU)", location: "Tanjong Hall" },
-  { name: "Pasta Express", location: "North Spine" },
-  { name: "QQ Rice", location: "North Spine" },
-];
-
 export default function Header({ fixed = false }: { fixed?: boolean }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [recommendedStalls, setRecommendedStalls] = useState<any[]>([]);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -122,6 +119,56 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadRecommendedStalls() {
+  // Logged-in users: try personalized recommendations first.
+    if (user) {
+      try {
+        const data = await fetchVendorPage({
+          sort: "recommended",
+          limit: 4,
+          signal: controller.signal,
+        });
+
+        const personalized = (data.items ?? []).filter(
+          (vendor: any) => vendor.recommended,
+        );
+
+        if (personalized.length > 0) {
+          setRecommendedStalls(personalized.slice(0, 4));
+          return;
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+
+        console.warn(
+          "Personalized recommendations unavailable, using trending stalls.",
+          error,
+        );
+      }
+    }
+
+  // Logged-out users, users without recommendations,
+  // or recommendation failures fall back to trending.
+    try {
+      const vendors = await fetchVendors("", controller.signal);
+      setRecommendedStalls(rankTrendingVendors(vendors, 4));
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        console.error("Failed to load trending stalls:", error);
+        setRecommendedStalls([]);
+      }
+    }
+  }
+
+    void loadRecommendedStalls();
+
+    return () => controller.abort();
+  }, [user]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -226,7 +273,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
                   Recommended Stalls
                 </p>
                 <div className="flex flex-col gap-1">
-                  {RECOMMENDED_STALLS.map((stall) => (
+                  {recommendedStalls.map((stall) => (
                     <button
                       key={stall.name}
                       type="button"
@@ -335,7 +382,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
               Recommended Stalls
             </p>
             <div className="flex flex-col gap-1">
-              {RECOMMENDED_STALLS.map((stall) => (
+              {recommendedStalls.map((stall) => (
                 <button
                   key={stall.name}
                   type="button"

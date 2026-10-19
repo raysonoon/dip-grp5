@@ -90,7 +90,7 @@ export function Chip({
 export default function FoodPreferencesOnboarding({ onFinished }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  const [allergies, setAllergies] = useState<string[]>([]);
+  const [dietaryRestrictions, setDietaryRestrictions] = useState<string[]>([]);
   const [cuisines, setCuisines] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [likes, setLikes] = useState<string[]>([]);
@@ -154,7 +154,8 @@ export default function FoodPreferencesOnboarding({ onFinished }: Props) {
 
     try {
       await saveMyPreferences({
-        allergies: status === "completed" ? allergies : [],
+        dietary_restrictions:
+          status === "completed" ? dietaryRestrictions : [],
         cuisines: status === "completed" ? cuisines : [],
         locations: status === "completed" ? locations : [],
         likes: status === "completed" ? likes : [],
@@ -223,9 +224,9 @@ export default function FoodPreferencesOnboarding({ onFinished }: Props) {
                 <Chip
                   key={option}
                   label={option}
-                  selected={allergies.includes(option)}
+                  selected={dietaryRestrictions.includes(option)}
                   onClick={() =>
-                    setAllergies((current) => toggleValue(current, option))
+                    setDietaryRestrictions((current) => toggleValue(current, option))
                   }
                 />
               ))}

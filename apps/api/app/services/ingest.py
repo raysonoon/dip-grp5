@@ -1,3 +1,4 @@
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
@@ -6,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models import GoogleReview, RedditComment, Review, Vendor
 from app.models.knowledge import KnowledgeChunk
+from app.models.vendor_embedding import VendorEmbedding
 from app.services.embedding import Embedder
 
 
@@ -189,6 +191,124 @@ def reindex(
                         metadata_json=document.metadata or None,
                     )
                 )
+        session.commit()
+        embedded += len(batch)
+
+    return embedded, already_indexed
+
+
+def build_vendor_embedding_content(session: Session) -> dict[int, str]:
+    """Build one searchable semantic document for each vendor."""
+
+    review_texts: dict[int, list[str]] = defaultdict(list)
+
+    for review in session.scalars(select(Review)).all():
+        comment = (review.comment or "").strip()
+        if comment:
+            review_texts[review.vendor_id].append(comment)
+
+    for review in session.scalars(select(GoogleReview)).all():
+        comment = (review.comment or "").strip()
+        if comment:
+            review_texts[review.vendor_id].append(comment)
+
+    for comment in session.scalars(select(RedditComment)).all():
+        text = (comment.comment_text or "").strip()
+        if text and comment.vendor_id is not None:
+            review_texts[comment.vendor_id].append(text)
+
+    documents: dict[int, str] = {}
+
+    for vendor in session.scalars(select(Vendor)).all():
+        parts = [
+            f"Name: {vendor.name}",
+        ]
+
+        if vendor.category:
+            parts.append(f"Category: {vendor.category}")
+
+        if vendor.location:
+            parts.append(f"Location: {vendor.location}")
+
+        if vendor.dishes:
+            parts.append(f"Dishes: {vendor.dishes}")
+
+        reviews = review_texts.get(vendor.id, [])
+        if reviews:
+            parts.append("Reviews: " + " ".join(reviews))
+
+        documents[vendor.id] = "\n".join(parts)
+
+    return documents
+
+
+def reindex_vendor_embeddings(
+    session: Session,
+    embedder: Embedder,
+    *,
+    force: bool = False,
+    limit: int | None = None,
+    batch_size: int = settings.embedding_batch_size,
+) -> tuple[int, int]:
+    """Build or refresh semantic embeddings for vendors.
+
+    Existing embeddings are skipped when their source content has not changed.
+    Passing ``force=True`` rebuilds all selected vendor embeddings.
+
+    Returns ``(embedded, already_indexed)``.
+    """
+
+    documents = build_vendor_embedding_content(session)
+
+    items = list(documents.items())
+
+    if limit is not None:
+        items = items[:limit]
+
+    existing_rows = {
+        row.vendor_id: row
+        for row in session.scalars(select(VendorEmbedding)).all()
+    }
+
+    if force:
+        to_embed = items
+    else:
+        to_embed = [
+            (vendor_id, content)
+            for vendor_id, content in items
+            if vendor_id not in existing_rows
+            or existing_rows[vendor_id].content != content
+        ]
+
+    already_indexed = len(items) - len(to_embed)
+
+    embedded = 0
+
+    for start in range(0, len(to_embed), batch_size):
+        batch = to_embed[start : start + batch_size]
+
+        if not batch:
+            continue
+
+        vectors = embedder.embed(
+            [content for _, content in batch]
+        )
+
+        for (vendor_id, content), vector in zip(batch, vectors):
+            existing = existing_rows.get(vendor_id)
+
+            if existing is not None:
+                existing.content = content
+                existing.embedding = vector
+            else:
+                row = VendorEmbedding(
+                    vendor_id=vendor_id,
+                    content=content,
+                    embedding=vector,
+                )
+                session.add(row)
+                existing_rows[vendor_id] = row
+
         session.commit()
         embedded += len(batch)
 

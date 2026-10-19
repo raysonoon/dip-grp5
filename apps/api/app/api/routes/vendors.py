@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from itertools import count
 from pathlib import Path as FilePath
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import (
     APIRouter,
@@ -19,10 +19,20 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
-from app.api.dependencies import AdminUser, DbSession
+from app.api.dependencies import (
+    AdminUser,
+    DbSession,
+    EmbedderDep,
+    OptionalCurrentUser,
+)
 from app.core.image_storage import get_storage
 from app.core.image_upload import read_image_upload
-from app.models import Review, Vendor, VendorImage
+from app.models import (
+    Review,
+    UserFoodPreferences,
+    Vendor,
+    VendorImage,
+)
 from app.schemas import (
     VendorAverageRatingRead,
     VendorCoordinates,
@@ -34,6 +44,7 @@ from app.schemas import (
     VendorNearbyRead,
 )
 from app.services.vendor_search import build_vendor_search_plan
+from app.services.vendor_recommender import VendorRecommender
 
 
 router = APIRouter(prefix="/vendors", tags=["vendors"])
@@ -118,9 +129,15 @@ def _resolve_vendor_image(
 @router.get("", response_model=VendorListRead)
 def list_vendors(
     session: DbSession,
+    current_user: OptionalCurrentUser,
+    embedder: EmbedderDep,
     q: Annotated[str | None, Query(max_length=100)] = None,
     location: Annotated[str | None, Query(max_length=255)] = None,
     category: Annotated[str | None, Query(max_length=255)] = None,
+    sort: Annotated[
+        Literal["recommended", "reviews", "rating"],
+        Query(),
+    ] = "recommended",
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> VendorListRead:
@@ -143,10 +160,38 @@ def list_vendors(
     total = session.scalar(
         select(func.count(Vendor.id)).where(*filters)
     )
-    rows = session.execute(
+
+    recommended_ids: list[int] = []
+
+    if sort == "recommended" and current_user is not None:
+        preferences = session.scalar(
+            select(UserFoodPreferences).where(
+                UserFoodPreferences.user_id == current_user.id
+            )
+        )
+
+        if (
+            preferences is not None
+            and preferences.onboarding_status == "completed"
+        ):
+            recommendations = VendorRecommender(
+                session,
+                embedder,
+            ).recommend(
+                preferences,
+                limit=6,
+            )
+            recommended_ids = [
+                recommendation.vendor.id
+                for recommendation in recommendations
+            ]
+
+    review_count = func.count(Review.id).label("review_count")
+
+    statement = (
         select(
             Vendor,
-            func.count(Review.id).label("review_count"),
+            review_count,
         )
         .options(
             selectinload(Vendor.images),
@@ -154,24 +199,76 @@ def list_vendors(
         .outerjoin(Review, Review.vendor_id == Vendor.id)
         .where(*filters)
         .group_by(Vendor.id)
-        .order_by(
-            *search_plan.order_by,
-            Vendor.name.asc(),
-            Vendor.id.asc(),
+    )
+
+    if sort == "reviews":
+        statement = statement.order_by(
+            review_count.desc(),
+            Vendor.created_at.desc(),
+            Vendor.id.desc(),
         )
-        .offset(offset)
-        .limit(limit)
-    ).all()
+
+    elif sort == "rating":
+        rating = func.coalesce(
+            Vendor.average_rating,
+            Vendor.average_google_rating,
+        )
+        statement = statement.order_by(
+            rating.desc().nullslast(),
+            Vendor.created_at.desc(),
+            Vendor.id.desc(),
+        )
+
+    elif recommended_ids:
+        recommendation_order = {
+            vendor_id: index
+            for index, vendor_id in enumerate(recommended_ids)
+        }
+
+        vendors = session.execute(statement).all()
+
+        vendors.sort(
+            key=lambda row: (
+                0
+                if row[0].id in recommendation_order
+                else 1,
+                recommendation_order.get(row[0].id, 0),
+                -row[0].created_at.timestamp(),
+                -row[0].id,
+            )
+        )
+
+        rows = vendors[offset : offset + limit]
+
+    else:
+        statement = statement.order_by(
+            Vendor.created_at.desc(),
+            Vendor.id.desc(),
+        )
+
+    if not recommended_ids or sort != "recommended":
+        rows = session.execute(
+            statement
+            .offset(offset)
+            .limit(limit)
+        ).all()
 
     items = []
-    for vendor, review_count in rows:
+
+    recommended_id_set = set(recommended_ids)
+
+    for vendor, review_count_value in rows:
         items.append(
             VendorListItem(
                 id=vendor.id,
                 name=vendor.name,
                 location=vendor.location,
                 unit_code=vendor.unit_code,
-                image_url=(vendor.images[0].image_url if vendor.images else None),
+                image_url=(
+                    vendor.images[0].image_url
+                    if vendor.images
+                    else None
+                ),
                 category=vendor.category,
                 opening_hours=vendor.opening_hours,
                 price_range=vendor.price_range,
@@ -190,7 +287,7 @@ def list_vendors(
                     if vendor.average_rating is None
                     else float(vendor.average_rating)
                 ),
-                review_count=review_count,
+                review_count=review_count_value,
                 images=[
                     VendorImageRead(
                         id=image.id,
@@ -204,6 +301,7 @@ def list_vendors(
                     for image in vendor.images
                 ],
                 map_coordinates=_vendor_coordinates(vendor),
+                recommended=vendor.id in recommended_id_set,
             )
         )
 
@@ -213,7 +311,6 @@ def list_vendors(
         limit=limit,
         offset=offset,
     )
-
 
 @router.get("/nearby", response_model=VendorNearbyRead)
 def list_nearby_vendors(

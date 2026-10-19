@@ -3,7 +3,7 @@ import argparse
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.services.embedding import GoogleEmbedder
-from app.services.ingest import reindex
+from app.services.ingest import reindex, reindex_vendor_embeddings
 
 
 def main() -> None:
@@ -53,10 +53,24 @@ def main() -> None:
             limit=args.limit,
             source_type=args.source_type,
         )
+        vendor_embedded, vendor_already_indexed = reindex_vendor_embeddings(
+            session,
+            embedder,
+            force=args.force,
+            limit=args.limit,
+        )
 
     print(
         "Knowledge base reindex: "
         f"embedded={embedded}, already_indexed={already_indexed}"
+        + ("" if args.limit is None else f" (limit={args.limit})")
+        + (" (force)" if args.force else "")
+    )
+
+    print(
+        "Vendor reindex: "
+        f"embedded={vendor_embedded}, "
+        f"already_indexed={vendor_already_indexed}"
         + ("" if args.limit is None else f" (limit={args.limit})")
         + (" (force)" if args.force else "")
     )

@@ -87,12 +87,28 @@ async function request(
   } = {},
 ) {
   const headers = {};
+
   if (auth) {
-    const accessToken = await getAccessToken();
-    if (!accessToken) throw new ApiAuthConfigurationError(authMessage);
-    headers.Authorization = `Bearer ${accessToken}`;
+    let accessToken = null;
+
+    if (auth === "optional") {
+      try {
+        accessToken = await getAccessToken();
+      } catch {
+        accessToken = null;
+      }
+    } else {
+      accessToken = await getAccessToken();
+
+      if (!accessToken) {
+        throw new ApiAuthConfigurationError(authMessage);
+      }
+    }
+
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
   }
-  if (body !== undefined) headers["Content-Type"] = "application/json";
 
   const controller = new AbortController();
   let timedOut = false;
