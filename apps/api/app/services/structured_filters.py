@@ -110,6 +110,11 @@ _CUISINE_NAME_ENDING_RE = re.compile(
     re.IGNORECASE,
 )
 _CUISINE_CLAUSE_BOUNDARY_RE = re.compile(r"\b(?:but|or)\b", re.IGNORECASE)
+# A clause can end in punctuation before a contrast boundary ("Vietnamese, but
+# not Chinese food"). Strip it so the ancestral suffix check sees the adjective.
+_CUISINE_CLAUSE_TRAILING_PUNCT_RE = re.compile(
+    r"[\s,;:.!?\uff0c\uff1b\uff1a\uff0e\uff01\uff1f]+$"
+)
 _CUISINE_REQUEST_WORDS = {
     "a",
     "an",
@@ -420,6 +425,9 @@ def _extract_explicit_cuisine_phrase(
         *HALAL_KEYWORDS,
     )
 
+    raw_phrase = ""
+    word_matches: list[re.Match[str]] = []
+    words: list[str] = []
     for match in _EXPLICIT_CUISINE_PHRASE_RE.finditer(question):
         raw_phrase = match.group("phrase")
         word_matches = list(
@@ -495,6 +503,8 @@ def _extract_explicit_cuisine_phrase(
         if prefix.strip() and not _has_cuisine_request_cue(prefix):
             continue
         return " ".join(candidate_words).title()
+    if not words:
+        return None
     return None
 
 
@@ -505,10 +515,12 @@ def _extract_cuisine(question: str, *, negated: bool = False) -> str | None:
     value = _extract_explicit_cuisine_phrase(question, negated=negated)
     if value is not None:
         return value
-    # In "Vietnamese but not Chinese food", the shared word "food" also
-    # qualifies the first clause. Only accept a plausible cuisine adjective.
+    # In "Vietnamese but not Chinese food", the shared word "food" also qualifies the first clause.
+    # Only accept a plausible cuisine adjective, tolerating clause punctuation ("Vietnamese, but not Chinese food").
     for boundary in _CUISINE_CLAUSE_BOUNDARY_RE.finditer(question):
-        clause = question[:boundary.start()].rstrip()
+        clause = _CUISINE_CLAUSE_TRAILING_PUNCT_RE.sub(
+            "", question[:boundary.start()],
+        )
         if _CUISINE_NAME_ENDING_RE.search(clause):
             value = _extract_explicit_cuisine_phrase(
                 f"{clause} food", negated=negated,
