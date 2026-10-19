@@ -39,7 +39,7 @@ dip-grp5/
     │   │   ├── api/
     │   │   │   ├── dependencies.py # Auth + DB session dependencies
     │   │   │   └── routes/
-    │   │   │       ├── auth.py    # GET /auth/me (Supabase-linked profile)
+    │   │   │       ├── auth.py    # GET /auth/me, /auth/me/reviews
     │   │   │       ├── chat.py    # POST /chat/stream (RAG chatbot, SSE)
     │   │   │       ├── preferences.py # Food-preferences endpoints
     │   │   │       ├── reviews.py
@@ -302,6 +302,21 @@ Each returned review includes its user, vendor, rating, optional comment,
 creation time, optional `updated_at`, `is_edited`, and image metadata. Public
 user data exposes `display_name`, not the email address. The list response also
 includes `total`, `limit`, and `offset` so the frontend can build pagination.
+
+### Read your own reviews
+
+`GET /auth/me/reviews` requires a Supabase bearer token and returns the signed-in
+user's reviews, newest first. It is used by the Account page.
+
+| Query parameter | Default | Purpose |
+| --- | ---: | --- |
+| `limit` | `10` | Number of reviews to return; maximum `100` |
+| `offset` | `0` | Number of reviews to skip for pagination |
+
+Each item includes the review `id`, `rating`, optional `comment`, `created_at`,
+and its `vendor` (`id`, `name`). The response also includes `total`, `limit`,
+and `offset`. `GET /auth/me` returns only the profile (`id`, `display_name`,
+`role`).
 
 ### Edit a review
 

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models import GoogleReview, RedditComment, Vendor
 from app.schemas.chat import ChatHistoryMessage, ChatResponse, ChatSource, trim_chat_history
+from app.services.chat_client import create_chat_client
 from app.services.embedding import Embedder
 from app.services.intent_router import IntentMatch, IntentRouter
 from app.services.retrieval import KnowledgeResult, KnowledgeStore
@@ -714,12 +715,17 @@ class ChatService:
         history: list[ChatHistoryMessage] | None = None,
     ) -> ChatResponse:
         generation = self._prepare_answer(question, history=history)
+        answer = generation.direct_answer
+        if answer is None:
+            try:
+                answer = self._generate(generation.prompt)
+                if not answer or not answer.strip():
+                    raise ValueError("Empty model answer")
+            except Exception:
+                logger.warning("Chat generation failed; returning retrieved facts", exc_info=True)
+                answer = self._fallback_answer(generation.sources)
         return ChatResponse(
-            answer=(
-                generation.direct_answer
-                if generation.direct_answer is not None
-                else self._generate(generation.prompt)
-            ),
+            answer=answer,
             sources=generation.sources,
             search_type=generation.search_type,
             intent=generation.intent,
@@ -736,10 +742,48 @@ class ChatService:
         if generation.direct_answer is not None:
             yield "delta", generation.direct_answer
         else:
-            for text in self._generate_stream(generation.prompt):
-                if text:
-                    yield "delta", text
+            emitted = False
+            try:
+                for text in self._generate_stream(generation.prompt):
+                    if text and (emitted or text.strip()):
+                        emitted = True
+                        yield "delta", text
+                if not emitted:
+                    raise ValueError("Empty model answer")
+            except Exception:
+                # Once text is visible, do not append a second answer or mark
+                # an incomplete response as successful with a sources event.
+                if emitted:
+                    raise
+                logger.warning("Chat generation failed; returning retrieved facts", exc_info=True)
+                yield "delta", self._fallback_answer(generation.sources)
         yield "sources", generation.sources
+
+    @staticmethod
+    def _fallback_answer(sources: list[ChatSource]) -> str:
+        """Show retrieved evidence without requiring another model call."""
+        facts: list[str] = []
+        for index, source in enumerate(sources, start=1):
+            if source.count is not None:
+                fact = f"Matching vendors: {source.count}"
+            elif source.source_type == "vendor":
+                details = [value for value in (
+                    source.location, source.unit_code, source.category,
+                    source.price_range, source.opening_hours,
+                ) if value]
+                fact = ": ".join(filter(None, (
+                    source.vendor_name, "; ".join(details),
+                )))
+            else:
+                fact = ": ".join(filter(None, (source.vendor_name, source.excerpt)))
+            if fact:
+                facts.append(f"- {fact} [{index}]")
+        if not facts:
+            return "Foodie is temporarily unavailable. Please try again in a moment."
+        return (
+            "I couldn't generate a full answer right now. "
+            "Here is the information I found:\n\n" + "\n".join(facts)
+        )
 
     def _prepare_answer(
         self,
@@ -1632,11 +1676,7 @@ class ChatService:
                 raise RuntimeError(
                     "GEMINI_API_KEY is not configured; cannot generate answers"
                 )
-            from google import genai
-
-            self._client = genai.Client(
-                api_key=settings.gemini_api_key.get_secret_value()
-            )
+            self._client = create_chat_client()
         response = self._client.models.generate_content(
             model=self._model,
             contents=prompt,
@@ -1656,11 +1696,7 @@ class ChatService:
                 raise RuntimeError(
                     "GEMINI_API_KEY is not configured; cannot generate answers"
                 )
-            from google import genai
-
-            self._client = genai.Client(
-                api_key=settings.gemini_api_key.get_secret_value()
-            )
+            self._client = create_chat_client()
         for chunk in self._client.models.generate_content_stream(
             model=self._model,
             contents=prompt,
