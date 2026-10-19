@@ -75,6 +75,7 @@ def _vendor_list_item(vendor: Vendor, review_count: int) -> VendorListItem:
         price_range=vendor.price_range,
         halal=vendor.halal,
         vegetarian=vendor.vegetarian,
+        dishes=vendor.dishes,
         average_google_rating=(
             None
             if vendor.average_google_rating is None
