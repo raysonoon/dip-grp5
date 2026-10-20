@@ -69,6 +69,14 @@ class VendorRecommender:
         if "halal" in dietary_restrictions:
             statement = statement.where(Vendor.halal.is_(True))
 
+        if (
+            "vegetarian" in dietary_restrictions
+            or "vegan" in dietary_restrictions
+        ):
+            statement = statement.where(
+                Vendor.vegetarian.is_(True)
+            )
+
         # Hard filter: selected cuisines -> vendor category.
         cuisines = [
             value.strip()

@@ -15,7 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from geoalchemy2.shape import to_shape
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -174,17 +174,21 @@ def list_vendors(
             preferences is not None
             and preferences.onboarding_status == "completed"
         ):
-            recommendations = VendorRecommender(
-                session,
-                embedder,
-            ).recommend(
-                preferences,
-                limit=6,
-            )
-            recommended_ids = [
-                recommendation.vendor.id
-                for recommendation in recommendations
-            ]
+            try:
+                recommendations = VendorRecommender(
+                    session,
+                    embedder,
+                ).recommend(
+                    preferences,
+                    limit=6,
+                )
+
+                recommended_ids = [
+                    recommendation.vendor.id
+                    for recommendation in recommendations
+                ]
+            except (RuntimeError, ValueError):
+                recommended_ids = []
 
     review_count = func.count(Review.id).label("review_count")
 
@@ -203,6 +207,7 @@ def list_vendors(
 
     if sort == "reviews":
         statement = statement.order_by(
+            *search_plan.order_by,
             review_count.desc(),
             Vendor.created_at.desc(),
             Vendor.id.desc(),
@@ -214,44 +219,41 @@ def list_vendors(
             Vendor.average_google_rating,
         )
         statement = statement.order_by(
+            *search_plan.order_by,
             rating.desc().nullslast(),
             Vendor.created_at.desc(),
             Vendor.id.desc(),
         )
 
     elif recommended_ids:
-        recommendation_order = {
-            vendor_id: index
-            for index, vendor_id in enumerate(recommended_ids)
-        }
-
-        vendors = session.execute(statement).all()
-
-        vendors.sort(
-            key=lambda row: (
-                0
-                if row[0].id in recommendation_order
-                else 1,
-                recommendation_order.get(row[0].id, 0),
-                -row[0].created_at.timestamp(),
-                -row[0].id,
-            )
+        recommendation_order = case(
+            {
+                vendor_id: index
+                for index, vendor_id in enumerate(recommended_ids)
+            },
+            value=Vendor.id,
+            else_=len(recommended_ids),
         )
 
-        rows = vendors[offset : offset + limit]
-
-    else:
         statement = statement.order_by(
+            *search_plan.order_by,
+            recommendation_order.asc(),
             Vendor.created_at.desc(),
             Vendor.id.desc(),
         )
 
-    if not recommended_ids or sort != "recommended":
-        rows = session.execute(
-            statement
-            .offset(offset)
-            .limit(limit)
-        ).all()
+    else:
+        statement = statement.order_by(
+            *search_plan.order_by,
+            Vendor.created_at.desc(),
+            Vendor.id.desc(),
+        )
+
+    rows = session.execute(
+        statement
+        .offset(offset)
+        .limit(limit)
+    ).all()
 
     items = []
 

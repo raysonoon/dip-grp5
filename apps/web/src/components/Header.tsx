@@ -122,6 +122,8 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
 
 
   useEffect(() => {
+    if (loading) return;
+
     const controller = new AbortController();
 
     async function loadRecommendedStalls() {
@@ -168,7 +170,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
     void loadRecommendedStalls();
 
     return () => controller.abort();
-  }, [user]);
+  }, [user, loading]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();

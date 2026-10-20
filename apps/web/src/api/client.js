@@ -88,6 +88,10 @@ async function request(
 ) {
   const headers = {};
 
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+
   if (auth) {
     let accessToken = null;
 
