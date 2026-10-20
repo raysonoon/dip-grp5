@@ -328,24 +328,34 @@ def build_vendor_search_plan(
             for token in parsed.lexical_text.split()
         )
     )
-    filters.append(
-        or_(
-            exact_name == 1.0,
-            prefix_name == 1.0,
-            full_text_match,
-            fuzzy_match,
+    if parsed.lexical_text.strip().lower() == "mala":
+        filters.append(
+            or_(
+                exact_name == 1.0,
+                func.lower(Vendor.dishes).ilike("%mala%"),
+            )
         )
-    )
+        filters.append(
+            ~func.lower(Vendor.name).like("malay%")
+        )
+    else:
+        filters.append(
+            or_(
+                exact_name == 1.0,
+                prefix_name == 1.0,
+                full_text_match,
+                fuzzy_match,
+            )
+        )
 
     search_score = (
         exact_name * 100.0
-        + prefix_name * 40.0
-        + func.ts_rank_cd(name_vector, ts_query) * 24.0
-        + func.ts_rank_cd(category_vector, ts_query) * 12.0
-        + func.ts_rank_cd(location_vector, ts_query) * 6.0
-        + func.ts_rank_cd(dishes_vector, ts_query) * 10.0
-        + func.ts_rank_cd(document_vector, ts_query) * 2.0
-        + fuzzy_score * 15.0
+        + func.ts_rank_cd(name_vector, ts_query) * 100000.0
+        + func.ts_rank_cd(dishes_vector, ts_query) * 10000.0
+        + prefix_name * 1000.0
+        + func.ts_rank_cd(category_vector, ts_query) * 100.0
+        + func.ts_rank_cd(location_vector, ts_query) * 10.0
+        + fuzzy_score * 1.0
     )
     quality = func.coalesce(
         Vendor.average_rating,
