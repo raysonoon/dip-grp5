@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models import GoogleReview, Review, User, Vendor
-from app.services.ingest import build_chunks
+from app.services.ingest import build_chunks, build_vendor_embedding_content
 
 
 def _seed_data(session: Session) -> Vendor:
@@ -78,3 +78,27 @@ def test_build_chunks_skips_blank_comments(session: Session) -> None:
 
     assert all(chunk.content for chunk in chunks)
     assert all(chunk.source_id is not None for chunk in chunks)
+
+
+def test_build_vendor_embedding_content_combines_vendor_fields_and_reviews(
+    session: Session,
+) -> None:
+    vendor = _seed_data(session)
+
+    vendor.category = "Asian"
+    vendor.location = "North Spine"
+    vendor.dishes = "Chicken Rice, Noodles"
+    session.commit()
+
+    documents = build_vendor_embedding_content(session)
+
+    assert vendor.id in documents
+
+    content = documents[vendor.id]
+
+    assert "Name: Demo Vendor 1" in content
+    assert "Category: Asian" in content
+    assert "Location: North Spine" in content
+    assert "Dishes: Chicken Rice, Noodles" in content
+    assert "Great chicken rice with generous portions." in content
+    assert "Best noodles on campus, very filling." in content

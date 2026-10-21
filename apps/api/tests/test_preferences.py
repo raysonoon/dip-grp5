@@ -40,7 +40,7 @@ def test_user_can_save_and_read_food_preferences(
     user = create_user(session)
 
     payload = {
-        "allergies": ["Halal"],
+        "dietary_restrictions": ["Halal"],
         "cuisines": ["Japanese", "Western"],
         "locations": ["North Spine"],
         "likes": ["Coffee", "Protein"],
@@ -74,7 +74,7 @@ def test_user_can_skip_preferences(
     user = create_user(session)
 
     payload = {
-        "allergies": [],
+        "dietary_restrictions": [],
         "cuisines": [],
         "locations": [],
         "likes": [],
@@ -100,7 +100,7 @@ def test_preferences_require_authentication(
     assert client.put(
         "/preferences/me",
         json={
-            "allergies": [],
+            "dietary_restrictions": [],
             "cuisines": [],
             "locations": [],
             "likes": [],

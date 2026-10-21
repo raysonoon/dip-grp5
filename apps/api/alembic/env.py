@@ -10,6 +10,7 @@ from app.db.base import Base
 from app.db.vector_base import VectorBase
 from app import models  # noqa: F401 - registers all model tables
 from app.models import knowledge  # noqa: F401 - registers pgvector tables
+from app.models import vendor_embedding  # noqa: F401 - registers vendor pgvector table
 
 
 def render_item(
