@@ -11,7 +11,7 @@ const QUICK_SEARCH_TAGS = [
   { emoji: "🌶️", label: "Mala", query: "Mala" },
   { emoji: "🍱", label: "Bento", query: "Bento" },
   { emoji: "🥘", label: "Economy Rice", query: "Economy Rice" },
-  { emoji: "🍣", label: "Japanese", query: "Japanese" },
+  { emoji: "🍔", label: "Burger", query: "Burger" },
 ];
 
 export default function Header({ fixed = false }: { fixed?: boolean }) {

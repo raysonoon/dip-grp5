@@ -125,6 +125,65 @@ VENDOR_CATEGORY_OVERRIDES = {
     "V035": "Canteen",
 }
 
+VENDOR_DISHES_OVERRIDES = {
+    # Format example: "V001": "Chicken Rice, Iced Milo"
+    "V001": "Bubble Tea",  # 7 Tea
+    "V002": "Mala, Malatang",  # A Hot Hideout
+    "V003": "Acai Bowl",  # Acai Guru
+    "V004": "Prata, Biryani",  # Ananda's TAJ Restaurant
+    "V005": "Steak, Chicken Chop",  # ANDES by ASTONS
+    "V006": "Bread, Croissant, Pastry",  # Bakery Cuisine
+    "V007": "Biryani",  # Bismillah Biryani
+    "V008": "Toast, Coffee",  # Blue Ocean Kopi & Toast
+    "V009": "Juice",  # Boost Juice Bars
+    "V010": "Cake, Ice Cream",  # Chateraise Unmanned Store
+    "V011": "Bubble Tea",  # CHICHA San Chen - North Spine
+    "V012": "Coffee, Matcha",  # Co-op @ NTU Cafe
+    "V013": "Coffee, Matcha",  # Coffee Faculty
+    "V014": "Coffee",  # Connect 71 Cafe (C71)
+    "V015": "Pizza",  # Domino's Pizza (The Arc)
+    "V016": "Bubble Tea",  # Each-A-Cup
+    "V017": "Rice, Noodles",  # Encik Tan
+    "V018": "Mala, Pasta, Economy Rice, Curry Rice",  # Food Court 1
+    "V019": "Ban Mian, Economy Rice",  # Food Court 11
+    "V020": "Ban Mian, Noodles, Ramen, Curry Rice, Fried Rice, Chicken Chop, Fish & Chips",  # Food Court 14
+    "V021": "Mala, Biryani, Ramen, Curry Rice, Prata, Udon",  # Food Court 16
+    "V022": "Chicken Rice, Dumplings, Noodles, Bento, Biryani, Prata, Pasta, Fried Rice, Economy Rice",  # Food Court 2
+    "V023": "Economy Rice",  # Food Court 4
+    "V024": "Mala, Noodles, Economy Rice",  # Food Court 9
+    "V025": "Ban Mian, Noodles, Pao Fan, Nasi Padang, Chicken Chop, Ayam Penyet, Pasta",  # Food Court @ NIE
+    "V026": "Ice Cream, Waffles, Pasta",  # Geláre
+    "V027": "Burger, Ramen",  # Hill Yard North Hill
+    "V028": "Rice Bowls",  # June's Breathe Cafe @ LKC Medicine
+    "V029": "Coffee, Matcha",  # luckin coffee
+    "V030": "Coffee, Matcha",  # Mad Roaster at SHHK
+    "V031": "Rice, Noodles",  # Malay Stall at South Spine (from Canteen 11)
+    "V032": "Noodles",  # Man Le Chinese Restaurant
+    "V033": "Burger, Fries, Fried Chicken",  # McDonald's
+    "V034": "Beancurd, Soy Milk",  # Mr Bean
+    "V035": "Chicken Rice, Ban Mian, Mala, Prata, Pasta",  # Nanyang Crescent Food Court
+    "V036": "Pasta, Mala, Noodles, Chicken Chop",  # North Hill Food Court (Colour Box)
+    "V037": "Chicken Rice, Mala, Fried Rice, Noodles",  # North Spine Food Court & International Food Court (Koufu)
+    "V038": "Rice, Noodles",  # Paik's Bibim
+    "V039": "Pasta",  # Pasta Express
+    "V040": "Pasta, Burger, Fish & Chips",  # PEN & INC
+    "V041": "Ban Mian, Pao Fan, Economy Rice, Mala, Chicken Rice, Pasta",  # Pioneer Food Court
+    "V042": "Fried Chicken, Fries",  # Popeyes
+    "V043": "Rice, Bento",  # QQ Rice
+    "V044": "Mala, Chicken Rice, Noodles",  # Quad Cafe (SBS)
+    "V045": "Mala, Chicken Rice, Noodles, Salad, Ban Mian, Pao Fan",  # South Spine Food Court (Foodies' Clan)
+    "V046": "Coffee, Matcha",  # Starbucks
+    "V047": "Sandwiches, Cookies",  # Subway
+    "V048": "Noodles, Rice",  # Thai Dynasty Express
+    "V049": "Salad",  # The Crowded Bowl at North Spine
+    "V050": "Salad",  # The Crowded Bowl at Wee Cho Yaw Plaza
+    "V051": "Soup, Chicken Chop, Meatballs, Lasagna",  # The Soup Spoon Union
+    "V052": "Pasta, Fried Rice, Laksa, Chicken Rice",  # Vending Machine Cafe @ SSC
+    "V053": "Coffee",  # Venture Drive Coffee at North Spine
+    "V054": "Coffee",  # Venture Drive Coffee at Wee Cho Yaw Plaza
+    "V055": "Fried Rice",  # Wok Express
+    "V056": "Duck Rice",  # Yew Kee Specialities
+}
 
 def _normalize_vendor_category(
     category: str | None,
@@ -1162,6 +1221,122 @@ def seed_demo_vendor_coordinates(session: Session) -> int:
     session.commit()
     return updated
 
+def seed_vendor_dishes(session: Session) -> tuple[int, int]:
+    """Populate Vendor.dishes from Google 'Recommended dishes' metadata
+
+    with fallback to VENDOR_DISHES_OVERRIDES and export of missing vendors.
+    """
+    from collections import Counter, defaultdict
+    import os
+
+    vendor_dish_counts = defaultdict(Counter)
+    vendor_review_samples = {}
+    vendor_meta = {}
+
+    # Read detailed reviews CSV to extract Recommended dishes
+    with GOOGLE_REVIEWS_CSV.open(newline="", encoding="utf-8-sig") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            directory_id = (row.get("ID") or "").strip()
+            if not directory_id:
+                continue
+
+            vendor_name = (row.get("vendor_name") or "").strip()
+            category = (row.get("category") or "").strip()
+            review_text = (row.get("review_text") or "").strip()
+
+            if directory_id not in vendor_meta:
+                vendor_meta[directory_id] = {
+                    "vendor_name": vendor_name,
+                    "category": category,
+                }
+            if directory_id not in vendor_review_samples and review_text:
+                vendor_review_samples[directory_id] = review_text
+
+            exp_details_str = row.get("experience_details")
+            if not exp_details_str:
+                continue
+
+            try:
+                exp_details = json.loads(exp_details_str)
+
+                recommended_dishes = None
+                
+                # Handle whether the parsed JSON is a dict or a list of dicts/items
+                if isinstance(exp_details, dict):
+                    recommended_dishes = exp_details.get("Recommended dishes")
+                elif isinstance(exp_details, list):
+                    for item in exp_details:
+                        if isinstance(item, dict) and "Recommended dishes" in item:
+                            recommended_dishes = item.get("Recommended dishes")
+                            break
+                        
+                if not recommended_dishes:
+                    continue
+
+                if isinstance(recommended_dishes, str):
+                    dishes = [d.strip() for d in recommended_dishes.split(",") if d.strip()]
+                elif isinstance(recommended_dishes, list):
+                    dishes = [str(d).strip() for d in recommended_dishes if str(d).strip()]
+                else:
+                    dishes = []
+
+                for dish in dishes:
+                    normalized = dish.title()
+                    vendor_dish_counts[directory_id][normalized] += 1
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+    vendors = session.scalars(
+        select(Vendor).where(Vendor.directory_id.is_not(None))
+    ).all()
+
+    updated_count = 0
+    missing_vendors = []
+
+    for vendor in vendors:
+        v_id = vendor.directory_id
+        dishes_str = None
+
+        # Order by frequency (descending), then alphabetically (ascending) for ties
+        if v_id in vendor_dish_counts and vendor_dish_counts[v_id]:
+            sorted_dishes = sorted(
+                vendor_dish_counts[v_id].items(),
+                key=lambda item: (-item[1], item[0])
+            )
+            dishes_str = ", ".join([dish for dish, _ in sorted_dishes])
+
+        # Apply VENDOR_DISHES_OVERRIDES if still null/empty
+        if not dishes_str and v_id in VENDOR_DISHES_OVERRIDES:
+            override = VENDOR_DISHES_OVERRIDES[v_id]
+            if isinstance(override, list):
+                dishes_str = ", ".join([str(d).strip().title() for d in override if str(d).strip()])
+            else:
+                dishes_str = str(override).strip()
+
+        if dishes_str:
+            if _set_if_changed(vendor, "dishes", dishes_str):
+                updated_count += 1
+        else:
+            meta = vendor_meta.get(v_id, {})
+            missing_vendors.append({
+                "vendor_name": vendor.name or meta.get("vendor_name", ""),
+                "category": vendor.category or meta.get("category", ""),
+                "review_text": vendor_review_samples.get(v_id, "")
+            })
+
+    # Emit CSV for missing dishes if any exist
+    if missing_vendors:
+        os.makedirs("data/vendor_dishes", exist_ok=True)
+        missing_csv_path = Path(__file__).resolve().parents[4] / "data" / "vendor_dishes" / "vendors_missing_dishes.csv"
+        with open(missing_csv_path, mode="w", newline="", encoding="utf-8") as mf:
+            writer = csv.DictWriter(mf, fieldnames=["vendor_name", "category", "review_text"])
+            writer.writeheader()
+            writer.writerows(missing_vendors)
+
+    session.commit()
+    return updated_count, len(missing_vendors)
+
 
 def main() -> None:
     with SessionLocal() as session:
@@ -1189,6 +1364,8 @@ def main() -> None:
             google_reviews_skipped,
             google_reviews_missing,
         ) = seed_google_reviews(session)
+
+        dishes_updated_count, dishes_missing_count = seed_vendor_dishes(session)
 
         chatbot_created, chatbot_updated = seed_chatbot_questions(
             session
@@ -1235,9 +1412,15 @@ def main() -> None:
         action = "Created" if created else "Confirmed"
         print(
             f"{action} NTU vendor: "
-            f"{vendor.directory_id} - "
+            f"{vendor.directory_id}"
             f"{vendor.name} (id={vendor.id})"
         )
+
+    print(
+        "Vendor dishes: "
+        f"updated={dishes_updated_count}, "
+        f"missing_dishes_exported={dishes_missing_count}"
+    )    
 
     print(
         "Google reviews: "
