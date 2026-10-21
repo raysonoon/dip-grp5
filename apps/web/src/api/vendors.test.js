@@ -35,7 +35,7 @@ test("fetchVendorById finds a backend vendor by its integer id", async (context)
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (path, options) => {
-    assert.equal(path, "/vendors?limit=100&offset=0");
+    assert.equal(path, "/vendors?limit=100&offset=0&sort=recommended");
     assert.equal(options.method, "GET");
     assert.equal(options.headers.Authorization, undefined);
     return jsonResponse({ items: [VENDOR], total: 1, limit: 100, offset: 0 });
@@ -104,7 +104,7 @@ test("fetchVendors sends a trimmed search query to every backend page", async (c
   await fetchVendors("  Chicken Rice  ");
 
   assert.deepEqual(requestedPaths, [
-    "/vendors?limit=100&offset=0&q=Chicken+Rice",
-    "/vendors?limit=100&offset=1&q=Chicken+Rice",
+    "/vendors?limit=100&offset=0&q=Chicken+Rice&sort=recommended",
+    "/vendors?limit=100&offset=1&q=Chicken+Rice&sort=recommended",
   ]);
 });

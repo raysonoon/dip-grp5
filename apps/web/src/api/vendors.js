@@ -100,6 +100,8 @@ export function parseVendor(value) {
     updated_at: stringValue(vendor.updated_at, "vendor updated_at"),
     images: vendor.images.map(parseVendorImage),
     map_coordinates: parseMapCoordinates(vendor.map_coordinates),
+    recommended:
+      typeof vendor.recommended === "boolean" ? vendor.recommended : false,
     // Only present on /vendors/nearby responses (metres, computed by PostGIS).
     distance_m: nullableNumber(vendor.distance_m ?? null, "vendor distance_m"),
   };
@@ -122,6 +124,7 @@ export async function fetchVendorPage({
   q = "",
   location = "",
   category = "",
+  sort = "recommended",
   limit = 100,
   offset = 0,
   signal,
@@ -143,9 +146,13 @@ export async function fetchVendorPage({
     params.set("category", category);
   }
 
+  if (sort) {
+    params.set("sort", sort);
+  }
+
   const payload = await apiClient.get(
     `/vendors?${params.toString()}`,
-    { auth: false, signal },
+    { auth: "optional", signal },
   );
 
   return parseVendorList(payload);

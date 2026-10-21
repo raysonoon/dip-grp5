@@ -289,7 +289,7 @@ export default function FoodPage() {
 
   const [selectedCategory, setSelectedCategory] = useState("");
 
-
+  const [sort, setSort] = useState("recommended");
 
   const [locations, setLocations] = useState([]);
 
@@ -421,6 +421,8 @@ export default function FoodPage() {
 
       category: selectedCategory,
 
+      sort,
+
       limit: PAGE_LIMIT,
 
       offset,
@@ -461,7 +463,7 @@ export default function FoodPage() {
 
     return () => controller.abort();
 
-  }, [debouncedSearchTerm, selectedLocation, selectedCategory, offset, loadAttempt]);
+  }, [debouncedSearchTerm, selectedLocation, sort, selectedCategory, offset, loadAttempt]);
 
 
 
@@ -580,6 +582,19 @@ export default function FoodPage() {
           }}
 
         />
+        <select
+          value={sort}
+          onChange={(event) => {
+            setSort(event.target.value);
+            setOffset(0);
+          }}
+          aria-label="Sort vendors"
+          className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground cursor-pointer"
+        >
+          <option value="recommended">Recommended</option>
+          <option value="reviews">Most Reviews</option>
+          <option value="rating">Highest Rating</option>
+        </select>
 
         {hasActiveFilters && (
 
@@ -698,6 +713,13 @@ export default function FoodPage() {
                   )}
 
                   <div className="p-4 text-center">
+                  {vendor.recommended && (
+                    <div className="mb-2">
+                      <span className="inline-block rounded-full bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground">
+                        Recommended
+                      </span>
+                    </div>
+                  )}
 
                     <span className="text-xs text-primary bg-primary/10 px-2.5 py-1 rounded-full">
 
