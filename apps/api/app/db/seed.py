@@ -178,7 +178,7 @@ VENDOR_DISHES_OVERRIDES = {
     "V049": "Salad",  # The Crowded Bowl at North Spine
     "V050": "Salad",  # The Crowded Bowl at Wee Cho Yaw Plaza
     "V051": "Soup, Chicken Chop, Meatballs, Lasagna",  # The Soup Spoon Union
-    "V052": "Water",  # Vending Machine Cafe @ SSC
+    "V052": "Pasta, Fried Rice, Laksa, Chicken Rice",  # Vending Machine Cafe @ SSC
     "V053": "Coffee",  # Venture Drive Coffee at North Spine
     "V054": "Coffee",  # Venture Drive Coffee at Wee Cho Yaw Plaza
     "V055": "Fried Rice",  # Wok Express
