@@ -84,7 +84,7 @@ MOJIBAKE_MARKERS = (
 LOCATION_ALIASES: dict[str, str] = {
     "tamarind hall": "Nanyang Crescent",
     "saraca hall": "Nanyang Crescent",
-    "hall 8": "Nanyang Crescent",
+    "hall 7": "Nanyang Crescent",
     "tanjong": "North Hill",
     "tanjong hall": "North Hill",
     "binjai": "North Hill",

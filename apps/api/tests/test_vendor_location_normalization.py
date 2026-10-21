@@ -5,7 +5,7 @@ from app.db.seed import _normalize_location
 
 @pytest.mark.parametrize(
     "raw",
-    ["Tamarind Hall", "Saraca Hall", "Hall 8", "saraca hall ", "HALL  8"],
+    ["Tamarind Hall", "Saraca Hall", "Hall 7", "saraca hall ", "HALL  7"],
 )
 def test_nanyang_crescent_aliases(raw):
     assert _normalize_location(raw) == "Nanyang Crescent"
