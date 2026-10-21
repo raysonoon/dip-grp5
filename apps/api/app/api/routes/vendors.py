@@ -243,10 +243,11 @@ def list_vendors(
         )
 
     else:
+        # Fallback when no stalls are recommended: alphabetical, A-Z.
         statement = statement.order_by(
             *search_plan.order_by,
-            Vendor.created_at.desc(),
-            Vendor.id.desc(),
+            func.lower(Vendor.name).asc(),
+            Vendor.id.asc(),
         )
 
     rows = session.execute(

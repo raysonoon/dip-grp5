@@ -29,7 +29,16 @@ def main() -> None:
         type=str,
         default=None,
         help="Only reindex one source type, e.g. reddit.",
-    )   
+    )
+    parser.add_argument(
+        "--target",
+        choices=("vendors", "knowledge-chunks"),
+        default=None,
+        help=(
+            "Choose what to reindex: vendors or knowledge-chunks. "
+            "If omitted, reindex both."
+        ),
+    )
     args = parser.parse_args()
 
     api_key = (
@@ -46,34 +55,42 @@ def main() -> None:
     embedder = GoogleEmbedder(api_key=api_key)
 
     with SessionLocal() as session:
-        embedded, already_indexed = reindex(
-            session,
-            embedder,
-            force=args.force,
-            limit=args.limit,
-            source_type=args.source_type,
-        )
-        vendor_embedded, vendor_already_indexed = reindex_vendor_embeddings(
-            session,
-            embedder,
-            force=args.force,
-            limit=args.limit,
+        reindex_knowledge = args.target in (None, "knowledge-chunks")
+
+        if reindex_knowledge:
+            embedded, already_indexed = reindex(
+                session,
+                embedder,
+                force=args.force,
+                limit=args.limit,
+                source_type=args.source_type,
+            )
+        reindex_vendors = args.target in (None, "vendors")
+        
+        if reindex_vendors:
+            vendor_embedded, vendor_already_indexed = reindex_vendor_embeddings(
+                session,
+                embedder,
+                force=args.force,
+                limit=args.limit,
+            )
+
+    if reindex_knowledge:
+        print(
+            "Knowledge base reindex: "
+            f"embedded={embedded}, already_indexed={already_indexed}"
+            + ("" if args.limit is None else f" (limit={args.limit})")
+            + (" (force)" if args.force else "")
         )
 
-    print(
-        "Knowledge base reindex: "
-        f"embedded={embedded}, already_indexed={already_indexed}"
-        + ("" if args.limit is None else f" (limit={args.limit})")
-        + (" (force)" if args.force else "")
-    )
-
-    print(
-        "Vendor reindex: "
-        f"embedded={vendor_embedded}, "
-        f"already_indexed={vendor_already_indexed}"
-        + ("" if args.limit is None else f" (limit={args.limit})")
-        + (" (force)" if args.force else "")
-    )
+    if reindex_vendors:
+        print(
+            "Vendor reindex: "
+            f"embedded={vendor_embedded}, "
+            f"already_indexed={vendor_already_indexed}"
+            + ("" if args.limit is None else f" (limit={args.limit})")
+            + (" (force)" if args.force else "")
+        )
 
 
 if __name__ == "__main__":

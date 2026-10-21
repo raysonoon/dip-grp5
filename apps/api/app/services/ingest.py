@@ -1,6 +1,7 @@
-from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
+import re
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -142,7 +143,7 @@ def reindex(
             document
             for document in documents
             if document.source_type == source_type
-    ]
+        ]
 
     if limit is not None:
         documents = documents[:limit]
@@ -202,7 +203,6 @@ VENDOR_DOCUMENT_CHAR_BUDGET = 6000
 VENDOR_REVIEW_CHAR_LIMIT = 240
 VENDOR_REVIEW_MIN_CHARS = 20
 VENDOR_REVIEW_MAX_LINES = 30
-VENDOR_EMBED_BATCH_CHAR_BUDGET = 6000
 
 
 def _clean_review_text(text: str | None) -> str:
@@ -219,6 +219,22 @@ def _clean_review_text(text: str | None) -> str:
     return cleaned
 
 
+def _is_obvious_noise(text: str) -> bool:
+    """Return whether cleaned review text is clearly not useful content."""
+
+    if not text or not any(character.isalnum() for character in text):
+        return True
+
+    if re.fullmatch(r"(?:https?://|www\.)\S+", text, re.IGNORECASE):
+        return True
+
+    compact = re.sub(r"\s+", "", text.casefold())
+    if compact and len(set(compact)) == 1:
+        return True
+
+    return False
+
+
 @dataclass
 class VendorReviewSnippet:
     text: str
@@ -228,10 +244,37 @@ class VendorReviewSnippet:
     sort_id: str
 
 
-def _dedupe_review_snippets(
+def _dedupe_exact_review_snippets(
     snippets: list[VendorReviewSnippet],
 ) -> list[VendorReviewSnippet]:
-    """Remove exact and near-duplicate review text."""
+    """Remove exact duplicates, retaining the most recent occurrence."""
+
+    deduped: list[VendorReviewSnippet] = []
+    seen: set[str] = set()
+
+    for snippet in sorted(
+        snippets,
+        key=lambda item: (
+            item.sort_time,
+            item.source,
+            item.sort_id,
+        ),
+        reverse=True,
+    ):
+        normalized = snippet.text.casefold()
+        if normalized in seen:
+            continue
+
+        seen.add(normalized)
+        deduped.append(snippet)
+
+    return deduped
+
+
+def _dedupe_near_review_snippets(
+    snippets: list[VendorReviewSnippet],
+) -> list[VendorReviewSnippet]:
+    """Remove near-duplicate review text after exact deduplication."""
 
     deduped: list[VendorReviewSnippet] = []
 
@@ -260,6 +303,16 @@ def _dedupe_review_snippets(
             deduped.append(snippet)
 
     return deduped
+
+
+def _dedupe_review_snippets(
+    snippets: list[VendorReviewSnippet],
+) -> list[VendorReviewSnippet]:
+    """Remove exact duplicates before more expensive near-duplicate checks."""
+
+    return _dedupe_near_review_snippets(
+        _dedupe_exact_review_snippets(snippets)
+    )
 
 
 def _select_review_snippets(
@@ -335,74 +388,90 @@ def _select_review_snippets(
     return selected
 
 
-def build_vendor_embedding_content(session: Session) -> dict[int, str]:
-    """Build one searchable semantic document for each vendor."""
-
-    review_snippets: dict[int, list[VendorReviewSnippet]] = defaultdict(list)
-
-    google_review_counts: dict[int, int] = defaultdict(int)
-
-    for review in session.scalars(select(Review)).all():
-        text = _clean_review_text(review.comment)
-
-        if len(text) < VENDOR_REVIEW_MIN_CHARS:
-            continue
-
-        review_snippets[review.vendor_id].append(
-            VendorReviewSnippet(
-                text=text,
-                rating=review.rating_half_steps / 2,
-                source="Internal",
-                sort_time=review.created_at.timestamp(),
-                sort_id=str(review.id),
-            )
-        )
-
-    for review in session.scalars(select(GoogleReview)).all():
-        google_review_counts[review.vendor_id] += 1
-        text = _clean_review_text(review.comment)
-
-        if len(text) < VENDOR_REVIEW_MIN_CHARS:
-            continue
-
-        review_snippets[review.vendor_id].append(
-            VendorReviewSnippet(
-                text=text,
-                rating=float(review.rating) if review.rating is not None else None,
-                source="Google",
-                sort_time=(
-                    review.published_at.timestamp()
-                    if review.published_at is not None
-                    else 0.0
-                ),
-                sort_id=review.external_review_id,
-            )
-        )
-
-    for comment in session.scalars(select(RedditComment)).all():
-        if comment.vendor_id is None:
-            continue
-
-        text = _clean_review_text(comment.comment_text)
-
-        if len(text) < VENDOR_REVIEW_MIN_CHARS:
-            continue
-
-        review_snippets[comment.vendor_id].append(
-            VendorReviewSnippet(
-                text=text,
-                rating=None,
-                source="Reddit",
-                sort_time=comment.created_at.timestamp(),
-                sort_id=comment.reddit_comment_id,
-            )
-        )
-
-    documents: dict[int, str] = {}
+def iter_vendor_embedding_content(
+    session: Session,
+) -> Iterator[tuple[int, str]]:
+    """Yield one searchable semantic document for each vendor."""
 
     for vendor in session.scalars(
         select(Vendor).order_by(Vendor.id.asc())
     ).all():
+        print(f"Building vendor embedding content for vendor {vendor.id}")
+        review_snippets: list[VendorReviewSnippet] = []
+
+        for review in session.scalars(
+            select(Review).where(Review.vendor_id == vendor.id)
+        ).all():
+            text = _clean_review_text(review.comment)
+
+            if (
+                len(text) < VENDOR_REVIEW_MIN_CHARS
+                or _is_obvious_noise(text)
+            ):
+                continue
+
+            review_snippets.append(
+                VendorReviewSnippet(
+                    text=text,
+                    rating=review.rating_half_steps / 2,
+                    source="Internal",
+                    sort_time=review.created_at.timestamp(),
+                    sort_id=str(review.id),
+                )
+            )
+
+        google_review_count = 0
+        for review in session.scalars(
+            select(GoogleReview).where(GoogleReview.vendor_id == vendor.id)
+        ).all():
+            google_review_count += 1
+            text = _clean_review_text(review.comment)
+
+            if (
+                len(text) < VENDOR_REVIEW_MIN_CHARS
+                or _is_obvious_noise(text)
+            ):
+                continue
+
+            review_snippets.append(
+                VendorReviewSnippet(
+                    text=text,
+                    rating=(
+                        float(review.rating)
+                        if review.rating is not None
+                        else None
+                    ),
+                    source="Google",
+                    sort_time=(
+                        review.published_at.timestamp()
+                        if review.published_at is not None
+                        else 0.0
+                    ),
+                    sort_id=review.external_review_id,
+                )
+            )
+
+        for comment in session.scalars(
+            select(RedditComment).where(RedditComment.vendor_id == vendor.id)
+        ).all():
+            text = _clean_review_text(comment.comment_text)
+
+            if (
+                len(text) < VENDOR_REVIEW_MIN_CHARS
+                or _is_obvious_noise(text)
+            ):
+                continue
+
+            review_snippets.append(
+                VendorReviewSnippet(
+                    text=text,
+                    rating=None,
+                    source="Reddit",
+                    sort_time=comment.created_at.timestamp(),
+                    sort_id=comment.reddit_comment_id,
+                )
+            )
+
         parts: list[str] = [
             f"Name: {vendor.name}",
         ]
@@ -446,8 +515,6 @@ def build_vendor_embedding_content(session: Session) -> dict[int, str]:
             )
 
         if vendor.average_google_rating is not None:
-            google_review_count = google_review_counts.get(vendor.id, 0)
-
             ratings.append(
                 f"Google {float(vendor.average_google_rating):.1f}/5"
                 f"({google_review_count} reviews)"
@@ -457,7 +524,7 @@ def build_vendor_embedding_content(session: Session) -> dict[int, str]:
             parts.append(f"Ratings: {', '.join(ratings)}")
 
         selected_reviews = _select_review_snippets(
-            review_snippets.get(vendor.id, [])
+            review_snippets
         )
 
         if selected_reviews:
@@ -483,49 +550,13 @@ def build_vendor_embedding_content(session: Session) -> dict[int, str]:
 
                 parts.append(review_line)
 
-        documents[vendor.id] = "\n".join(parts)
-
-    return documents
+        yield vendor.id, "\n".join(parts)
 
 
-def _vendor_embedding_batches(
-    items: list[tuple[int, str]],
-    *,
-    batch_size: int,
-) -> list[list[tuple[int, str]]]:
-    """Group vendor documents without exceeding the request character budget."""
+def build_vendor_embedding_content(session: Session) -> dict[int, str]:
+    """Build one searchable semantic document for each vendor."""
 
-    batches: list[list[tuple[int, str]]] = []
-    current_batch: list[tuple[int, str]] = []
-    current_chars = 0
-
-    for item in items:
-        vendor_id, content = item
-        content_chars = len(content)
-
-        would_exceed_chars = (
-            current_batch
-            and current_chars + content_chars
-            > VENDOR_EMBED_BATCH_CHAR_BUDGET
-        )
-
-        would_exceed_count = (
-            current_batch
-            and len(current_batch) >= batch_size
-        )
-
-        if would_exceed_chars or would_exceed_count:
-            batches.append(current_batch)
-            current_batch = []
-            current_chars = 0
-
-        current_batch.append((vendor_id, content))
-        current_chars += content_chars
-
-    if current_batch:
-        batches.append(current_batch)
-
-    return batches
+    return dict(iter_vendor_embedding_content(session))
 
 
 def reindex_vendor_embeddings(
@@ -540,64 +571,90 @@ def reindex_vendor_embeddings(
 
     Existing embeddings are skipped when their source content has not changed.
     Passing ``force=True`` rebuilds all selected vendor embeddings.
+    Each vendor is embedded and committed independently so completed work is
+    preserved if the process is interrupted.
 
     Returns ``(embedded, already_indexed)``.
     """
-
-    documents = build_vendor_embedding_content(session)
-
-    items = sorted(
-        documents.items(),
-        key=lambda item: item[0],
-    )
 
     existing_rows = {
         row.vendor_id: row
         for row in session.scalars(select(VendorEmbedding)).all()
     }
+    existing_contents = {
+        vendor_id: row.content
+        for vendor_id, row in existing_rows.items()
+    }
+    print(f"Found {len(existing_rows)} existing vendor embedding rows")
 
-    if force:
-        to_embed = items
-        already_indexed = 0
-    else:
-        to_embed = [
-            (vendor_id, content)
-            for vendor_id, content in items
-            if vendor_id not in existing_rows
-            or existing_rows[vendor_id].content != content
-        ]
-        already_indexed = len(items) - len(to_embed)
-
-    if limit is not None:
-        to_embed = to_embed[:limit]
+    print(
+        "Starting streaming vendor reindex"
+        + (f", limit={limit}" if limit is not None else "")
+        + (", force=True" if force else "")
+    )
 
     embedded = 0
+    already_indexed = 0
+    selected_for_embedding = 0
 
-    for batch in _vendor_embedding_batches(
-        to_embed,
-        batch_size=batch_size,
+    for vendor_number, (vendor_id, content) in enumerate(
+        iter_vendor_embedding_content(session),
+        start=1,
     ):
-
-        vectors = embedder.embed(
-            [content for _, content in batch]
+        existing = existing_rows.get(vendor_id)
+        needs_embedding = (
+            force
+            or existing is None
+            or existing_contents[vendor_id] != content
         )
 
-        for (vendor_id, content), vector in zip(batch, vectors):
-            existing = existing_rows.get(vendor_id)
+        if not needs_embedding:
+            already_indexed += 1
+            print(f"Vendor {vendor_id} already indexed ({vendor_number})")
+            continue
 
-            if existing is not None:
-                existing.content = content
-                existing.embedding = vector
-            else:
-                row = VendorEmbedding(
-                    vendor_id=vendor_id,
-                    content=content,
-                    embedding=vector,
-                )
-                session.add(row)
-                existing_rows[vendor_id] = row
+        if limit is not None and selected_for_embedding >= limit:
+            print(
+                "Vendor embedding limit reached after "
+                f"{selected_for_embedding} vendor(s)"
+            )
+            break
+
+        print(
+            f"Embedding vendor {vendor_id} ({vendor_number}): "
+            f"{len(content)} characters"
+        )
+
+        vectors = embedder.embed([content])
+        if len(vectors) != 1:
+            raise RuntimeError(
+                "vendor embedding service returned an unexpected number "
+                f"of vectors: expected 1, got {len(vectors)}"
+            )
+
+        vector = vectors[0]
+
+        if existing is not None:
+            existing.content = content
+            existing.embedding = vector
+        else:
+            existing = VendorEmbedding(
+                vendor_id=vendor_id,
+                content=content,
+                embedding=vector,
+            )
+            session.add(existing)
+            existing_rows[vendor_id] = existing
 
         session.commit()
-        embedded += len(batch)
+        existing_contents[vendor_id] = content
+        embedded += 1
+        selected_for_embedding += 1
+        print(f"Committed vendor {vendor_id}; embedded={embedded}")
 
+    print(
+        f"Vendor reindex complete: embedded={embedded}, "
+        f"already_indexed={already_indexed}"
+        + (f", limit={limit}" if limit is not None else "")
+    )
     return embedded, already_indexed
