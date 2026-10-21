@@ -24,7 +24,7 @@ V022,Food Court 2,Hall 2,Hall2-01-01,Canteen,Daily: 7am to 10pm,$1-10,FALSE,TRUE
 V023,Food Court 4,Hall 4,Hall4-01-FC,Canteen,Daily: 8am to 9pm,$1-10,FALSE,FALSE,null,null
 V024,Food Court 9,Hall 9,Hall9-01-FC,Canteen,Daily: 7am to 9pm,$1-10,null,FALSE,null,9692 3456
 V025,Food Court @ NIE,NIE,NIE4,Canteen,"Mon to Fri: 8am to 3pm; Sat, Sun & PH: Closed; 15 Dec 2025 - 4 Jan 2026: Closed",$1-10,null,TRUE,null,9766 3954
-V026,Geláre,North Hill,NS3-01-19,Café/Restaurant,Mon - Fri: 10am to 8pm; Sat: 10am to 7pm; Sun & PH: Closed,$10-20,TRUE,TRUE,https://www.gelare.com.sg,null
+V026,Geláre,North Spine,NS3-01-19,Café/Restaurant,Mon - Fri: 10am to 8pm; Sat: 10am to 7pm; Sun & PH: Closed,$10-20,TRUE,TRUE,https://www.gelare.com.sg,null
 V027,Hill Yard North Hill,North Hill,TJH-01-03,Café/Restaurant,Daily: 10am to 10pm,$10-20,FALSE,FALSE,null,null
 V028,"June's Breathe Cafe
 @ LKC Medicine",EMB,EMB-03-Café,Café/Restaurant,"Mon to Fri: 8am to 5pm; Sat, Sun & PH: Closed",$1-10,FALSE,TRUE,https://www.instagram.com/junesbreathecafe/?hl=en,null
