@@ -128,61 +128,61 @@ VENDOR_CATEGORY_OVERRIDES = {
 VENDOR_DISHES_OVERRIDES = {
     # Format example: "V001": "Chicken Rice, Iced Milo"
     "V001": "Bubble Tea",  # 7 Tea
-    "V002": "Mala, Malatang, Chinese",  # A Hot Hideout
-    "V003": "Acai Bowl, Desserts",  # Acai Guru
-    "V004": "Prata, Biryani, Indian",  # Ananda's TAJ Restaurant
-    "V005": "Steak, Chicken Chop, Western",  # ANDES by ASTONS
-    "V006": "Bread, Croissant, Pastry, Bakery",  # Bakery Cuisine
-    "V007": "Biryani, Indian",  # Bismillah Biryani
-    "V008": "Local",  # Blue Ocean Kopi & Toast
-    "V009": "Juice, Beverages",  # Boost Juice Bars
-    "V010": "Cake, Snacks, Desserts",  # Chateraise Unmanned Store
+    "V002": "Mala, Malatang",  # A Hot Hideout
+    "V003": "Acai Bowl",  # Acai Guru
+    "V004": "Prata, Biryani",  # Ananda's TAJ Restaurant
+    "V005": "Steak, Chicken Chop",  # ANDES by ASTONS
+    "V006": "Bread, Croissant, Pastry",  # Bakery Cuisine
+    "V007": "Biryani",  # Bismillah Biryani
+    "V008": "Toast, Coffee",  # Blue Ocean Kopi & Toast
+    "V009": "Juice",  # Boost Juice Bars
+    "V010": "Cake, Ice Cream",  # Chateraise Unmanned Store
     "V011": "Bubble Tea",  # CHICHA San Chen - North Spine
-    "V012": "Coffee, Matcha, Western",  # Co-op @ NTU Cafe
-    "V013": "Coffee, Matcha, Beverages",  # Coffee Faculty
+    "V012": "Coffee, Matcha",  # Co-op @ NTU Cafe
+    "V013": "Coffee, Matcha",  # Coffee Faculty
     "V014": "Coffee",  # Connect 71 Cafe (C71)
-    "V015": "Pizza, Western",  # Domino's Pizza (The Arc)
+    "V015": "Pizza",  # Domino's Pizza (The Arc)
     "V016": "Bubble Tea",  # Each-A-Cup
-    "V017": "Rice, Noodles, Local",  # Encik Tan
-    "V018": "Mala, Pasta, Economy Rice, Curry Rice, Japanese, Chinese, Italian, Food Court",  # Food Court 1
-    "V019": "Ban Mian, Economy Rice, Chinese, Local, Food Court",  # Food Court 11
-    "V020": "Ban Mian, Noodles, Ramen, Curry Rice, Fried Rice, Chicken Chop, Fish & Chips, Japanese, Chinese, Western,Food Court",  # Food Court 14
-    "V021": "Mala, Biryani, Ramen, Curry Rice, Prata, Udon, Chinese, Indian, Japanese,Food Court",  # Food Court 16
-    "V022": "Chicken Rice, Dumplings, Noodles, Hotpot, Bento, Biryani, Prata, Pasta, Fried Rice, Economy Rice, Bento, Korean, Japanese, Western, Chinese, Indian, Food Court",  # Food Court 2
-    "V023": "Economy Rice, Chinese, Western, Food Court",  # Food Court 4
-    "V024": "Mala, Noodles, Economy Rice, Indian, Chinese, Food Court",  # Food Court 9
-    "V025": "Ban Mian, Noodles, Pao Fan, Nasi Padang, Chicken Chop, Ayam Penyet, Pasta, Local, Chinese, Western, Food Court",  # Food Court @ NIE
-    "V026": "Ice Cream, Waffles, Desserts, Pasta, Western, Food Court",  # Geláre
-    "V027": "Burger, Ramen, Japanese, Western, Restaurant",  # Hill Yard North Hill
-    "V028": "Rice Bowls,Food Court",  # June's Breathe Cafe @ LKC Medicine
-    "V029": "Coffee, Matcha, Beverages",  # luckin coffee
-    "V030": "Coffee, Matcha, Beverages",  # Mad Roaster at SHHK
-    "V031": "Local, Food Court",  # Malay Stall at South Spine (from Canteen 11)
-    "V032": "Chinese, Noodles",  # Man Le Chinese Restaurant
-    "V033": "Fast Food",  # McDonald's
-    "V034": "Local, Beancurd, Soy Milk",  # Mr Bean
-    "V035": "Chicken Rice, Ban Mian, Mala, Prata, Pasta, Local, Chinese, Indian, Food Court",  # Nanyang Crescent Food Court
-    "V036": "Pasta, Mala, Noodles, Chicken Chop, Taiwanese, Chinese, Local, Western,Food Court",  # North Hill Food Court (Colour Box)
-    "V037": "Chicken Rice, Mala, Fried Rice, Noodles, Korean, Chinese, Local, Taiwanese,Food Court",  # North Spine Food Court & International Food Court (Koufu)
-    "V038": "Korean",  # Paik's Bibim
-    "V039": "Pasta, Italian",  # Pasta Express
-    "V040": "Pasta, Burger, Fish & Chips, Western",  # PEN & INC
-    "V041": "Ban Mian, Pao Fan, Economy Rice, Mala, Chicken Rice, Pasta, Chinese, Thai, Local, Western, Japanese,Food Court",  # Pioneer Food Court
-    "V042": "Fast Food",  # Popeyes
+    "V017": "Rice, Noodles",  # Encik Tan
+    "V018": "Mala, Pasta, Economy Rice, Curry Rice",  # Food Court 1
+    "V019": "Ban Mian, Economy Rice",  # Food Court 11
+    "V020": "Ban Mian, Noodles, Ramen, Curry Rice, Fried Rice, Chicken Chop, Fish & Chips",  # Food Court 14
+    "V021": "Mala, Biryani, Ramen, Curry Rice, Prata, Udon",  # Food Court 16
+    "V022": "Chicken Rice, Dumplings, Noodles, Bento, Biryani, Prata, Pasta, Fried Rice, Economy Rice",  # Food Court 2
+    "V023": "Economy Rice",  # Food Court 4
+    "V024": "Mala, Noodles, Economy Rice",  # Food Court 9
+    "V025": "Ban Mian, Noodles, Pao Fan, Nasi Padang, Chicken Chop, Ayam Penyet, Pasta",  # Food Court @ NIE
+    "V026": "Ice Cream, Waffles, Pasta",  # Geláre
+    "V027": "Burger, Ramen",  # Hill Yard North Hill
+    "V028": "Rice Bowls",  # June's Breathe Cafe @ LKC Medicine
+    "V029": "Coffee, Matcha",  # luckin coffee
+    "V030": "Coffee, Matcha",  # Mad Roaster at SHHK
+    "V031": "Rice, Noodles",  # Malay Stall at South Spine (from Canteen 11)
+    "V032": "Noodles",  # Man Le Chinese Restaurant
+    "V033": "Burger, Fries, Fried Chicken",  # McDonald's
+    "V034": "Beancurd, Soy Milk",  # Mr Bean
+    "V035": "Chicken Rice, Ban Mian, Mala, Prata, Pasta",  # Nanyang Crescent Food Court
+    "V036": "Pasta, Mala, Noodles, Chicken Chop",  # North Hill Food Court (Colour Box)
+    "V037": "Chicken Rice, Mala, Fried Rice, Noodles",  # North Spine Food Court & International Food Court (Koufu)
+    "V038": "Rice, Noodles",  # Paik's Bibim
+    "V039": "Pasta",  # Pasta Express
+    "V040": "Pasta, Burger, Fish & Chips",  # PEN & INC
+    "V041": "Ban Mian, Pao Fan, Economy Rice, Mala, Chicken Rice, Pasta",  # Pioneer Food Court
+    "V042": "Fried Chicken, Fries",  # Popeyes
     "V043": "Rice, Bento",  # QQ Rice
-    "V044": "Mala, Chicken Rice, Noodles, Korean, Chinese, Local",  # Quad Cafe (SBS)
-    "V045": "Mala, Chicken Rice, Noodles, Salad, Ban Mian, Pao Fan, Chinese, Taiwanese, Bento, Food Court",  # South Spine Food Court (Foodies' Clan)
-    "V046": "Coffee, Matcha, Beverages",  # Starbucks
-    "V047": "Fast Food",  # Subway
-    "V048": "Thai",  # Thai Dynasty Express
-    "V049": "Salad, Vegeterian, Food Court",  # The Crowded Bowl at North Spine
-    "V050": "Salad, Vegeterian, Food Court",  # The Crowded Bowl at Wee Cho Yaw Plaza
-    "V051": "Soup, Western, Food Court",  # The Soup Spoon Union
-    "V052": "Beverages",  # Vending Machine Cafe @ SSC
+    "V044": "Mala, Chicken Rice, Noodles",  # Quad Cafe (SBS)
+    "V045": "Mala, Chicken Rice, Noodles, Salad, Ban Mian, Pao Fan",  # South Spine Food Court (Foodies' Clan)
+    "V046": "Coffee, Matcha",  # Starbucks
+    "V047": "Sandwiches, Cookies",  # Subway
+    "V048": "Noodles, Rice",  # Thai Dynasty Express
+    "V049": "Salad",  # The Crowded Bowl at North Spine
+    "V050": "Salad",  # The Crowded Bowl at Wee Cho Yaw Plaza
+    "V051": "Soup, Chicken Chop, Meatballs, Lasagna",  # The Soup Spoon Union
+    "V052": "Water",  # Vending Machine Cafe @ SSC
     "V053": "Coffee",  # Venture Drive Coffee at North Spine
     "V054": "Coffee",  # Venture Drive Coffee at Wee Cho Yaw Plaza
     "V055": "Fried Rice",  # Wok Express
-    "V056": "Duck Rice, Local",  # Yew Kee Specialities
+    "V056": "Duck Rice",  # Yew Kee Specialities
 }
 
 def _normalize_vendor_category(
