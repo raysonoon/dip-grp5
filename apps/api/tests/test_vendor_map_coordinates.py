@@ -27,3 +27,19 @@ def test_vendor_has_map_coordinates_inside_ntu(vendor_id: str) -> None:
     lat, lng = (float(part) for part in match.groups())
     assert 1.34 <= lat <= 1.36
     assert 103.67 <= lng <= 103.69
+
+
+def _point(rows: dict[str, dict[str, str]], vendor_id: str) -> tuple[float, float]:
+    match = PATTERN.match(rows[vendor_id]["map_coordinates"].strip())
+    assert match, vendor_id
+    return float(match.group(1)), float(match.group(2))
+
+
+def test_wee_cho_yaw_plaza_crowded_bowl_is_not_at_north_spine() -> None:
+    rows = _rows_by_id()
+    north_spine = _point(rows, "V049")
+    plaza_bowl = _point(rows, "V050")
+    plaza_coffee = _point(rows, "V054")
+    assert plaza_bowl != north_spine
+    assert abs(plaza_bowl[0] - plaza_coffee[0]) < 0.002
+    assert abs(plaza_bowl[1] - plaza_coffee[1]) < 0.002
