@@ -176,3 +176,32 @@ def test_other_integrity_errors_are_not_reported_as_duplicates(
             headers={"Authorization": f"Bearer {user.id}"},
             json={"vendor_id": vendor.id, "rating": 4},
         )
+
+
+def test_demo_review_seed_respects_one_review_per_vendor(session: Session) -> None:
+    from app.core.config import settings
+    from app.db.seed import seed_demo_reviews
+
+    test_user = create_user(session, settings.seed_test_email_address)
+    vendor_1 = Vendor(name="Demo Vendor 1")
+    vendor_2 = Vendor(name="Demo Vendor 2")
+    session.add_all([vendor_1, vendor_2])
+    session.flush()
+    # An older database may still hold a demo review with a different comment.
+    session.add(
+        Review(
+            user_id=test_user.id,
+            vendor_id=vendor_1.id,
+            rating_half_steps=8,
+            comment="Great chicken rice, generous portion and fast service.",
+        )
+    )
+    session.commit()
+
+    first_run = seed_demo_reviews(session)
+    second_run = seed_demo_reviews(session)
+
+    assert first_run == (1, 1)
+    assert second_run == (0, 2)
+    assert review_count(session, test_user, vendor_1) == 1
+    assert review_count(session, test_user, vendor_2) == 1
