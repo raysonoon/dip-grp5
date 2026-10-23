@@ -703,6 +703,19 @@ def create_review(
             detail="Vendor not found",
         )
 
+    already_reviewed = HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="You have already reviewed this vendor",
+    )
+    existing_review_id = session.scalar(
+        select(Review.id).where(
+            Review.user_id == current_user.id,
+            Review.vendor_id == vendor.id,
+        )
+    )
+    if existing_review_id is not None:
+        raise already_reviewed
+
     review = Review(
         user_id=current_user.id,
         vendor_id=vendor.id,
@@ -710,7 +723,12 @@ def create_review(
         comment=review_data.comment,
     )
     session.add(review)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError as error:
+        # A concurrent request created the review first (uq_reviews_user_vendor).
+        session.rollback()
+        raise already_reviewed from error
     session.commit()
     session.refresh(review)
     response = _review_read(review, session)
