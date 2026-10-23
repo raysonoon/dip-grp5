@@ -25,6 +25,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { loading, user, signOut } = useAuth();
+  const discoverPath = user ? "/food" : "/discover";
 
   const metadataDisplayName = typeof user?.user_metadata?.display_name === "string"
     && user.user_metadata.display_name.trim()
@@ -306,7 +307,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
         <div className="hidden md:flex items-center gap-3 flex-shrink-0">
           {authControls}
           <Link
-            to="/food"
+            to={discoverPath}
             className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity"
           >
             Discover
@@ -412,7 +413,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
         <div className="md:hidden border-t border-border bg-background px-6 py-4 flex flex-col gap-4 text-sm">
           {authControls}
           <Link
-            to="/food"
+            to={discoverPath}
             onClick={() => setMobileMenuOpen(false)}
             className="text-sm text-muted-foreground hover:text-foreground transition-colors"
           >

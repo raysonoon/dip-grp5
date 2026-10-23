@@ -8,6 +8,7 @@ import { fetchReviews, fetchVendorReviews } from "./api/reviews.js";
 import { fetchVendors } from "./api/vendors";
 import SignInPage from "./pages/SignInPage";
 import FoodPage from "./pages/FoodPage";
+import GuestDiscoverPage from "./pages/GuestDiscoverPage";
 import VendorsPage from "./pages/VendorsPage";
 import FoodPreferencesOnboarding from "./components/FoodPreferencesOnboarding";
 import { fetchMyPreferences } from "./api/preferences.js";
@@ -542,6 +543,7 @@ function App() {
           }
         >
           <Route path="/food" element={<FoodPage />} />
+          <Route path="/discover" element={<GuestDiscoverPage />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/vendors/:vendorId" element={<VendorsPage />} />
           <Route path="/account" element={<AccountPage />} />

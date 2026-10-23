@@ -104,7 +104,7 @@ def get_filter_extractor_llm() -> Callable[[str], StructuredFilter] | None:
 
 
 def get_question_rewriter() -> (
-    Callable[[str, list[ChatHistoryMessage]], str] | None
+    Callable[..., str] | None
 ):
     client = _get_genai_client()
     if client is None:
@@ -123,7 +123,7 @@ def get_chat_service(
         Depends(get_filter_extractor_llm),
     ],
     rewrite_llm: Annotated[
-        Callable[[str, list[ChatHistoryMessage]], str] | None,
+        Callable[..., str] | None,
         Depends(get_question_rewriter),
     ],
 ) -> ChatService:
