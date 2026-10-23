@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ChevronDown, LogOut, Menu, Utensils, X, Search, Store, UserRound } from "lucide-react";
+import { ChevronDown, LogOut, Menu, X, Search, Store, UserRound } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { fetchVendorPage, fetchVendors } from "../api/vendors";
 import { rankTrendingVendors } from "../lib/trendingVendors";
@@ -212,15 +212,18 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
         fixed ? "fixed top-0 left-0 right-0" : "sticky top-0"
       } z-40 w-full border-b border-border bg-background/80 sm:backdrop-blur-md`}
     >
-      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
+      <div className="max-w-full px-6 h-16 flex items-center justify-between gap-4">
         {/* Logo / Brand Name */}
-        <Link to="/" className="flex items-center gap-2.5 flex-shrink-0">
-          <div className="w-8 h-8 rounded-sm bg-primary flex items-center justify-center">
-            <Utensils className="w-4 h-4 text-primary-foreground" />
-          </div>
-          <span className="text-lg font-bold text-foreground font-display">
-            NTUmmy
-          </span>
+        <Link
+          to="/"
+          aria-label="NTUmmy home"
+          className="flex items-center flex-shrink-0"
+        >
+          <img
+            src="/ntummy_logo.svg"
+            alt="NTUmmy"
+            className="h-12 w-auto -translate-y-1"
+          />
         </Link>
 
         {/* Desktop Centered Search Bar with Dropdown */}
