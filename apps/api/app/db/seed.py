@@ -880,21 +880,12 @@ def seed_google_reviews(
     )
 
 
+# One review per vendor: reviews are unique per (user_id, vendor_id).
 DEMO_REVIEWS = (
-    (
-        "Demo Vendor 1",
-        4.0,
-        "Great chicken rice, generous portion and fast service.",
-    ),
     (
         "Demo Vendor 1",
         3.5,
         "Decent halal options but a bit pricey.",
-    ),
-    (
-        "Demo Vendor 2",
-        5.0,
-        "Best noodles on campus, definitely worth trying.",
     ),
     (
         "Demo Vendor 2",
@@ -939,11 +930,11 @@ def seed_demo_reviews(
             skipped_count += 1
             continue
 
+        # Any existing review by the test user counts, whatever its comment.
         existing = session.scalar(
             select(Review).where(
                 Review.user_id == test_user.id,
                 Review.vendor_id == vendor.id,
-                Review.comment == comment,
             )
         )
 

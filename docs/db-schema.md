@@ -105,14 +105,14 @@ Community reviews of vendors written by users.
 | `id` | integer (identity PK) | no | |
 | `user_id` | integer (FK `users.id`) | no | On delete `RESTRICT` |
 | `vendor_id` | integer (FK `vendors.id`) | no | On delete `RESTRICT` |
-| `rating_half_steps` | smallint | no | `2` to `10` (maps to 1.0–5.0 in 0.5 steps) |
+| `rating_half_steps` | smallint | no | `1` to `10` (maps to 0.5–5.0 in 0.5 steps) |
 | `comment` | text | yes | Whitespace-only stored as `NULL` |
 | `created_at` | timestamptz | no | Defaults to `now()` |
 | `updated_at` | timestamptz | yes | Set when edited |
 
 Constraints / indexes:
 
-- `rating_half_steps_range`: `rating_half_steps BETWEEN 2 AND 10`
+- `rating_half_steps_range`: `rating_half_steps BETWEEN 1 AND 10`
 - `ix_reviews_user_id`: index on `user_id`
 - `ix_reviews_vendor_created_at`: index on (`vendor_id`, `created_at`)
 
