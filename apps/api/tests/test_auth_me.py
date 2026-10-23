@@ -104,8 +104,8 @@ def test_my_reviews_paginates_with_limit_and_offset(
     session: Session,
 ) -> None:
     user = create_user(session, "many-reviews@example.com")
-    vendor = Vendor(name="Busy Stall")
-    session.add(vendor)
+    vendors = [Vendor(name=f"Stall {index}") for index in range(13)]
+    session.add_all(vendors)
     session.flush()
 
     now = datetime.now(timezone.utc)
@@ -117,7 +117,7 @@ def test_my_reviews_paginates_with_limit_and_offset(
             comment=f"Visit {index}",
             created_at=now - timedelta(hours=index),
         )
-        for index in range(13)
+        for index, vendor in enumerate(vendors)
     )
     session.commit()
 
@@ -145,6 +145,48 @@ def test_my_reviews_paginates_with_limit_and_offset(
     ]
 
 
+def test_my_reviews_filters_by_vendor_beyond_the_first_page(
+    client: TestClient,
+    session: Session,
+) -> None:
+    user = create_user(session, "vendor-filter@example.com")
+    vendors = [Vendor(name=f"Filter Stall {index}") for index in range(15)]
+    session.add_all(vendors)
+    session.flush()
+
+    now = datetime.now(timezone.utc)
+    session.add_all(
+        Review(
+            user_id=user.id,
+            vendor_id=vendor.id,
+            rating_half_steps=8,
+            comment=f"Review {index}",
+            created_at=now - timedelta(hours=index),
+        )
+        for index, vendor in enumerate(vendors)
+    )
+    session.commit()
+    # The oldest review is outside the default first page of 10.
+    oldest_vendor = vendors[-1]
+
+    response = client.get(
+        "/auth/me/reviews",
+        params={"vendor_id": oldest_vendor.id},
+        headers=auth(user),
+    )
+    unreviewed = client.get(
+        "/auth/me/reviews",
+        params={"vendor_id": 999_999},
+        headers=auth(user),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["comment"] == "Review 14"
+    assert response.json()["items"][0]["vendor"]["id"] == oldest_vendor.id
+    assert unreviewed.json()["total"] == 0
+
+
 def test_my_reviews_is_empty_without_reviews(
     client: TestClient,
     session: Session,
@@ -165,7 +207,7 @@ def test_my_reviews_rejects_invalid_pagination(
     user = create_user(session, "bad-page@example.com")
     session.commit()
 
-    for params in ({"limit": 0}, {"limit": 101}, {"offset": -1}):
+    for params in ({"limit": 0}, {"limit": 101}, {"offset": -1}, {"vendor_id": 0}):
         response = client.get("/auth/me/reviews", params=params, headers=auth(user))
         assert response.status_code == 422
 
