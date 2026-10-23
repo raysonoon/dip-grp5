@@ -121,3 +121,58 @@ def test_unique_constraint_rejects_duplicate_rows(session: Session) -> None:
 
     with pytest.raises(IntegrityError):
         session.flush()
+
+
+def test_duplicate_caught_by_database_constraint_returns_409(
+    client: TestClient,
+    session: Session,
+    monkeypatch,
+) -> None:
+    user = create_user(session, "race@example.com")
+    vendor = Vendor(name="Race Stall")
+    session.add(vendor)
+    session.flush()
+    session.add(Review(user_id=user.id, vendor_id=vendor.id, rating_half_steps=8))
+    session.commit()
+    # Simulate a concurrent request: the pre-check misses the existing review,
+    # so the UNIQUE constraint is what rejects the insert.
+    monkeypatch.setattr(session, "scalar", lambda *args, **kwargs: None)
+
+    response = client.post(
+        "/reviews",
+        headers={"Authorization": f"Bearer {user.id}"},
+        json={"vendor_id": vendor.id, "rating": 4},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "You have already reviewed this vendor"
+
+
+def test_other_integrity_errors_are_not_reported_as_duplicates(
+    client: TestClient,
+    session: Session,
+    monkeypatch,
+) -> None:
+    user = create_user(session, "check-fail@example.com")
+    vendor = Vendor(name="Check Fail Stall")
+    session.add(vendor)
+    session.commit()
+
+    def failing_flush(*args, **kwargs):
+        raise IntegrityError(
+            "INSERT INTO reviews",
+            {},
+            Exception(
+                'new row for relation "reviews" violates check constraint '
+                '"ck_reviews_rating_half_steps_range"'
+            ),
+        )
+
+    monkeypatch.setattr(session, "flush", failing_flush)
+
+    with pytest.raises(IntegrityError):
+        client.post(
+            "/reviews",
+            headers={"Authorization": f"Bearer {user.id}"},
+            json={"vendor_id": vendor.id, "rating": 4},
+        )

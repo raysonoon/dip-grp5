@@ -43,6 +43,7 @@ router = APIRouter(prefix="/reviews", tags=["reviews"])
 logger = logging.getLogger(__name__)
 
 MAX_REVIEW_IMAGES = 5
+DUPLICATE_REVIEW_CONSTRAINT = "uq_reviews_user_vendor"
 
 
 def _review_vote_counts(
@@ -726,9 +727,15 @@ def create_review(
     try:
         session.flush()
     except IntegrityError as error:
-        # A concurrent request created the review first (uq_reviews_user_vendor).
         session.rollback()
-        raise already_reviewed from error
+        # A concurrent request created the review first. Other integrity
+        # errors (e.g. a check constraint) are not duplicates; let them raise.
+        if DUPLICATE_REVIEW_CONSTRAINT in str(error.orig) or (
+            "UNIQUE constraint failed: reviews.user_id, reviews.vendor_id"
+            in str(error.orig)
+        ):
+            raise already_reviewed from error
+        raise
     session.commit()
     session.refresh(review)
     response = _review_read(review, session)
