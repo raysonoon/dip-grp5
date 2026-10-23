@@ -29,7 +29,7 @@ class Review(Base):
     __tablename__ = "reviews"
     __table_args__ = (
         CheckConstraint(
-            "rating_half_steps BETWEEN 2 AND 10",
+            "rating_half_steps BETWEEN 1 AND 10",
             name="rating_half_steps_range",
         ),
         UniqueConstraint(

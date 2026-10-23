@@ -253,7 +253,7 @@ npm run build     # Production build (vite build; does not typecheck)
 
 ### Create a review
 
-`POST /reviews` accepts a food-stall ID, a required rating from 1.0 to 5.0 in
+`POST /reviews` accepts a food-stall ID, a required rating from 0.5 to 5.0 in
 0.5-star steps, and an optional comment. Use the IDs printed by the seed script:
 
 ```powershell
