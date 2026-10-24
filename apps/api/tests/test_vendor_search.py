@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
-from app.models import Vendor
+from app.models import User, UserFoodPreferences, Vendor
 from app.services.vendor_search import (
     build_vendor_search_plan,
     parse_vendor_search_query,
@@ -152,3 +152,72 @@ def test_postgresql_fuzzy_matching_excludes_location_text(
     assert fuzzy_clauses
     assert all("vendors.location" not in clause for clause in fuzzy_clauses)
     assert all("vendors.search_document" not in clause for clause in fuzzy_clauses)
+
+
+def test_vendor_list_falls_back_when_recommendations_fail(
+    client: TestClient,
+    session: Session,
+    monkeypatch,
+) -> None:
+    user = User(
+        display_name="Recommendation User",
+        email_address="recommendation@test.com",
+        email_canonical="recommendation@test.com",
+        password_hash="test",
+        role="user",
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    session.add(
+        UserFoodPreferences(
+            user_id=user.id,
+            dietary_restrictions=[],
+            cuisines=[],
+            locations=[],
+            likes=["Coffee"],
+            dislikes=[],
+            lifestyle=[],
+            onboarding_status="completed",
+        )
+    )
+
+    session.add_all(
+        [
+            Vendor(
+                name="Older Vendor",
+                location="North Spine",
+                category="Cafe",
+            ),
+            Vendor(
+                name="Newer Vendor",
+                location="South Spine",
+                category="Cafe",
+            ),
+        ]
+    )
+    session.commit()
+
+    def fail_recommendation(*args, **kwargs):
+        raise RuntimeError("embedding unavailable")
+
+    monkeypatch.setattr(
+        "app.api.routes.vendors.VendorRecommender.recommend",
+        fail_recommendation,
+    )
+
+    response = client.get(
+        "/vendors",
+        headers={"Authorization": f"Bearer {user.id}"},
+        params={
+            "sort": "recommended",
+            "limit": 1,
+            "offset": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 1
+    assert response.json()["items"][0]["recommended"] is False
+    assert response.json()["items"][0]["name"] == "Newer Vendor"

@@ -96,6 +96,18 @@ def test_other_filters_and_clauses_do_not_leak_into_cuisine() -> None:
     assert contrast.cuisine == "Vietnamese"
     assert contrast.exclude_cuisine == "Chinese"
 
+    comma_contrast = extract_structured_filters(
+        "Vietnamese, but not Chinese food"
+    )
+    assert comma_contrast.cuisine == "Vietnamese"
+    assert comma_contrast.exclude_cuisine == "Chinese"
+
+    comma_contrast_no_food = extract_structured_filters(
+        "Vietnamese, but not Chinese"
+    )
+    assert comma_contrast_no_food.cuisine == "Vietnamese"
+    assert comma_contrast_no_food.exclude_cuisine == "Chinese"
+
 
 def test_all_location_keywords_avoid_prefix_collisions() -> None:
     for keyword, expected in LOCATION_KEYWORDS.items():
@@ -327,6 +339,21 @@ def test_location_and_open_hours_words_never_become_cuisine(
     assert extract_structured_filters(question).cuisine is None
 
 
+@pytest.mark.parametrize(
+    "question",
+    [
+        "How many halal places are there?",
+        "top 10 best stalls",
+        "Where can I find halal food?",
+        "I want a cheap meal",
+    ],
+)
+def test_cuisine_extraction_without_food_phrase(question: str) -> None:
+    filters = extract_structured_filters(question)
+    assert filters.cuisine is None, question
+    assert filters.exclude_cuisine is None, question
+
+
 def test_contracted_cuisine_negation_becomes_exclusion() -> None:
     filters = extract_structured_filters("I don't want Vietnamese food")
     assert filters.cuisine is None
@@ -335,4 +362,11 @@ def test_contracted_cuisine_negation_becomes_exclusion() -> None:
     not_filters = extract_structured_filters("not Vietnamese food")
     assert not_filters.cuisine is None
     assert not_filters.exclude_cuisine == "Vietnamese"
+
+
+@pytest.mark.parametrize("question", [
+    "Where is Gelare?", "How many vendors are there?", "hello", "library food",
+])
+def test_query_without_explicit_cuisine_returns_no_cuisine(question) -> None:
+    assert extract_structured_filters(question).cuisine is None
 

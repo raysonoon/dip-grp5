@@ -127,3 +127,23 @@ class ReviewListRead(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class MyReviewVendorRead(BaseModel):
+    id: int
+    name: str
+
+
+class MyReviewRead(BaseModel):
+    id: int
+    rating: float
+    comment: str | None
+    created_at: datetime
+    vendor: MyReviewVendorRead
+
+
+class MyReviewListRead(BaseModel):
+    items: list[MyReviewRead]
+    total: int
+    limit: int
+    offset: int

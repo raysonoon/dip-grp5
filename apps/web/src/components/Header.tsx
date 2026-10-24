@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ChevronDown, LogOut, Menu, Utensils, X, Search, Store } from "lucide-react";
+import { ChevronDown, LogOut, Menu, X, Search, Store, UserRound } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { fetchVendorPage, fetchVendors } from "../api/vendors";
+import { rankTrendingVendors } from "../lib/trendingVendors";
 
 const QUICK_SEARCH_TAGS = [
   { emoji: "🍗", label: "Chicken Rice", query: "Chicken Rice" },
@@ -9,13 +11,7 @@ const QUICK_SEARCH_TAGS = [
   { emoji: "🌶️", label: "Mala", query: "Mala" },
   { emoji: "🍱", label: "Bento", query: "Bento" },
   { emoji: "🥘", label: "Economy Rice", query: "Economy Rice" },
-  { emoji: "🍣", label: "Japanese", query: "Japanese" },
-];
-
-const RECOMMENDED_STALLS = [
-  { name: "A Hot Hideout @ Jurong West (NTU)", location: "Tanjong Hall" },
-  { name: "Pasta Express", location: "North Spine" },
-  { name: "QQ Rice", location: "North Spine" },
+  { emoji: "🍔", label: "Burger", query: "Burger" },
 ];
 
 export default function Header({ fixed = false }: { fixed?: boolean }) {
@@ -24,6 +20,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [recommendedStalls, setRecommendedStalls] = useState<any[]>([]);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -64,6 +61,18 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
             <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
               {user.email}
             </div>
+            <Link
+              to="/account"
+              onClick={() => {
+                setAccountMenuOpen(false);
+                setMobileMenuOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground cursor-pointer hover:bg-muted hover:text-foreground transition-colors"
+              role="menuitem"
+            >
+              <UserRound className="h-4 w-4" />
+              Account
+            </Link>
             <button
               type="button"
               onClick={handleSignOut}
@@ -111,6 +120,58 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+
+  useEffect(() => {
+    if (loading) return;
+
+    const controller = new AbortController();
+
+    async function loadRecommendedStalls() {
+  // Logged-in users: try personalized recommendations first.
+    if (user) {
+      try {
+        const data = await fetchVendorPage({
+          sort: "recommended",
+          limit: 4,
+          signal: controller.signal,
+        });
+
+        const personalized = (data.items ?? []).filter(
+          (vendor: any) => vendor.recommended,
+        );
+
+        if (personalized.length > 0) {
+          setRecommendedStalls(personalized.slice(0, 4));
+          return;
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+
+        console.warn(
+          "Personalized recommendations unavailable, using trending stalls.",
+          error,
+        );
+      }
+    }
+
+  // Logged-out users, users without recommendations,
+  // or recommendation failures fall back to trending.
+    try {
+      const vendors = await fetchVendors("", controller.signal);
+      setRecommendedStalls(rankTrendingVendors(vendors, 4));
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        console.error("Failed to load trending stalls:", error);
+        setRecommendedStalls([]);
+      }
+    }
+  }
+
+    void loadRecommendedStalls();
+
+    return () => controller.abort();
+  }, [user, loading]);
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const query = searchQuery.trim();
@@ -151,15 +212,18 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
         fixed ? "fixed top-0 left-0 right-0" : "sticky top-0"
       } z-40 w-full border-b border-border bg-background/80 sm:backdrop-blur-md`}
     >
-      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
+      <div className="max-w-full px-6 h-16 flex items-center justify-between gap-4">
         {/* Logo / Brand Name */}
-        <Link to="/" className="flex items-center gap-2.5 flex-shrink-0">
-          <div className="w-8 h-8 rounded-sm bg-primary flex items-center justify-center">
-            <Utensils className="w-4 h-4 text-primary-foreground" />
-          </div>
-          <span className="text-lg font-bold text-foreground font-display">
-            NTUmmy
-          </span>
+        <Link
+          to="/"
+          aria-label="NTUmmy home"
+          className="flex items-center flex-shrink-0"
+        >
+          <img
+            src="/ntummy_logo.svg"
+            alt="NTUmmy"
+            className="h-12 w-auto -translate-y-1"
+          />
         </Link>
 
         {/* Desktop Centered Search Bar with Dropdown */}
@@ -214,7 +278,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
                   Recommended Stalls
                 </p>
                 <div className="flex flex-col gap-1">
-                  {RECOMMENDED_STALLS.map((stall) => (
+                  {recommendedStalls.map((stall) => (
                     <button
                       key={stall.name}
                       type="button"
@@ -323,7 +387,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
               Recommended Stalls
             </p>
             <div className="flex flex-col gap-1">
-              {RECOMMENDED_STALLS.map((stall) => (
+              {recommendedStalls.map((stall) => (
                 <button
                   key={stall.name}
                   type="button"

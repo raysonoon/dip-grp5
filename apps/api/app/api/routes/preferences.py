@@ -49,7 +49,7 @@ def update_my_preferences(
     if preferences is None:
         preferences = UserFoodPreferences(
             user_id=current_user.id,
-            allergies=payload.allergies,
+            dietary_restrictions=payload.dietary_restrictions,
             cuisines=payload.cuisines,
             locations=payload.locations,
             likes=payload.likes,
@@ -59,7 +59,7 @@ def update_my_preferences(
         )
         session.add(preferences)
     else:
-        preferences.allergies = payload.allergies
+        preferences.dietary_restrictions = payload.dietary_restrictions
         preferences.cuisines = payload.cuisines
         preferences.locations = payload.locations
         preferences.likes = payload.likes

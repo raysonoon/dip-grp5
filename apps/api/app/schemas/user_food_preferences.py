@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 
 
 class UserFoodPreferencesResponse(BaseModel):
-    allergies: list[str]
+    dietary_restrictions: list[str]
     cuisines: list[str]
     locations: list[str]
     likes: list[str]
@@ -12,7 +12,7 @@ class UserFoodPreferencesResponse(BaseModel):
 
 
 class UserFoodPreferencesUpdate(BaseModel):
-    allergies: list[str] = Field(default_factory=list)
+    dietary_restrictions: list[str] = Field(default_factory=list)
     cuisines: list[str] = Field(default_factory=list)
     locations: list[str] = Field(default_factory=list)
     likes: list[str] = Field(default_factory=list)

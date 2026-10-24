@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 
 import { saveMyPreferences } from "../api/preferences.js";
 
-const dietaryOptions = [
+export const dietaryOptions = [
   "Halal",
   "Vegetarian",
   "Vegan",
@@ -15,7 +15,7 @@ const dietaryOptions = [
   "Shellfish allergy",
 ];
 
-const cuisineOptions = [
+export const cuisineOptions = [
   "Chinese",
   "Malay",
   "Indian",
@@ -26,7 +26,7 @@ const cuisineOptions = [
   "Vegetarian",
 ];
 
-const locationOptions = [
+export const locationOptions = [
   "North Spine",
   "South Spine",
   "North Hill",
@@ -40,7 +40,7 @@ const locationOptions = [
   "Saraca Hall",
 ];
 
-const foodPreferenceOptions = [
+export const foodPreferenceOptions = [
   "Coffee",
   "Tea",
   "Bubble tea",
@@ -48,7 +48,7 @@ const foodPreferenceOptions = [
   "Vegetables",
 ];
 
-const lifestyleOptions = [
+export const lifestyleOptions = [
   "High protein",
   "High fibre",
 ];
@@ -57,13 +57,13 @@ type Props = {
   onFinished: (status: "completed" | "skipped") => void;
 };
 
-function toggleValue(values: string[], value: string) {
+export function toggleValue(values: string[], value: string) {
   return values.includes(value)
     ? values.filter((item) => item !== value)
     : [...values, value];
 }
 
-function Chip({
+export function Chip({
   label,
   selected,
   onClick,
@@ -90,7 +90,7 @@ function Chip({
 export default function FoodPreferencesOnboarding({ onFinished }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  const [allergies, setAllergies] = useState<string[]>([]);
+  const [dietaryRestrictions, setDietaryRestrictions] = useState<string[]>([]);
   const [cuisines, setCuisines] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [likes, setLikes] = useState<string[]>([]);
@@ -154,7 +154,8 @@ export default function FoodPreferencesOnboarding({ onFinished }: Props) {
 
     try {
       await saveMyPreferences({
-        allergies: status === "completed" ? allergies : [],
+        dietary_restrictions:
+          status === "completed" ? dietaryRestrictions : [],
         cuisines: status === "completed" ? cuisines : [],
         locations: status === "completed" ? locations : [],
         likes: status === "completed" ? likes : [],
@@ -223,9 +224,9 @@ export default function FoodPreferencesOnboarding({ onFinished }: Props) {
                 <Chip
                   key={option}
                   label={option}
-                  selected={allergies.includes(option)}
+                  selected={dietaryRestrictions.includes(option)}
                   onClick={() =>
-                    setAllergies((current) => toggleValue(current, option))
+                    setDietaryRestrictions((current) => toggleValue(current, option))
                   }
                 />
               ))}

@@ -35,6 +35,7 @@ class GoogleEmbedder:
         batch_size: int = settings.embedding_batch_size,
         requests_per_minute: int = settings.embedding_requests_per_minute,
         max_retries: int = settings.embedding_max_retries,
+        client: object | None = None,
     ) -> None:
         self._model = model
         self._dimensions = dimensions
@@ -43,7 +44,9 @@ class GoogleEmbedder:
         self._min_interval = 60.0 / max(requests_per_minute, 1)
         self._last_request_at = 0.0
         self._throttle_lock = Lock()
-        self._client = genai.Client(api_key=api_key) if api_key else None
+        self._client = client if client is not None else (
+            genai.Client(api_key=api_key) if api_key else None
+        )
 
     @property
     def cache_key(self) -> tuple[str, str, int]:
@@ -86,7 +89,9 @@ class GoogleEmbedder:
                 )
             except errors.APIError as error:
                 if error.code not in RETRY_STATUSES:
-                    raise
+                    raise RuntimeError(
+                        "embedding request failed"
+                    ) from error
                 if attempt + 1 >= self._max_retries:
                     break
                 delay = _extract_retry_seconds(str(error))
