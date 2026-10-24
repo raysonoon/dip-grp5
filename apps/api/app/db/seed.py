@@ -491,7 +491,7 @@ def seed_ntu_vendors(
 
                 if target_field == "location":
                     value = _normalize_location(value)
-                    vendor_directory_data[target_field] = value
+                vendor_directory_data[target_field] = value
 
             if skip_new_vendor:
                 print(
