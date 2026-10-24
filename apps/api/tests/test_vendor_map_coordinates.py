@@ -43,3 +43,11 @@ def test_wee_cho_yaw_plaza_crowded_bowl_is_not_at_north_spine() -> None:
     assert plaza_bowl != north_spine
     assert abs(plaza_bowl[0] - plaza_coffee[0]) < 0.002
     assert abs(plaza_bowl[1] - plaza_coffee[1]) < 0.002
+
+
+def test_hill_yard_is_in_the_north_hill_halls_block() -> None:
+    rows = _rows_by_id()
+    hill_yard = _point(rows, "V027")
+    a_hot_hideout = _point(rows, "V002")
+    assert abs(hill_yard[0] - a_hot_hideout[0]) < 0.003
+    assert abs(hill_yard[1] - a_hot_hideout[1]) < 0.003
