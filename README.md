@@ -443,6 +443,25 @@ the multipart `file`, change the form field `display_order`, or do both.
 `DELETE /reviews/{review_id}/images/{image_id}` removes the database record and
 its local file; the review author or an administrator may delete it.
 
+### Favourites
+
+Signed-in users can save vendors from their detail page and find them in
+Account → Favourite places (five per page, newest first). Guests see a
+sign-in/sign-up prompt. Apply the new `d103f25a0001` migration with
+`python -m alembic upgrade head` from `apps/api` before using this feature.
+
+All endpoints use the authenticated user's identity:
+
+```text
+GET    /auth/me/favourites?limit=5&offset=0
+GET    /auth/me/favourites/{vendor_id}
+PUT    /auth/me/favourites/{vendor_id}
+DELETE /auth/me/favourites/{vendor_id}
+```
+
+`PUT` creates or refreshes a favourite, moving it to the top without duplicate
+rows. `DELETE` is safe to repeat and removes only the caller's favourite.
+
 ### Chatbot
 
 `POST /chat/stream` is public and streams the RAG chatbot answer as

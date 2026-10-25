@@ -22,6 +22,7 @@ import {
   toggleValue,
 } from "../components/FoodPreferencesOnboarding";
 import { useAuth } from "../contexts/AuthContext";
+import FavouritePlaces from "../components/FavouritePlaces";
 
 type PreferenceKey =
   | "dietary_restrictions"
@@ -340,7 +341,7 @@ export default function AccountPage() {
           </Section>
 
           <Section icon={<Heart className="h-5 w-5 text-primary" />} title="Favourite places">
-            <p className="text-sm text-muted-foreground">No favourites found</p>
+            <FavouritePlaces key={userId} />
           </Section>
 
           <Section
