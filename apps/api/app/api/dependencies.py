@@ -12,15 +12,15 @@ from app.core.config import settings
 from app.core.security import verify_supabase_access_token
 from app.db.session import SessionLocal, get_db
 from app.models import User
-from app.schemas.chat import ChatHistoryMessage
 from app.services.chat import ChatService
 from app.services.embedding import Embedder, GoogleEmbedder
 from app.services.intent_router import IntentRouter
 from app.services.llm_routing import (
     build_classifier,
     build_filter_extractor,
-    build_question_rewriter,
+    build_query_resolver,
 )
+from app.services.query_resolution import ResolvedQuery
 from app.services.retrieval import KnowledgeStore, PgvectorKnowledgeStore
 from app.services.review_knowledge import InternalReviewKnowledgeSync
 from app.services.sql_search import PgSqlStore
@@ -103,13 +103,11 @@ def get_filter_extractor_llm() -> Callable[[str], StructuredFilter] | None:
     return build_filter_extractor(client)
 
 
-def get_question_rewriter() -> (
-    Callable[[str, list[ChatHistoryMessage]], str] | None
-):
+def get_query_resolver() -> Callable[..., ResolvedQuery | None] | None:
     client = _get_genai_client()
     if client is None:
         return None
-    return build_question_rewriter(client)
+    return build_query_resolver(client)
 
 
 def get_chat_service(
@@ -122,9 +120,9 @@ def get_chat_service(
         Callable[[str], StructuredFilter] | None,
         Depends(get_filter_extractor_llm),
     ],
-    rewrite_llm: Annotated[
-        Callable[[str, list[ChatHistoryMessage]], str] | None,
-        Depends(get_question_rewriter),
+    query_resolver: Annotated[
+        Callable[..., ResolvedQuery | None] | None,
+        Depends(get_query_resolver),
     ],
 ) -> ChatService:
     return ChatService(
@@ -134,7 +132,8 @@ def get_chat_service(
         router=router,
         sql_store=sql_store,
         filter_extractor_llm=filter_extractor_llm,
-        rewrite_llm=rewrite_llm,
+        query_resolver=query_resolver,
+        semantic_routing=True,
         session=session,
     )
 

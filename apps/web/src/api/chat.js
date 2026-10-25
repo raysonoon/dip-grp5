@@ -128,10 +128,10 @@ function parseSources(value) {
 export const CHAT_IDLE_TIMEOUT_MS = 30_000;
 export const CHAT_REQUEST_TIMEOUT_MS = 30_000;
 
-/** @returns {Promise<ReturnType<typeof parseChatResponse>>} */
+/** @returns {Promise<{ answer: string, sources: ReturnType<typeof parseSource>[] }>} */
 export async function streamChat(
   question,
-  /** @type {{ history?: Array<{ role: "user" | "assistant", content: string }>, sessionId?: string, signal?: AbortSignal, onDelta?: (delta: string, answer: string) => void, idleTimeoutMs?: number, timeoutMs?: number }} */
+  /** @type {{ history?: Array<{ role: "user" | "assistant", content: string }>, sessionId?: string, foodPick?: string, action?: "recommend_pick", signal?: AbortSignal, onDelta?: (delta: string, answer: string) => void, idleTimeoutMs?: number, timeoutMs?: number }} */
   {
     signal,
     idleTimeoutMs = CHAT_IDLE_TIMEOUT_MS,
@@ -144,6 +144,7 @@ export async function streamChat(
   const abortFromCaller = () => controller.abort(
     signal.reason ?? new DOMException("The operation was aborted", "AbortError"),
   );
+  /** @type {Promise<never>} */
   const aborted = new Promise((_resolve, reject) => {
     controller.signal.addEventListener("abort", () => reject(controller.signal.reason), {
       once: true,
@@ -184,7 +185,7 @@ export async function streamChat(
 async function readChatStream(
   /** @type {string} */
   question,
-  { history = [], sessionId, signal, onDelta = () => {}, onProgress },
+  { history = [], sessionId, foodPick, action, signal, onDelta = () => {}, onProgress },
 ) {
   const accessToken = await getAccessToken();
   if (signal?.aborted) {
@@ -200,8 +201,9 @@ async function readChatStream(
       headers,
       body: JSON.stringify({
         session_id: sessionId,
-        question,
+        ...(action === "recommend_pick" ? { action } : { question }),
         history: trimChatHistory(history),
+        ...(foodPick ? { food_pick: foodPick } : {}),
       }),
       signal,
     });

@@ -40,12 +40,26 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: str | None = Field(default=None, min_length=1, max_length=100)
-    question: str = Field(min_length=1, max_length=2000)
+    action: Literal["chat", "recommend_pick"] = "chat"
+    question: str | None = Field(default=None, min_length=1, max_length=2000)
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=50)
+    food_pick: str | None = Field(default=None, min_length=1, max_length=80)
+
+    @field_validator("food_pick")
+    @classmethod
+    def food_pick_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("food_pick cannot be empty")
+        return normalized
 
     @field_validator("question")
     @classmethod
-    def question_not_blank(cls, value: str) -> str:
+    def question_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         normalized = value.strip()
         if not normalized:
             raise ValueError("question cannot be empty")
@@ -63,6 +77,10 @@ class ChatRequest(BaseModel):
 
     @model_validator(mode="after")
     def cap_history_per_role(self) -> "ChatRequest":
+        if self.action == "chat" and self.question is None:
+            raise ValueError("question is required for a chat message")
+        if self.action == "recommend_pick" and self.food_pick is None:
+            raise ValueError("food_pick is required for a picker recommendation")
         self.history = trim_chat_history(self.history)
         return self
 

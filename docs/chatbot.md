@@ -29,6 +29,23 @@ The knowledge base is **unified**: internal reviews and external data
 
 ## Architecture
 
+HTTP chat requests first use `query_resolution.ResolvedQuery`, produced with
+Gemini's JSON schema output. It separates food searches, named businesses,
+picker-result memory, general conversation and requests needing clarification.
+Food types and vendor names have separate fields; the standalone retrieval
+question is never treated as a vendor name.
+
+The plan also identifies whether it refers to the current question, current
+picker state or conversation. Entity names must be grounded in that original
+input/context. The current picker state replaces earlier draws; explicit new
+topics do not inherit the old pick. Invalid plans ask for clarification rather
+than rerunning vendor-name heuristics on rewritten prose.
+
+Validated constraints restrict both SQL and review retrieval. Food suggestions
+require supporting names, categories, dishes or review text. Empty results keep
+their constraints and do not retry with a broader interpretation. The legacy
+router/rewriter injection is retained only for standalone service callers.
+
 ![RAG Chatbot](../diagrams/chatbot_rag.jpg)
 
 ## Technology choices

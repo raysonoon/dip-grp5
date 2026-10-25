@@ -6,7 +6,9 @@ from app.services.llm_routing import (
     _parse_filter_json,
     build_filter_extractor,
     build_question_rewriter,
+    build_query_resolver,
 )
+from app.services.query_resolution import ResolvedQuery
 
 
 class _FakeModels:
@@ -179,3 +181,37 @@ def test_parse_filter_json_rejects_non_string_query_kind_without_raising(
             '{"query_kind": ' + json.dumps(value) + "}"
         )
         assert filters.query_kind == "list"
+
+
+def test_semantic_resolver_uses_json_schema_and_actual_context():
+    calls = []
+    payload = {"target": "food", "reference": "picker", "question": "Where can I find salad?", "food_type": "Salad"}
+
+    def generate_content(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(text=json.dumps(payload))
+
+    resolve = build_query_resolver(SimpleNamespace(models=SimpleNamespace(generate_content=generate_content)), model="test-model")
+    result = resolve("那去哪儿能吃到？", [ChatHistoryMessage(role="assistant", content="Earlier you drew Pizza")],
+                     food_pick="Salad", vendors=[(2, "The Crowded Bowl")])
+    assert result.target == "food" and result.reference == "picker"
+    schema = calls[0]["config"].response_schema
+    assert "food" in schema["properties"]["target"]["enum"]
+    assert "vendor_names" in schema["properties"] and "food_type" in schema["properties"]
+    assert "additionalProperties" not in json.dumps(schema)
+    assert calls[0]["config"].response_mime_type == "application/json"
+    assert '"current_picker_food": "Salad"' in calls[0]["contents"]
+    assert "那去哪儿能吃到？" in calls[0]["contents"]
+    assert "The Crowded Bowl" in calls[0]["contents"]
+
+
+def test_semantic_resolver_fails_closed_on_invalid_json_or_provider_error():
+    for response in ["Salad in NTU? Please recommend places", '{"target":"vendor","reference":"picker","question":"Where?","vendor_names":["Salad"]}']:
+        client = SimpleNamespace(models=SimpleNamespace(generate_content=lambda **kwargs: SimpleNamespace(text=response)))
+        assert build_query_resolver(client)("Where?", [], food_pick="Salad", vendors=[]) is None
+
+    def fail(**kwargs):
+        raise TimeoutError("provider unavailable")
+
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=fail))
+    assert build_query_resolver(client)("Where?", [], food_pick="Salad", vendors=[]) is None
