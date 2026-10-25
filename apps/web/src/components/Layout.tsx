@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Outlet } from "react-router-dom";
-import { Bot, RotateCcw, Send, Square, X } from "lucide-react";
+import { Bot, RotateCcw, RotateCw, Send, Square, X } from "lucide-react";
 import ChatMessageContent from "./ChatMessageContent";
 import { useChatSession } from "../hooks/useChatSession";
 import Footer from "./Footer";
 import Header from "./Header";
+import VendorWheel from "./VendorWheel";
 
 // -------------------------------------------------------------
 // 1. Floating Foodie Chatbot Component
@@ -18,8 +19,11 @@ export function FoodieChat() {
     setInput: setChatInput,
     startNewSession: startNewChat,
     stopResponse,
+    wheelVendors,
+    removeWheelVendor,
   } = useChatSession();
   const [chatOpen, setChatOpen] = useState(false);
+  const [wheelOpen, setWheelOpen] = useState(false);
 
   return (
     <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end gap-3">
@@ -42,7 +46,7 @@ export function FoodieChat() {
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={startNewChat}
+                onClick={() => { setWheelOpen(false); startNewChat(); }}
                 className="text-muted-foreground hover:text-foreground transition-colors p-1"
                 aria-label="Start a new chat session"
                 title="New chat"
@@ -99,6 +103,8 @@ export function FoodieChat() {
             )}
           </div>
 
+          {wheelVendors.length >= 2 && <button type="button" className="vendor-wheel-invite" disabled={isTyping} onClick={() => setWheelOpen(true)}><RotateCw size={15} aria-hidden="true" /> Spin the wheel <span>{wheelVendors.length} places</span></button>}
+
           {/* Chat Input */}
           <div className="px-4 py-4 border-t border-border bg-card">
             <div className="flex items-center gap-2">
@@ -135,6 +141,8 @@ export function FoodieChat() {
           </div>
         </div>
       )}
+
+      {wheelOpen && <VendorWheel vendors={wheelVendors} onRemove={removeWheelVendor} onClose={() => setWheelOpen(false)} />}
 
       {/* Chat Toggle Button */}
       <button
@@ -176,8 +184,6 @@ export default function Layout({
       </main>
 
       <Footer />
-
-      <FoodieChat />
     </div>
   );
 }

@@ -124,7 +124,12 @@ export async function fetchReviews(limit = 15, offset = 0, signal) {
 }
 
 // One page of a single vendor's reviews.
-export async function fetchVendorReviews(vendorId, { limit = 10, offset = 0, signal } = {}) {
+/**
+ * @param {number} vendorId
+ * @param {{ limit?: number, offset?: number, signal?: AbortSignal }} options
+ */
+export async function fetchVendorReviews(vendorId, options = {}) {
+  const { limit = 10, offset = 0, signal } = options;
   const params = new URLSearchParams({
     vendor_id: String(vendorId),
     limit: String(limit),

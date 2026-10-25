@@ -460,9 +460,6 @@ function HomePage() {
         </div>
       </section>
 
-      {/* ── FLOATING CHATBOT WIDGET ───────────────────── */}
-      <FoodieChat />
-
       {/* ── FOOTER ───────────────────────────────────── */}
       <Footer />
     </div>
@@ -549,6 +546,8 @@ function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
+
+      <FoodieChat />
 
       {preferenceLoadError && (
         <div className="fixed bottom-6 right-6 z-[110] w-[min(92vw,380px)] rounded-xl border border-border bg-card p-4 shadow-xl">
