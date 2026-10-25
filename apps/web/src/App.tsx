@@ -8,6 +8,7 @@ import { fetchReviews, fetchVendorReviews } from "./api/reviews.js";
 import { fetchVendors } from "./api/vendors";
 import SignInPage from "./pages/SignInPage";
 import FoodPage from "./pages/FoodPage";
+import GuestDiscoverPage from "./pages/GuestDiscoverPage";
 import VendorsPage from "./pages/VendorsPage";
 import FoodPreferencesOnboarding from "./components/FoodPreferencesOnboarding";
 import { fetchMyPreferences } from "./api/preferences.js";
@@ -347,6 +348,15 @@ function HomePage() {
               })}
             </div>
           )}
+
+          <div className="mt-8 flex justify-center">
+            <Link
+              to="/discover"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+            >
+              Discover more <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -542,6 +552,7 @@ function App() {
           }
         >
           <Route path="/food" element={<FoodPage />} />
+          <Route path="/discover" element={<GuestDiscoverPage />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/vendors/:vendorId" element={<VendorsPage />} />
           <Route path="/account" element={<AccountPage />} />
