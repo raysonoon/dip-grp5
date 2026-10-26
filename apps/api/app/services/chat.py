@@ -200,6 +200,14 @@ _VENDOR_SQL_LOOKUP_RE = re.compile(
     r"(?:location|address))\b",
     re.IGNORECASE,
 )
+# Schedule questions are only forced onto SQL when a vendor was matched; this
+# keeps generic asks such as "what's open?" on the normal routing path.
+_VENDOR_SCHEDULE_LOOKUP_RE = re.compile(
+    r"\b(?:what\s+time|when)\b[^.?!]*\b(?:open|close|opening|closing)\b"
+    r"|\b(?:opening|closing|business)\s+hours?\b"
+    r"|\bopen(?:s|ed|ing)?\b|\bclos(?:e|es|ed|ing)\b",
+    re.IGNORECASE,
+)
 _VENDOR_EVIDENCE_RE = re.compile(
     r"\b(reddit|reviews?|recommend(?:ed|ation|ations)?|suggestions?|"
     r"opinion|opinions|"
@@ -218,6 +226,28 @@ _VENDOR_TARGET_PATTERNS = (
     re.compile(r"\bwhere\s+(?:is|are)\s+(.+)$", re.IGNORECASE),
     re.compile(r"\bwhere\s+can\s+i\s+find\s+(.+)$", re.IGNORECASE),
     re.compile(r"\blocate\s+(.+)$", re.IGNORECASE),
+    re.compile(
+        r"\b(?:what\s+time|when)\s+(?:does|do|is|are)\s+(.+?)\s+"
+        r"(?:open|opens|opening|close|closes|closing|start|starts|end|ends)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:what\s+are|what's|what\s+is)\s+(?:the\s+)?"
+        r"(?:opening|closing|business)\s+hours?\s+(?:of|for|at)\s+(.+)$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:opening|closing|business)\s+hours?\s+(?:of|for|at)\s+(.+)$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*is\s+(.+?)\s+(?:open|opened|closed|closing)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*does\s+(.+?)\s+(?:open|close|start|end)\b",
+        re.IGNORECASE,
+    ),
     re.compile(
         r"\bshow\s+me\s+(.+?)\s+locations?\s*[?.!]*$",
         re.IGNORECASE,
@@ -440,6 +470,7 @@ _GENERIC_REQUEST_LANGUAGE_TOKENS = frozenset(
         "alone",
         "another",
         "anyone",
+        "anywhere",
         "be",
         "before",
         "bite",
@@ -449,17 +480,24 @@ _GENERIC_REQUEST_LANGUAGE_TOKENS = frozenset(
         "cheaper",
         "class",
         "could",
+        "crave",
+        "craving",
         "date",
         "eat",
         "eats",
         "energy",
+        "everywhere",
         "family",
         "first",
         "football",
         "friends",
+        "give",
+        "im",
         "is",
         "later",
+        "looking",
         "more",
+        "need",
         "not",
         "now",
         "one",
@@ -479,10 +517,14 @@ _GENERIC_REQUEST_LANGUAGE_TOKENS = frozenset(
         "these",
         "this",
         "those",
+        "there",
         "today",
         "tonight",
         "two",
         "value",
+        "want",
+        "wanted",
+        "wants",
         "watch",
         "with",
         "without",
@@ -627,6 +669,17 @@ _RECOMMENDATION_FILLER_TOKENS = frozenset(
         "which",
         "you",
     }
+)
+# Qualitative requirements the saved profile cannot express. These asks must
+# use retrieval/search over vendor evidence instead of preference ranking.
+_RECOMMENDATION_CONTENT_QUALIFIER_RE = re.compile(
+    r"(?<!\w)(?:"
+    r"healthy|healthier|nutritious|wholesome|balanced|"
+    r"light|hearty|filling|spicy|sweet|savoury|savory|"
+    r"comfort(?:ing)?|refreshing|"
+    r"low[\s-]?calorie|low[\s-]?carb|high[\s-]?protein|protein[\s-]?rich"
+    r")(?!\w)",
+    re.IGNORECASE,
 )
 _VENDOR_CLAUSE_PREFIX_RE = re.compile(
     r"^(?:where\s+(?:is|are)|where\s+can\s+i\s+find|"
@@ -1427,10 +1480,10 @@ class ChatService:
     def _is_personal_recommendation_request(self, question: str) -> bool:
         """Return whether the question asks for preference-based picks.
 
-        Only generic asks qualify. A named (or likely vendor-named) object, or
-        any explicit cuisine/location/dietary/budget scope, keeps normal
-        SQL/Vector routing so specific queries are not replaced by preference
-        ranking.
+        Only attribute-free asks qualify. A named (or likely vendor-named)
+        object, an explicit cuisine/location/dietary/budget scope, or a
+        qualitative requirement such as "healthy" keeps normal SQL/Vector
+        routing so specific queries are not replaced by preference ranking.
         """
 
         if _RECOMMENDATION_REQUEST_RE.search(question) is None:
@@ -1438,6 +1491,8 @@ class ChatService:
         if self._match_vendor_names(question):
             return False
         if not _recommendation_target_is_generic(question):
+            return False
+        if _RECOMMENDATION_CONTENT_QUALIFIER_RE.search(question):
             return False
         return not _has_scope_constraint(extract_structured_filters(question))
 
@@ -1808,7 +1863,14 @@ class ChatService:
             llm_filters = self._extract_llm_filters(question)
             if llm_filters is not None:
                 filters = llm_filters
-        return self._resolve_filter_vendor_names(filters)
+        filters = self._resolve_filter_vendor_names(filters)
+        # A vendor-scoped schedule question must return that vendor even when it
+        # is closed on the requested day, so the answer can say "closed" instead
+        # of "no matching vendors". List/count questions keep the day filter.
+        if filters.vendor_ids and _VENDOR_SCHEDULE_LOOKUP_RE.search(question):
+            filters.open_hours = None
+            filters.exclude_open_hours = None
+        return filters
 
     @staticmethod
     def _suspected_unresolved_vendor_names(
@@ -2004,7 +2066,10 @@ class ChatService:
         return bool(
             matches
             and self._sql_store is not None
-            and _VENDOR_SQL_LOOKUP_RE.search(question)
+            and (
+                _VENDOR_SQL_LOOKUP_RE.search(question)
+                or _VENDOR_SCHEDULE_LOOKUP_RE.search(question)
+            )
             and not _VENDOR_EVIDENCE_RE.search(question)
         )
 
