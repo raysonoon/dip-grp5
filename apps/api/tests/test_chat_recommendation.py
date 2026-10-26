@@ -1,5 +1,7 @@
 """Preference-aware vendor recommendations in the chatbot."""
 
+import pytest
+
 from app.models import User, UserFoodPreferences, Vendor
 from app.services.chat import ChatService
 from app.services.embedding import Embedder
@@ -187,8 +189,53 @@ def test_generic_recommendation_without_user_falls_back_to_vector(session) -> No
     response = service.answer("what should I eat?")
 
     assert response.search_type == "Vector"
+    assert response.answer == "No preferences answer"
+    assert "could not identify" not in response.answer
     assert recommender.calls == []
     assert router.calls == ["what should I eat?"]
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "recommend something for me to eat",
+        "recommend me something to eat",
+        "recommend something to eat",
+        "recommend a place for me to eat",
+        "recommend a good place for a date",
+        "recommend a quick lunch",
+        "recommend something that is not spicy",
+        "recommend a place to study at",
+        "recommend a place I can study at",
+        "recommend another one that's cheaper",
+    ],
+)
+def test_generic_recommendation_phrasing_is_not_a_vendor_clarification(
+    session,
+    question: str,
+) -> None:
+    """Signed-out recommendation asks must reach retrieval, not vendor names."""
+
+    recommender = RecordingRecommender()
+    router = StaticRouter("Vector")
+
+    service = ChatService(
+        FakeEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=lambda _prompt: "Here is a recommendation.",
+        router=router,
+        sql_store=PgSqlStore(session),
+        session=session,
+        recommend_fn=recommender,
+    )
+
+    response = service.answer(question)
+
+    assert response.search_type == "Vector"
+    assert response.answer == "Here is a recommendation."
+    assert "could not identify" not in response.answer
+    assert recommender.calls == []
+    assert router.calls == [question]
 
 
 def test_generic_recommendation_with_skipped_preferences_falls_back(
@@ -211,6 +258,8 @@ def test_generic_recommendation_with_skipped_preferences_falls_back(
     response = service.answer("what should I eat?", current_user=user)
 
     assert response.search_type == "Vector"
+    assert response.answer == "Fallback answer"
+    assert "could not identify" not in response.answer
     assert recommender.calls == []
     assert router.calls == ["what should I eat?"]
 
@@ -235,6 +284,8 @@ def test_generic_recommendation_without_preferences_row_falls_back(
     response = service.answer("what should I eat?", current_user=user)
 
     assert response.search_type == "Vector"
+    assert response.answer == "Fallback answer"
+    assert "could not identify" not in response.answer
     assert recommender.calls == []
     assert router.calls == ["what should I eat?"]
 
@@ -257,6 +308,8 @@ def test_empty_recommendations_fall_back_to_vector(session) -> None:
     response = service.answer("recommend me something", current_user=user)
 
     assert response.search_type == "Vector"
+    assert response.answer == "Fallback answer"
+    assert "could not identify" not in response.answer
     assert recommender.calls
     assert router.calls == ["recommend me something"]
 

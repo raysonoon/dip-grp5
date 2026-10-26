@@ -923,6 +923,15 @@ def test_explicit_unknown_vendor_queries_never_broad_retrieve(
         "recommend places nearby",
         "recommend some good options",
         "recommend a new restaurant near campus",
+        "recommend something for me to eat",
+        "recommend me something to eat",
+        "recommend a place for me to eat",
+        "recommend a good place for a date",
+        "recommend a quick lunch",
+        "recommend something that is not spicy",
+        "recommend a place to study at",
+        "recommend a place I can study at",
+        "recommend another one that's cheaper",
     ],
 )
 def test_general_food_evidence_query_is_not_treated_as_unknown_vendor(

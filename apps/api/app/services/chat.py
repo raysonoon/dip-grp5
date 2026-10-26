@@ -428,6 +428,68 @@ _GENERIC_RECOMMENDATION_TOKENS = frozenset(
         "vendors",
     }
 )
+# Request, occasion, and constraint language that carries no vendor identity.
+# Kept separate from the food/recommendation sets so phrases such as
+# "recommend a quick lunch" or "recommend a place to study at" are not
+# mistaken for an unknown vendor name. This set is only consulted by the
+# vendor-clarification guard; it deliberately does not affect which asks take
+# the preference-recommendation path.
+_GENERIC_REQUEST_LANGUAGE_TOKENS = frozenset(
+    {
+        "after",
+        "alone",
+        "another",
+        "anyone",
+        "be",
+        "before",
+        "bite",
+        "budget",
+        "but",
+        "can",
+        "cheaper",
+        "class",
+        "could",
+        "date",
+        "eat",
+        "eats",
+        "energy",
+        "family",
+        "first",
+        "football",
+        "friends",
+        "is",
+        "later",
+        "more",
+        "not",
+        "now",
+        "one",
+        "people",
+        "protein",
+        "quick",
+        "quiet",
+        "should",
+        "similar",
+        "solo",
+        "somebody",
+        "someone",
+        "spot",
+        "study",
+        "that",
+        "thats",
+        "these",
+        "this",
+        "those",
+        "today",
+        "tonight",
+        "two",
+        "value",
+        "watch",
+        "with",
+        "without",
+        "work",
+        "would",
+    }
+)
 # Deterministic trigger for "recommend me something" style asks. The
 # recommendation path only runs for generic requests (see
 # ``ChatService._is_personal_recommendation_request``); explicit cuisine,
@@ -640,7 +702,12 @@ def _looks_like_generic_recommendation(value: str) -> bool:
     """Return whether a target is only food or non-entity request language."""
 
     normalized_tokens = normalize_vendor_text(value).split()
-    allowed_tokens = _GENERIC_FOOD_TOKENS | _GENERIC_RECOMMENDATION_TOKENS
+    allowed_tokens = (
+        _GENERIC_FOOD_TOKENS
+        | _GENERIC_RECOMMENDATION_TOKENS
+        | _RECOMMENDATION_FILLER_TOKENS
+        | _GENERIC_REQUEST_LANGUAGE_TOKENS
+    )
     return bool(normalized_tokens) and all(
         token in allowed_tokens for token in normalized_tokens
     )
