@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     embedding_max_retries: int = 5
     chat_model: str = "gemini-3.5-flash-lite"
     chat_request_timeout_ms: int = Field(default=20_000, gt=0)
+    # Transient upstream failures (429/5xx, dropped connections) are retried a
+    # few times with a short backoff
+    chat_retry_attempts: int = Field(default=3, ge=1)
+    chat_retry_initial_delay_ms: int = Field(default=250, ge=0)
+    chat_retry_max_delay_ms: int = Field(default=2_000, gt=0)
     vector_top_k: int = 8
 
     model_config = SettingsConfigDict(
