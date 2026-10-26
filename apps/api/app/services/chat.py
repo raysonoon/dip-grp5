@@ -1,8 +1,11 @@
 import logging
 import re
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 
+import httpx
+from google.genai import errors, types
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -1062,6 +1065,44 @@ def _recommendation_target_is_generic(question: str) -> bool:
             token in _RECOMMENDATION_FILLER_TOKENS for token in tokens
         )
     return True
+
+
+# Upstream statuses that can still succeed if the same request is sent again.
+_RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+
+
+def _is_retryable_stream_error(error: BaseException) -> bool:
+    """Return whether a failed generation attempt might succeed on retry."""
+    if isinstance(error, errors.APIError):
+        return error.code in _RETRYABLE_STATUS_CODES
+    return isinstance(error, (TimeoutError, ConnectionError, httpx.TransportError))
+
+
+def _stream_retry_delay(
+    error: BaseException,
+    *,
+    attempt: int,
+    attempts: int,
+    emitted: bool,
+    elapsed: float,
+    timeout_seconds: float,
+) -> float | None:
+    """Return the backoff before replaying a failed stream, or None to give up.
+
+    A stream is only replayable while it has not reached the user: once any
+    text is visible a second attempt would duplicate the answer. A request that
+    already burned its whole timeout is not retried either -- the model
+    stalled, so repeating it would only double the wait before the user sees
+    anything.
+    """
+    if emitted or attempt >= attempts:
+        return None
+    if elapsed >= timeout_seconds or not _is_retryable_stream_error(error):
+        return None
+    return min(
+        settings.chat_retry_initial_delay_ms / 1000 * 2 ** (attempt - 1),
+        settings.chat_retry_max_delay_ms / 1000,
+    )
 
 
 class ChatService:
@@ -2251,12 +2292,50 @@ class ChatService:
                     "GEMINI_API_KEY is not configured; cannot generate answers"
                 )
             self._client = create_chat_client()
-        for chunk in self._client.models.generate_content_stream(
-            model=self._model,
-            contents=prompt,
-        ):
-            if chunk.text:
-                yield chunk.text
+
+        # The SDK cannot replay a stream that stalls after the headers arrive,
+        # so retries are handled here, one attempt at a time. The SDK retry is
+        # disabled for these requests to keep a single retry authority.
+        attempts = settings.chat_retry_attempts
+        timeout_seconds = settings.chat_request_timeout_ms / 1000
+        for attempt in range(1, attempts + 1):
+            started = time.monotonic()
+            emitted = False
+            try:
+                for chunk in self._client.models.generate_content_stream(
+                    model=self._model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        http_options=types.HttpOptions(
+                            retry_options=types.HttpRetryOptions(attempts=1),
+                        ),
+                    ),
+                ):
+                    if chunk.text:
+                        emitted = True
+                        yield chunk.text
+            except Exception as error:
+                delay = _stream_retry_delay(
+                    error,
+                    attempt=attempt,
+                    attempts=attempts,
+                    emitted=emitted,
+                    elapsed=time.monotonic() - started,
+                    timeout_seconds=timeout_seconds,
+                )
+                if delay is None:
+                    raise
+                logger.info(
+                    "Chat stream attempt %d/%d failed (%s); retrying in %.2fs",
+                    attempt,
+                    attempts,
+                    type(error).__name__,
+                    delay,
+                )
+                if delay:
+                    time.sleep(delay)
+            else:
+                return
 
     @staticmethod
     def _to_source(
