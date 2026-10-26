@@ -10,7 +10,7 @@ from app.api import dependencies
 from app.core.config import settings
 from app.main import app
 from app.models import Vendor
-from app.services.chat import ChatService
+from app.services.chat import ChatService, _stream_retry_delay
 from app.services.chat_client import create_chat_client
 from app.services.intent_router import IntentRouter
 from app.services.retrieval import FakeKnowledgeStore, KnowledgeResult
@@ -38,8 +38,9 @@ class LocalEmbedder:
 
 @pytest.mark.parametrize("failure", [unavailable, lambda: TimeoutError("slow model")])
 def test_multi_vendor_lookup_returns_cited_facts_when_generation_fails(
-    session, client, failure,
+    session, client, failure, monkeypatch,
 ):
+    monkeypatch.setattr(settings, "chat_retry_initial_delay_ms", 0)
     session.add_all([
         Vendor(name="Gelare", location="North Spine", unit_code="#01-01"),
         Vendor(name="Encik Tan", location="South Spine"),
@@ -78,7 +79,7 @@ def test_multi_vendor_lookup_returns_cited_facts_when_generation_fails(
     assert "#01-01" in answer
     assert "Unrelated Vendor" not in answer
     assert "private provider diagnostic" not in answer
-    assert len(calls) == 1
+    assert len(calls) == settings.chat_retry_attempts
 
 
 def test_vector_fallback_keeps_review_excerpt_and_source():
@@ -145,14 +146,115 @@ def test_failure_after_first_generated_chunk_is_not_completed(client):
     ]
 
 
-def test_interactive_clients_disable_sdk_retry_backoff(monkeypatch):
+def _chunks(*texts):
+    def stream():
+        for text in texts:
+            yield SimpleNamespace(text=text)
+    return stream
+
+
+def _fails_after(error, *texts):
+    def stream():
+        for text in texts:
+            yield SimpleNamespace(text=text)
+        raise error
+    return stream
+
+
+class ScriptedProvider:
+    """Provider double that replays one scripted stream per call."""
+
+    def __init__(self, *steps):
+        self._steps = list(steps)
+        self.calls = 0
+        self.models = SimpleNamespace(generate_content_stream=self._stream)
+
+    def _stream(self, **_kwargs):
+        self.calls += 1
+        yield from self._steps[min(self.calls - 1, len(self._steps) - 1)]()
+
+
+def _scripted_service(provider):
+    return ChatService(
+        LocalEmbedder(), FakeKnowledgeStore(items=[]), client=provider,
+    )
+
+
+def test_transient_failure_before_the_first_token_is_retried(monkeypatch):
+    monkeypatch.setattr(settings, "chat_retry_initial_delay_ms", 0)
+    provider = ScriptedProvider(_fails_after(unavailable()), _chunks("Answer"))
+    events = list(
+        _scripted_service(provider).stream_answer("Which vendors are halal?")
+    )
+    assert events == [("delta", "Answer"), ("sources", [])]
+    assert provider.calls == 2
+
+
+def test_failure_after_the_first_token_is_not_replayed():
+    provider = ScriptedProvider(_fails_after(unavailable(), "Partial"))
+    with pytest.raises(errors.ServerError):
+        list(_scripted_service(provider).stream_answer("Which vendors are halal?"))
+    assert provider.calls == 1
+
+
+def test_permanent_failure_is_not_retried():
+    provider = ScriptedProvider(_fails_after(errors.ClientError(400, {
+        "error": {"message": "bad request", "status": "INVALID_ARGUMENT"},
+    })))
+    with pytest.raises(errors.ClientError):
+        list(_scripted_service(provider)._generate_stream("prompt"))
+    assert provider.calls == 1
+
+
+def test_stream_gives_up_after_the_attempt_limit(monkeypatch):
+    monkeypatch.setattr(settings, "chat_retry_initial_delay_ms", 0)
+    monkeypatch.setattr(settings, "chat_retry_attempts", 2)
+    provider = ScriptedProvider(_fails_after(unavailable()))
+    with pytest.raises(errors.ServerError):
+        list(_scripted_service(provider)._generate_stream("prompt"))
+    assert provider.calls == 2
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected"),
+    [
+        ({"attempt": 1, "attempts": 3, "emitted": False, "elapsed": 0.2}, 0.25),
+        ({"attempt": 2, "attempts": 3, "emitted": False, "elapsed": 0.2}, 0.5),
+        ({"attempt": 1, "attempts": 3, "emitted": True, "elapsed": 0.2}, None),
+        ({"attempt": 3, "attempts": 3, "emitted": False, "elapsed": 0.2}, None),
+        ({"attempt": 1, "attempts": 3, "emitted": False, "elapsed": 20.0}, None),
+    ],
+)
+def test_stream_retry_delay(monkeypatch, scenario, expected):
+    monkeypatch.setattr(settings, "chat_retry_initial_delay_ms", 250)
+    monkeypatch.setattr(settings, "chat_retry_max_delay_ms", 2_000)
+    assert _stream_retry_delay(
+        unavailable(), timeout_seconds=20.0, **scenario
+    ) == expected
+
+
+def test_stream_retry_delay_is_capped(monkeypatch):
+    monkeypatch.setattr(settings, "chat_retry_initial_delay_ms", 1_000)
+    monkeypatch.setattr(settings, "chat_retry_max_delay_ms", 1_500)
+    assert _stream_retry_delay(
+        unavailable(), attempt=2, attempts=5, emitted=False,
+        elapsed=0.1, timeout_seconds=20.0,
+    ) == 1.5
+
+
+def test_interactive_client_retries_transient_failures_with_short_backoff(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", SecretStr("test-key"))
-    monkeypatch.setattr(settings, "chat_request_timeout_ms", 1234)
+    monkeypatch.setattr(settings, "chat_request_timeout_ms", 12_000)
+    monkeypatch.setattr(settings, "chat_retry_attempts", 3)
+    monkeypatch.setattr(settings, "chat_retry_initial_delay_ms", 250)
+    monkeypatch.setattr(settings, "chat_retry_max_delay_ms", 2_000)
     with patch("app.services.chat_client.genai.Client") as client:
         create_chat_client()
     options = client.call_args.kwargs["http_options"]
-    assert options.timeout == 1234
-    assert options.retry_options.attempts == 1
+    assert options.timeout == 12_000
+    assert options.retry_options.attempts == 3
+    assert options.retry_options.initial_delay == 0.25
+    assert options.retry_options.max_delay == 2.0
 
 
 def test_interactive_embedder_reuses_the_bounded_client():
