@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import (
     APIRouter,
@@ -15,7 +15,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
@@ -185,12 +185,47 @@ def list_reviews(
     session: DbSession,
     current_user: OptionalCurrentUser,
     vendor_id: Annotated[int | None, Query(gt=0)] = None,
+    sort: Literal["newest", "oldest", "best", "controversial"] = "newest",
+    rating: Annotated[float | None, Query(ge=0.5, le=5.0)] = None,
+    media: Literal["all", "with_photos", "without_photos"] = "all",
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ReviewListRead:
     filters = []
     if vendor_id is not None:
         filters.append(Review.vendor_id == vendor_id)
+    if rating is not None:
+        if not (rating * 2).is_integer():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="rating must be in 0.5 increments",
+            )
+        filters.append(Review.rating_half_steps == int(rating * 2))
+    if media != "all":
+        has_photos = (
+            select(ReviewImage.id)
+            .where(ReviewImage.review_id == Review.id)
+            .exists()
+        )
+        filters.append(has_photos if media == "with_photos" else ~has_photos)
+
+    ordering = [Review.created_at.desc(), Review.id.desc()]
+    if sort == "oldest":
+        ordering = [Review.created_at.asc(), Review.id.asc()]
+    elif sort in ("best", "controversial"):
+        net_helpfulness = (
+            select(
+                func.count(case((ReviewVote.vote_type == "up", 1)))
+                - func.count(case((ReviewVote.vote_type == "down", 1)))
+            )
+            .where(ReviewVote.review_id == Review.id)
+            .correlate(Review)
+            .scalar_subquery()
+        )
+        ordering.insert(
+            0,
+            net_helpfulness.desc() if sort == "best" else net_helpfulness.asc(),
+        )
 
     total = session.scalar(
         select(func.count(Review.id)).where(*filters)
@@ -203,7 +238,7 @@ def list_reviews(
             selectinload(Review.images),
         )
         .where(*filters)
-        .order_by(Review.created_at.desc(), Review.id.desc())
+        .order_by(*ordering)
         .offset(offset)
         .limit(limit)
     ).all()

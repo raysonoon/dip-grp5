@@ -171,6 +171,11 @@ function UploadDropzone({ onFilesSelected, label }) {
 }
 
 export default function VendorsPage() {
+  const { vendorId } = useParams();
+  return <VendorDetails key={vendorId} />;
+}
+
+function VendorDetails() {
   const {
     localUserId,
     localUserRole,
@@ -188,6 +193,9 @@ export default function VendorsPage() {
 
   const [reviews, setReviews] = useState([]);
   const [reviewOffset, setReviewOffset] = useState(0);
+  const [reviewSort, setReviewSort] = useState("newest");
+  const [reviewRating, setReviewRating] = useState("");
+  const [reviewMedia, setReviewMedia] = useState("all");
   const [reviewTotal, setReviewTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(isValidVendorId);
   const [loadError, setLoadError] = useState("");
@@ -248,11 +256,19 @@ export default function VendorsPage() {
     fetchVendorReviews(numericVendorId, {
       limit: REVIEWS_PAGE_LIMIT,
       offset: reviewOffset,
+      sort: reviewSort,
+      rating: reviewRating,
+      media: reviewMedia,
       signal: controller.signal,
     })
       .then((page) => {
+        if (controller.signal.aborted) return;
         setReviews(page.items);
         setReviewTotal(page.total);
+        // An edit or image deletion can remove the last match on this page.
+        if (reviewOffset > 0 && reviewOffset >= page.total) {
+          setReviewOffset(Math.max(0, Math.ceil(page.total / REVIEWS_PAGE_LIMIT) - 1) * REVIEWS_PAGE_LIMIT);
+        }
       })
       .catch((error) => {
         if (error.name !== "AbortError") {
@@ -266,7 +282,7 @@ export default function VendorsPage() {
       });
 
     return () => controller.abort();
-  }, [isValidVendorId, numericVendorId, reviewOffset, loadAttempt, reviewsReload]);
+  }, [isValidVendorId, numericVendorId, reviewOffset, reviewSort, reviewRating, reviewMedia, loadAttempt, reviewsReload]);
 
   // After creating/deleting a review, jump back to page 1 and refetch.
   // After editing a review or its images, refetch the current page in place.
@@ -281,6 +297,12 @@ export default function VendorsPage() {
   const changeReviewPage = (nextOffset) => {
     setActionError("");
     setReviewOffset(nextOffset);
+  };
+
+  const changeReviewFilter = (setFilter, value) => {
+    setFilter(value);
+    setReviewOffset(0);
+    setActionError("");
   };
 
   const handleVoteReview = async (reviewId, vote) => {
@@ -305,6 +327,9 @@ export default function VendorsPage() {
             : review,
         ),
       );
+      if (reviewSort === "best" || reviewSort === "controversial") {
+        refreshReviews();
+      }
     } catch (error) {
       setActionError(displayError(error));
     } finally {
@@ -563,6 +588,46 @@ export default function VendorsPage() {
         <h2 className="text-lg font-bold text-foreground mb-3">
           Student Reviews {reviewTotal > 0 ? `(${reviewTotal})` : ""}
         </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+            Sort
+            <select
+              value={reviewSort}
+              onChange={(event) => changeReviewFilter(setReviewSort, event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="best">Best</option>
+              <option value="controversial">Controversial</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+            Rating
+            <select
+              value={reviewRating}
+              onChange={(event) => changeReviewFilter(setReviewRating, event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="">Any rating</option>
+              {Array.from({ length: 10 }, (_, index) => (5 - index * 0.5).toFixed(1)).map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+            Media
+            <select
+              value={reviewMedia}
+              onChange={(event) => changeReviewFilter(setReviewMedia, event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="all">All</option>
+              <option value="with_photos">With photos</option>
+              <option value="without_photos">Without photos</option>
+            </select>
+          </label>
+        </div>
         {isLoading && <p className="text-muted-foreground">Loading reviews...</p>}
         {!isLoading && loadError && (
           <div role="alert" className="text-destructive">
@@ -577,7 +642,11 @@ export default function VendorsPage() {
           </div>
         )}
         {!isLoading && !loadError && reviews.length === 0 && (
-          <p className="text-muted-foreground">No reviews yet. Be the first to leave one.</p>
+          <p className="text-muted-foreground">
+            {reviewRating !== "" || reviewMedia !== "all"
+              ? "No reviews match these filters."
+              : "No reviews yet. Be the first to leave one."}
+          </p>
         )}
         {!isLoading && !loadError && reviews.map((review) => {
           const isOwnReview = review.user.id === localUserId;
