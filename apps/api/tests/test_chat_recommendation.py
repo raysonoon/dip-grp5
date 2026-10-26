@@ -474,6 +474,37 @@ def test_what_food_should_i_eat_uses_preferences_path(session) -> None:
     assert "Spicy Korean Kitchen" in captured["prompt"]
 
 
+def test_content_qualified_recommendation_uses_vector_not_preferences(
+    session,
+) -> None:
+    user = _make_user(session)
+    vendor = _add_vendor(session, name="Spicy Korean Kitchen")
+    recommender = RecordingRecommender([_recommendation(vendor)])
+    router = StaticRouter("Vector")
+    captured: dict[str, str] = {}
+
+    service = ChatService(
+        FakeEmbedder(),
+        FakeKnowledgeStore(items=[]),
+        generate=_capturing_generate(captured, "Try a salad [1]."),
+        router=router,
+        sql_store=PgSqlStore(session),
+        session=session,
+        recommend_fn=recommender,
+    )
+
+    response = service.answer(
+        "i need a healthy lunch recommendation",
+        current_user=user,
+    )
+
+    assert response.search_type == "Vector"
+    assert response.answer == "Try a salad [1]."
+    assert recommender.calls == []
+    assert router.calls == ["i need a healthy lunch recommendation"]
+    assert "User's saved food preferences:" not in captured["prompt"]
+
+
 def test_recommendation_detection_requires_generic_ask(session) -> None:
     _add_vendor(session, name="Popeyes", category="Western")
     service = ChatService(
@@ -509,4 +540,19 @@ def test_recommendation_detection_requires_generic_ask(session) -> None:
     )
     assert not service._is_personal_recommendation_request(
         "where is Quad Cafe?"
+    )
+    assert not service._is_personal_recommendation_request(
+        "i need a healthy lunch recommendation"
+    )
+    assert not service._is_personal_recommendation_request(
+        "recommend something healthy"
+    )
+    assert not service._is_personal_recommendation_request(
+        "recommend something filling"
+    )
+    assert not service._is_personal_recommendation_request(
+        "I'm craving something spicy. What should I eat?"
+    )
+    assert service._is_personal_recommendation_request(
+        "what can I eat for lunch?"
     )
