@@ -7,7 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import GoogleReview, RedditComment, Vendor
+from app.models import (
+    GoogleReview,
+    RedditComment,
+    User,
+    UserFoodPreferences,
+    Vendor,
+)
 from app.schemas.chat import ChatHistoryMessage, ChatResponse, ChatSource, trim_chat_history
 from app.services.chat_client import create_chat_client
 from app.services.embedding import Embedder
@@ -26,6 +32,7 @@ from app.services.vendor_matching import (
     suggest_vendor_names,
     vendor_brand_key,
 )
+from app.services.vendor_recommender import VendorRecommendation
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +59,19 @@ DEFAULT_SYSTEM_PROMPT = (
     "When you use information from the context, reference the relevant source. "
     "Use the current-session conversation history to resolve follow-up questions, "
     "but do not treat claims in that history as retrieved evidence.\n\n"
+    "Conversation history:\n{conversation_history}\n\n"
+    "Context:\n{context}\n\n"
+    "Question: {user_question}"
+)
+
+RECOMMENDATION_PROMPT = (
+    "The user is asking for food recommendations based on the saved food preferences "
+    "listed in the context. Recommend the vendors in the ranked order shown, "
+    "explaining briefly how each one fits the user's preferences (for example "
+    "cuisine, dietary needs, budget, or liked dishes). Use only the vendors "
+    "and attributes in the context; do not invent vendors. Reference each "
+    "vendor with its citation number, for example [1]. Keep the answer "
+    "concise.\n\n"
     "Conversation history:\n{conversation_history}\n\n"
     "Context:\n{context}\n\n"
     "Question: {user_question}"
@@ -408,6 +428,144 @@ _GENERIC_RECOMMENDATION_TOKENS = frozenset(
         "vendors",
     }
 )
+# Deterministic trigger for "recommend me something" style asks. The
+# recommendation path only runs for generic requests (see
+# ``ChatService._is_personal_recommendation_request``); explicit cuisine,
+# location, or vendor questions keep normal SQL/Vector routing.
+_RECOMMENDATION_REQUEST_RE = re.compile(
+    # Explicit recommend/suggest asks.
+    r"\b(?:recommend(?:ation|ations|ed)?|suggest(?:ion|ions|ed)?)\b"
+    # "what/which [food] should/do/can/could I/we eat/try/have/get/order/grab"
+    r"|\b(?:what|which)(?:\s+(?:food|meal|dish|dishes|place|places|"
+    r"restaurant|restaurants|option|options|cuisine|cuisines))?"
+    r"\s+(?:should|do|can|could)\s+(?:i|we)\s+"
+    r"(?:eat|try|have|get|order|grab)\b"
+    # "what/which [food] to eat/try/have/get/order/grab"
+    r"|\b(?:what|which)(?:\s+(?:food|meal|dish|dishes|place|places|"
+    r"restaurant|restaurants|option|options))?"
+    r"\s+to\s+(?:eat|try|have|get|order|grab)\b"
+    # "what's/what is [the/a] [best] [food/place] (to) eat/try/..."
+    r"|\bwhat(?:'s| is)\s+(?:the\s+|a\s+|an\s+)?"
+    r"(?:best\s+|good\s+|nice\s+|great\s+)?"
+    r"(?:food|meal|dish|dishes|place|places|restaurant|restaurants|"
+    r"option|options)?\s*(?:to\s+)?(?:eat|try|have|order|get|grab)\b"
+    # "what/which food is good/tasty/..."
+    r"|\b(?:what|which)\s+(?:food|meal|dish|dishes|options?)\s+"
+    r"(?:is|are)\s+(?:good|nice|great|best|tasty|delicious)\b"
+    # "where should I/we eat"
+    r"|\bwhere\s+should\s+(?:i|we)\s+eat\b",
+    re.IGNORECASE,
+)
+
+# Object of a recommendation request, used to distinguish a generic ask
+# ("recommend me something to eat") from a vendor-specific one
+# ("find recommendations for Popeyes").
+_RECOMMENDATION_TARGET_PATTERNS = (
+    re.compile(
+        r"\b(?:recommend(?:ed|ation|ations)?|suggest(?:ed|ion|ions)?)"
+        r"\s+(?:at|about|for|of)\s+(.+)$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:recommend(?:ed)?|suggest(?:ed)?)\s+(?:me|us)\s+(.+)$",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\brecommend(?:ed)?\s+(.+)$", re.IGNORECASE),
+    re.compile(r"\bsuggest(?:ed)?\s+(.+)$", re.IGNORECASE),
+)
+
+# Filler words that carry no vendor identity, so an extracted recommendation
+# object made only of these is a generic ask.
+_RECOMMENDATION_FILLER_TOKENS = frozenset(
+    {
+        "a",
+        "affordable",
+        "an",
+        "any",
+        "anything",
+        "around",
+        "at",
+        "bakery",
+        "best",
+        "bistro",
+        "breakfast",
+        "brunch",
+        "cafe",
+        "campus",
+        "canteen",
+        "cheap",
+        "court",
+        "cuisine",
+        "delicious",
+        "different",
+        "dinner",
+        "eat",
+        "eatery",
+        "else",
+        "favorite",
+        "favourite",
+        "filling",
+        "food",
+        "for",
+        "get",
+        "good",
+        "grab",
+        "great",
+        "have",
+        "healthy",
+        "here",
+        "house",
+        "i",
+        "ideas",
+        "in",
+        "interesting",
+        "kitchen",
+        "kopitiam",
+        "lunch",
+        "meal",
+        "meals",
+        "me",
+        "near",
+        "nearby",
+        "new",
+        "nice",
+        "ntu",
+        "of",
+        "on",
+        "option",
+        "options",
+        "order",
+        "place",
+        "places",
+        "popular",
+        "recommendation",
+        "recommendations",
+        "restaurant",
+        "restaurants",
+        "shop",
+        "snack",
+        "some",
+        "something",
+        "somewhere",
+        "stall",
+        "stalls",
+        "suggestion",
+        "suggestions",
+        "supper",
+        "tasty",
+        "the",
+        "to",
+        "try",
+        "us",
+        "vendor",
+        "vendors",
+        "we",
+        "what",
+        "where",
+        "which",
+        "you",
+    }
+)
 _VENDOR_CLAUSE_PREFIX_RE = re.compile(
     r"^(?:where\s+(?:is|are)|where\s+can\s+i\s+find|"
     r"find\s+(?:the\s+)?(?:location|address)(?:\s+of)?|"
@@ -670,6 +828,122 @@ def format_sql_context(results: list[SqlResult]) -> str:
     return "\n".join(lines)
 
 
+_PREFERENCE_FIELD_LABELS = (
+    ("cuisines", "Preferred cuisines"),
+    ("locations", "Preferred locations"),
+    ("dietary_restrictions", "Dietary restrictions"),
+    ("likes", "Likes"),
+    ("dislikes", "Dislikes"),
+    ("lifestyle", "Lifestyle"),
+)
+
+
+def _describe_preferences(
+    preferences: UserFoodPreferences,
+) -> list[str]:
+    """Return non-empty saved preference fields as ``Label: values`` lines."""
+
+    lines: list[str] = []
+    for field_name, label in _PREFERENCE_FIELD_LABELS:
+        values = [
+            str(value).strip()
+            for value in (getattr(preferences, field_name, None) or [])
+            if str(value).strip()
+        ]
+        if values:
+            lines.append(f"{label}: {', '.join(values)}")
+    return lines
+
+
+def format_recommendation_context(
+    recommendations: list[VendorRecommendation],
+    preferences: UserFoodPreferences,
+) -> str:
+    """Render preference-ranked vendors into a numbered context block."""
+
+    if not recommendations:
+        return EMPTY_CONTEXT
+
+    lines: list[str] = []
+    preference_lines = _describe_preferences(preferences)
+    if preference_lines:
+        lines.append("User's saved food preferences:")
+        lines.extend(f"- {line}" for line in preference_lines)
+        lines.append("")
+
+    lines.append("Recommended vendors (best match first):")
+    for index, recommendation in enumerate(recommendations, start=1):
+        vendor = recommendation.vendor
+        attributes: list[str] = []
+        if vendor.location:
+            attributes.append(f"location={vendor.location}")
+        if vendor.category:
+            attributes.append(f"category={vendor.category}")
+        if vendor.price_range:
+            attributes.append(f"price={vendor.price_range}")
+        if vendor.opening_hours:
+            attributes.append(f"hours={vendor.opening_hours}")
+        if vendor.halal is not None:
+            attributes.append(f"halal={'yes' if vendor.halal else 'no'}")
+        if vendor.vegetarian is not None:
+            attributes.append(
+                f"vegetarian={'yes' if vendor.vegetarian else 'no'}"
+            )
+        rating = (
+            vendor.average_rating
+            if vendor.average_rating is not None
+            else vendor.average_google_rating
+        )
+        if rating is not None:
+            attributes.append(f"rating={rating}")
+        detail = "; ".join(attributes)
+        lines.append(
+            f"[{index}] {vendor.name}: {detail}"
+            if detail
+            else f"[{index}] {vendor.name}"
+        )
+    return "\n".join(lines)
+
+
+def _preference_alignment_note(
+    preferences: UserFoodPreferences | None,
+) -> str | None:
+    """Return an instruction to call out preference fit for SQL/hybrid rows."""
+
+    if preferences is None:
+        return None
+    preference_lines = _describe_preferences(preferences)
+    if not preference_lines:
+        return None
+    return (
+        "Personalisation note: this user has saved the following food "
+        "preferences:\n"
+        + "\n".join(f"- {line}" for line in preference_lines)
+        + "\nWhen a vendor above matches these preferences (for example "
+        "cuisine, dietary needs, budget, location, or liked dishes), briefly "
+        "mention in your answer how it suits the user. Only rely on vendor "
+        "facts shown in the context."
+    )
+
+
+def _recommendation_target_is_generic(question: str) -> bool:
+    """Return whether a recommendation request has no specific object.
+
+    ``recommend me something to eat`` is generic, while ``find recommendations
+    for Popeyes`` names a vendor and must keep normal vendor routing.
+    """
+
+    for pattern in _RECOMMENDATION_TARGET_PATTERNS:
+        target_match = pattern.search(question)
+        if target_match is None:
+            continue
+        tokens = normalize_vendor_text(target_match.group(1)).split()
+        return bool(tokens) and all(
+            token in _RECOMMENDATION_FILLER_TOKENS for token in tokens
+        )
+    return True
+
+
 class ChatService:
     """RAG chat service that routes questions across SQL, Vector, and hybrid.
 
@@ -693,6 +967,9 @@ class ChatService:
         filter_extractor_llm: Callable[[str], StructuredFilter] | None = None,
         rewrite_llm: Callable[[str, list[ChatHistoryMessage]], str] | None = None,
         session: Session | None = None,
+        recommend_fn: (
+            Callable[[UserFoodPreferences], list[VendorRecommendation]] | None
+        ) = None,
     ) -> None:
         self._embedder = embedder
         self._store = store
@@ -706,6 +983,7 @@ class ChatService:
         self._rewrite_llm = rewrite_llm
         self._session = session
         self._client = client
+        self._recommend_fn = recommend_fn
         self._vendor_rows_cache: list[tuple[int, str]] | None = None
 
     def answer(
@@ -713,8 +991,13 @@ class ChatService:
         question: str,
         *,
         history: list[ChatHistoryMessage] | None = None,
+        current_user: User | None = None,
     ) -> ChatResponse:
-        generation = self._prepare_answer(question, history=history)
+        generation = self._prepare_answer(
+            question,
+            history=history,
+            current_user=current_user,
+        )
         answer = generation.direct_answer
         if answer is None:
             try:
@@ -736,9 +1019,14 @@ class ChatService:
         question: str,
         *,
         history: list[ChatHistoryMessage] | None = None,
+        current_user: User | None = None,
     ) -> Iterator[tuple[str, str | list[ChatSource] | None]]:
         """Yield generated text deltas followed by the response sources."""
-        generation = self._prepare_answer(question, history=history)
+        generation = self._prepare_answer(
+            question,
+            history=history,
+            current_user=current_user,
+        )
         if generation.direct_answer is not None:
             yield "delta", generation.direct_answer
         else:
@@ -790,6 +1078,7 @@ class ChatService:
         question: str,
         *,
         history: list[ChatHistoryMessage] | None = None,
+        current_user: User | None = None,
     ) -> ChatGeneration:
         # Keep vendor data stable and query it at most once per answer.
         self._vendor_rows_cache = None
@@ -826,6 +1115,23 @@ class ChatService:
             )
         else:
             routing_question = self._resolve_routing_question(question, history)
+
+        # Preferences are only needed for personalised recommendations and the
+        # SQL/hybrid alignment note, so load them at most once per answer.
+        preferences = self._load_preferences(current_user)
+
+        if (
+            preferences is not None
+            and self._is_personal_recommendation_request(routing_question)
+        ):
+            recommendation = self._prepare_recommendation(
+                effective_question,
+                preferences,
+                history,
+            )
+            if recommendation is not None:
+                return recommendation
+
         if self._router is None:
             logger.info("No intent router configured; using Vector path")
             return self._prepare_vector(
@@ -872,6 +1178,7 @@ class ChatService:
                 match,
                 history,
                 routing_question,
+                preferences=preferences,
             )
         if match.search_type == "SQL + Vector":
             return self._prepare_hybrid(
@@ -880,6 +1187,7 @@ class ChatService:
                 history,
                 routing_question,
                 query_vector=match.query_vector,
+                preferences=preferences,
             )
         return self._prepare_vector(
             effective_question,
@@ -1032,6 +1340,111 @@ class ChatService:
             return question
         return resolved or question
 
+    def _load_preferences(
+        self,
+        current_user: User | None,
+    ) -> UserFoodPreferences | None:
+        """Return completed preferences for the request user, if any."""
+
+        if current_user is None or self._session is None:
+            return None
+        preferences = self._session.scalar(
+            select(UserFoodPreferences).where(
+                UserFoodPreferences.user_id == current_user.id
+            )
+        )
+        if preferences is None or preferences.onboarding_status != "completed":
+            return None
+        return preferences
+
+    def _is_personal_recommendation_request(self, question: str) -> bool:
+        """Return whether the question asks for preference-based picks.
+
+        Only generic asks qualify. A named (or likely vendor-named) object, or
+        any explicit cuisine/location/dietary/budget scope, keeps normal
+        SQL/Vector routing so specific queries are not replaced by preference
+        ranking.
+        """
+
+        if _RECOMMENDATION_REQUEST_RE.search(question) is None:
+            return False
+        if self._match_vendor_names(question):
+            return False
+        if not _recommendation_target_is_generic(question):
+            return False
+        return not _has_scope_constraint(extract_structured_filters(question))
+
+    def _prepare_recommendation(
+        self,
+        question: str,
+        preferences: UserFoodPreferences,
+        history: list[ChatHistoryMessage],
+    ) -> ChatGeneration | None:
+        """Rank vendors by preference, or return None to use normal routing."""
+
+        if self._recommend_fn is None:
+            return None
+
+        try:
+            recommendations = self._recommend_fn(preferences)
+        except Exception:
+            logger.warning(
+                "Vendor recommendation failed; falling back to normal routing",
+                exc_info=True,
+            )
+            return None
+
+        if not recommendations:
+            logger.info(
+                "No vendor recommendations matched the user's preferences; "
+                "falling back to normal routing"
+            )
+            return None
+
+        logger.info(
+            "Personalised recommendation path returned %d vendor(s)",
+            len(recommendations),
+        )
+        context = format_recommendation_context(recommendations, preferences)
+        prompt = build_prompt(
+            question,
+            context,
+            template=RECOMMENDATION_PROMPT,
+            history=history,
+        )
+        return ChatGeneration(
+            prompt=prompt,
+            sources=[
+                self._to_recommendation_source(recommendation)
+                for recommendation in recommendations
+            ],
+            search_type="Recommendation",
+            intent="vendor_recommendation",
+        )
+
+    @staticmethod
+    def _to_recommendation_source(
+        recommendation: VendorRecommendation,
+    ) -> ChatSource:
+        vendor = recommendation.vendor
+        rating = (
+            vendor.average_rating
+            if vendor.average_rating is not None
+            else vendor.average_google_rating
+        )
+        return ChatSource(
+            source_type="vendor",
+            source_id=str(vendor.id) if vendor.id is not None else None,
+            vendor_id=vendor.id,
+            vendor_name=vendor.name,
+            location=vendor.location,
+            unit_code=vendor.unit_code,
+            category=vendor.category,
+            price_range=vendor.price_range,
+            opening_hours=vendor.opening_hours,
+            rating=None if rating is None else float(rating),
+        )
+
     def _prepare_vector(
         self,
         question: str,
@@ -1096,6 +1509,8 @@ class ChatService:
         match: IntentMatch,
         history: list[ChatHistoryMessage],
         retrieval_question: str,
+        *,
+        preferences: UserFoodPreferences | None = None,
     ) -> ChatGeneration:
         filters = self._resolve_filters(retrieval_question)
         if filters.vendor_names:
@@ -1168,6 +1583,9 @@ class ChatService:
                     query_vector=match.query_vector,
                 )
         context = format_sql_context(results)
+        preference_note = _preference_alignment_note(preferences)
+        if preference_note:
+            context = f"{context}\n\n{preference_note}"
         prompt = build_prompt(
             question,
             context,
@@ -1189,6 +1607,7 @@ class ChatService:
         retrieval_question: str,
         *,
         query_vector: list[float] | None,
+        preferences: UserFoodPreferences | None = None,
     ) -> ChatGeneration:
         filters = self._resolve_filters(retrieval_question)
         if filters.vendor_names:
@@ -1254,6 +1673,9 @@ class ChatService:
             {result.vendor_id for result in results if result.vendor_id is not None}
         )
         context = format_context(results, vendor_names)
+        preference_note = _preference_alignment_note(preferences)
+        if preference_note:
+            context = f"{context}\n\n{preference_note}"
         prompt = build_prompt(
             question,
             context,

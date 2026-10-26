@@ -61,13 +61,14 @@ class CapturingMatchChatService(ChatService):
         super().__init__(*args, **kwargs)
         self.sql_match: IntentMatch | None = None
 
-    def _prepare_sql(self, question, match, history, retrieval_question):
+    def _prepare_sql(self, question, match, history, retrieval_question, **kwargs):
         self.sql_match = match
         return super()._prepare_sql(
             question,
             match,
             history,
             retrieval_question,
+            **kwargs,
         )
 
 
