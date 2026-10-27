@@ -1,12 +1,16 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from app.schemas.chat import ChatHistoryMessage
 from app.services.llm_routing import (
     _parse_filter_json,
     build_filter_extractor,
     build_question_rewriter,
+    build_query_resolver,
 )
+from app.services.query_resolution import ResolvedQuery
 
 
 class _FakeModels:
@@ -53,6 +57,77 @@ def test_build_question_rewriter_handles_empty_response() -> None:
     rewrite = build_question_rewriter(client)
 
     assert rewrite("it?", []) == ""
+
+
+def test_build_question_rewriter_prompt_describes_list_and_typo_rules() -> None:
+    client = _FakeClient("Are McDonald's, Subway, and Popeyes halal?")
+    rewrite = build_question_rewriter(client)
+    history = [
+        ChatHistoryMessage(
+            role="assistant",
+            content="Halal at North Spine: McDonald's, Subway, Popeyes.",
+        ),
+    ]
+
+    result = rewrite("which of those is halal", history)
+
+    assert result == "Are McDonald's, Subway, and Popeyes halal?"
+    _, prompt = client.models.calls[0]
+    assert "exact vendor names" in prompt
+    assert "including misspellings" in prompt
+    assert "halaal" in prompt
+    assert "previously recommended food vendors" in prompt
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Sure, here is the rewritten question: Which of those is halal?",
+        '"Which of those is halal?"',
+        "```\nWhich of those is halal?\n```",
+        "```text\nWhich of those is halal?\n```",
+    ],
+)
+def test_build_question_rewriter_cleans_wrappers(text: str) -> None:
+    client = _FakeClient(text)
+    rewrite = build_question_rewriter(client)
+
+    assert rewrite("which of those is halal", []) == "Which of those is halal?"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Which of those is halal?\nIt refers to the previous list.",
+        '{"question": "Which of those is halal?"}',
+        "Rewrite the user's latest question: Which of those is halal?",
+    ],
+)
+def test_build_question_rewriter_rejects_unsafe_output(text: str) -> None:
+    client = _FakeClient(text)
+    rewrite = build_question_rewriter(client)
+
+    assert rewrite("which of those is halal", []) == ""
+
+
+def test_build_question_rewriter_removes_list_reference_meta() -> None:
+    client = _FakeClient(
+        "Which of the previously recommended food vendors at North Spine "
+        "are Halal?"
+    )
+    rewrite = build_question_rewriter(client)
+
+    assert (
+        rewrite("which of those is halal", [])
+        == "Which of the food vendors at North Spine are Halal?"
+    )
+
+
+def test_build_question_rewriter_preserves_vendor_name_typos() -> None:
+    client = _FakeClient("Is paiks bibimm halal?")
+    rewrite = build_question_rewriter(client)
+
+    assert rewrite("is paiks bibimm halal", []) == "Is paiks bibimm halal?"
 
 
 def test_build_filter_extractor_parses_vendor_names() -> None:
@@ -121,6 +196,27 @@ def test_parse_filter_json_preserves_existing_cuisine_behavior() -> None:
     assert filters.vendor_names is None
 
 
+@pytest.mark.parametrize(
+    "cuisine",
+    [
+        "Previously Recommended",
+        "previously recommended",
+        "Listed",
+        "the above",
+        "Suggested food",
+        "those",
+    ],
+)
+def test_parse_filter_json_rejects_list_reference_cuisines(
+    cuisine: str,
+) -> None:
+    filters = _parse_filter_json(
+        json.dumps({"cuisine": cuisine})
+    )
+
+    assert filters.cuisine is None
+
+
 def test_parse_filter_json_rejects_unsupported_filter_enums() -> None:
     filters = _parse_filter_json(
         '{"budget": "free", "open_hours": "whenever", "sort": "random"}'
@@ -179,3 +275,37 @@ def test_parse_filter_json_rejects_non_string_query_kind_without_raising(
             '{"query_kind": ' + json.dumps(value) + "}"
         )
         assert filters.query_kind == "list"
+
+
+def test_semantic_resolver_uses_json_schema_and_actual_context():
+    calls = []
+    payload = {"target": "food", "reference": "picker", "question": "Where can I find salad?", "food_type": "Salad"}
+
+    def generate_content(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(text=json.dumps(payload))
+
+    resolve = build_query_resolver(SimpleNamespace(models=SimpleNamespace(generate_content=generate_content)), model="test-model")
+    result = resolve("那去哪儿能吃到？", [ChatHistoryMessage(role="assistant", content="Earlier you drew Pizza")],
+                     food_pick="Salad", vendors=[(2, "The Crowded Bowl")])
+    assert result.target == "food" and result.reference == "picker"
+    schema = calls[0]["config"].response_schema
+    assert "food" in schema["properties"]["target"]["enum"]
+    assert "vendor_names" in schema["properties"] and "food_type" in schema["properties"]
+    assert "additionalProperties" not in json.dumps(schema)
+    assert calls[0]["config"].response_mime_type == "application/json"
+    assert '"current_picker_food": "Salad"' in calls[0]["contents"]
+    assert "那去哪儿能吃到？" in calls[0]["contents"]
+    assert "The Crowded Bowl" in calls[0]["contents"]
+
+
+def test_semantic_resolver_fails_closed_on_invalid_json_or_provider_error():
+    for response in ["Salad in NTU? Please recommend places", '{"target":"vendor","reference":"picker","question":"Where?","vendor_names":["Salad"]}']:
+        client = SimpleNamespace(models=SimpleNamespace(generate_content=lambda **kwargs: SimpleNamespace(text=response)))
+        assert build_query_resolver(client)("Where?", [], food_pick="Salad", vendors=[]) is None
+
+    def fail(**kwargs):
+        raise TimeoutError("provider unavailable")
+
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=fail))
+    assert build_query_resolver(client)("Where?", [], food_pick="Salad", vendors=[]) is None

@@ -29,6 +29,23 @@ The knowledge base is **unified**: internal reviews and external data
 
 ## Architecture
 
+HTTP chat requests first use `query_resolution.ResolvedQuery`, produced with
+Gemini's JSON schema output. It separates food searches, named businesses,
+picker-result memory, general conversation and requests needing clarification.
+Food types and vendor names have separate fields; the standalone retrieval
+question is never treated as a vendor name.
+
+The plan also identifies whether it refers to the current question, current
+picker state or conversation. Entity names must be grounded in that original
+input/context. The current picker state replaces earlier draws; explicit new
+topics do not inherit the old pick. Invalid plans ask for clarification rather
+than rerunning vendor-name heuristics on rewritten prose.
+
+Validated constraints restrict both SQL and review retrieval. Food suggestions
+require supporting names, categories, dishes or review text. Empty results keep
+their constraints and do not retry with a broader interpretation. The legacy
+router/rewriter injection is retained only for standalone service callers.
+
 ![RAG Chatbot](../diagrams/chatbot_rag.jpg)
 
 ## Technology choices
@@ -54,6 +71,10 @@ New settings in `app/core/config.py` (all overridable via environment, see
 | `embedding_dimensions` | `768` | Vector dimensionality (fixed per model) |
 | `embedding_batch_size` | `100` | Chunks embedded per API call |
 | `chat_model` | `gemini-3.5-flash-lite` | Chat model id (exact id configurable) |
+| `chat_request_timeout_ms` | `20000` | Per-request Gemini deadline, also sent as `X-Server-Timeout` |
+| `chat_retry_attempts` | `3` | Attempts per interactive call for transient 429/5xx or dropped connections |
+| `chat_retry_initial_delay_ms` | `250` | First backoff delay; doubles per attempt |
+| `chat_retry_max_delay_ms` | `2000` | Backoff ceiling, kept small because the browser waits on the answer |
 | `vector_top_k` | `8` | Chunks retrieved per query |
 
 Environment additions in `apps/api/.env.example`:
@@ -64,6 +85,10 @@ EMBEDDING_MODEL=gemini-embedding-001
 EMBEDDING_DIMENSIONS=768
 EMBEDDING_BATCH_SIZE=100
 CHAT_MODEL=gemini-3.5-flash-lite
+CHAT_REQUEST_TIMEOUT_MS=20000
+CHAT_RETRY_ATTEMPTS=3
+CHAT_RETRY_INITIAL_DELAY_MS=250
+CHAT_RETRY_MAX_DELAY_MS=2000
 VECTOR_TOP_K=8
 ```
 

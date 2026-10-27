@@ -118,6 +118,27 @@ function configureSession(context, accessToken = "test-access-token") {
   });
 }
 
+test("the latest picker result is sent as context without changing the question or persisting", async (context) => {
+  configureSession(context, null);
+  const originalFetch = globalThis.fetch;
+  context.after(() => { globalThis.fetch = originalFetch; });
+  const requests = [];
+  globalThis.fetch = async (_path, options) => {
+    requests.push(JSON.parse(options.body));
+    return streamResponse(['event: delta\ndata: "A food idea."\n\nevent: sources\ndata: []\n\n']);
+  };
+  await streamChat("What did I roll?", { foodPick: "Roti prata" });
+  await streamChat("What did I roll?");
+  await streamChat("", { foodPick: "Poke bowls", action: "recommend_pick" });
+  assert.equal(requests[0].question, "What did I roll?");
+  assert.equal(requests[0].food_pick, "Roti prata");
+  assert.deepEqual(requests[0].history, []);
+  assert.equal("food_pick" in requests[1], false);
+  assert.equal(requests[2].action, "recommend_pick");
+  assert.equal(requests[2].food_pick, "Poke bowls");
+  assert.equal("question" in requests[2], false);
+});
+
 test("streamChat sends auth and incrementally parses fragmented SSE events", async (context) => {
   configureSession(context, "42");
   const originalFetch = globalThis.fetch;

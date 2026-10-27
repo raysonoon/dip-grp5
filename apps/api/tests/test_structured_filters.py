@@ -342,6 +342,62 @@ def test_location_and_open_hours_words_never_become_cuisine(
 @pytest.mark.parametrize(
     "question",
     [
+        "Which of the previously recommended food vendors at North Spine are Halal?",
+        "Which of the listed food places are halal?",
+        "Which of the above food vendors are halal?",
+        "Which of the recommended food vendors are halal?",
+        "Which of the suggested food places are cheap?",
+        "Which of those food places are halal?",
+        "Which of the remaining food vendors are open?",
+        "Which of the same food places are halal?",
+        "Which of the other food vendors are halal?",
+        "Which of the first food places are halal?",
+        "Which of the following food places are halal?",
+        "Which of the previously mentioned food places are halal?",
+        "newly opened food places",
+    ],
+)
+def test_list_reference_language_never_becomes_cuisine(
+    question: str,
+) -> None:
+    filters = extract_structured_filters(question)
+    assert filters.cuisine is None, question
+    assert filters.exclude_cuisine is None, question
+
+
+def test_previously_recommended_keeps_real_location_and_dietary_filters() -> None:
+    filters = extract_structured_filters(
+        "Which of the previously recommended food vendors at North Spine are Halal?"
+    )
+
+    assert filters.cuisine is None
+    assert filters.location == "North Spine"
+    assert filters.halal is True
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("recommended Vietnamese food", "Vietnamese"),
+        ("suggested Vietnamese food", "Vietnamese"),
+        ("listed Vietnamese food", "Vietnamese"),
+        ("previously mentioned Vietnamese food", "Vietnamese"),
+        ("the remaining Korean food", "Korean"),
+        ("any other Vietnamese food", "Vietnamese"),
+        ("those Vietnamese food places", "Vietnamese"),
+        ("the above Vietnamese food", "Vietnamese"),
+    ],
+)
+def test_reference_modifiers_are_stripped_before_a_real_cuisine(
+    question: str,
+    expected: str,
+) -> None:
+    assert extract_structured_filters(question).cuisine == expected
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
         "How many halal places are there?",
         "top 10 best stalls",
         "Where can I find halal food?",
