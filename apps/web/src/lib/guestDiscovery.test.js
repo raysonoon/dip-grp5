@@ -135,3 +135,84 @@ test("preference options come from the real catalog and exclude duplicate, missi
     vendor(5, { category: "Demo", location: "Demo Canteen" }),
   ]), { categories: ["Cafe", "Chinese restaurant"], locations: ["North Spine", "South Spine"] });
 });
+
+test("GPS alone ranks by user-to-vendor distance without requiring a named area", () => {
+  const catalog = [
+    vendor(1, { location: "Far away", average_rating: 5, map_coordinates: { lat: 1.36, lng: 103.68 } }),
+    vendor(2, { location: "Nearby", map_coordinates: { lat: 1.3501, lng: 103.68 } }),
+    vendor(3, { location: "No coordinates" }),
+  ];
+  const result = recommendGuestVendors(catalog, { userLocation: { lat: 1.35, lng: 103.68 } });
+  assert.deepEqual(ids(result), [2, 1, 3]);
+  assert.ok(Math.abs(result[0].discovery_distance_m - 11.12) < 0.1);
+  assert.equal(result[0].discovery_distance_from, "you");
+  assert.equal(result[0].discovery_distance_source, "gps");
+  assert.equal(result[2].discovery_distance_m, null);
+  assert.equal(result[2].discovery_distance_from, null);
+});
+
+test("GPS joins selected areas and each result identifies its actual nearest reference", () => {
+  const catalog = [
+    vendor(1, { location: "Area A", map_coordinates: { lat: 1.35, lng: 103.68 } }),
+    vendor(2, { location: "Near user", map_coordinates: { lat: 1.3601, lng: 103.68 } }),
+  ];
+  const result = recommendGuestVendors(catalog, {
+    locations: ["Area A"], userLocation: { lat: 1.36, lng: 103.68 },
+  });
+  const areaPick = result.find((item) => item.id === 1);
+  const gpsPick = result.find((item) => item.id === 2);
+  assert.equal(areaPick.discovery_distance_m, 0);
+  assert.equal(areaPick.discovery_distance_from, "Area A");
+  assert.equal(areaPick.discovery_distance_source, "area");
+  assert.ok(gpsPick.discovery_distance_m < 12);
+  assert.equal(gpsPick.discovery_distance_from, "you");
+  assert.equal(gpsPick.discovery_distance_source, "gps");
+});
+
+test("area fallback names the actual closest selected area when GPS is absent", () => {
+  const catalog = [
+    vendor(1, { location: "Area A", map_coordinates: { lat: 1.35, lng: 103.68 } }),
+    vendor(2, { location: "Area B", map_coordinates: { lat: 1.36, lng: 103.68 } }),
+    vendor(3, { location: "Near B", map_coordinates: { lat: 1.3601, lng: 103.68 } }),
+  ];
+  const pick = recommendGuestVendors(catalog, { locations: ["Area A", "Area B"], userLocation: null })
+    .find((item) => item.id === 3);
+  assert.equal(pick.discovery_distance_from, "Area B");
+  assert.equal(pick.discovery_distance_source, "area");
+  assert.ok(pick.discovery_distance_m < 12);
+});
+
+test("invalid GPS values fall back to selected areas without NaN distances", () => {
+  const catalog = [vendor(1, { location: "Area A", map_coordinates: { lat: 1.35, lng: 103.68 } })];
+  for (const userLocation of [{ lat: NaN, lng: 103.68 }, { lat: 91, lng: 0 }, { lat: 0, lng: -181 }, { lat: "1.35", lng: 103.68 }, {}]) {
+    const [pick] = recommendGuestVendors(catalog, { locations: ["Area A"], userLocation });
+    assert.equal(pick.discovery_distance_m, 0);
+    assert.equal(pick.discovery_distance_from, "Area A");
+    assert.equal(pick.discovery_distance_source, "area");
+    const [withoutArea] = recommendGuestVendors(catalog, { userLocation });
+    assert.equal(withoutArea.discovery_distance_m, null);
+  }
+});
+
+test("zero-valued GPS coordinates are valid and an exact GPS tie is labelled from you", () => {
+  const catalog = [vendor(1, { location: "Area A", map_coordinates: { lat: 0, lng: 0 } })];
+  const [pick] = recommendGuestVendors(catalog, { locations: ["Area A"], userLocation: { lat: 0, lng: 0 } });
+  assert.equal(pick.discovery_distance_m, 0);
+  assert.equal(pick.discovery_distance_from, "you");
+  assert.equal(pick.discovery_distance_source, "gps");
+});
+
+test("GPS proximity preserves food preferences and strict dietary filtering", () => {
+  const catalog = [
+    vendor(1, { halal: true, vegetarian: true, category: "Cafe", map_coordinates: { lat: 1.35, lng: 103.68 } }),
+    vendor(2, { halal: true, vegetarian: true, map_coordinates: { lat: 1.3501, lng: 103.68 } }),
+    vendor(3, { halal: false, vegetarian: true, map_coordinates: { lat: 1.35, lng: 103.68 } }),
+    vendor(4, { halal: true, vegetarian: false, map_coordinates: { lat: 1.35, lng: 103.68 } }),
+  ];
+  const result = recommendGuestVendors(catalog, {
+    userLocation: { lat: 1.35, lng: 103.68 }, categories: ["Chinese restaurant"], halal: true, vegetarian: true,
+  });
+  assert.deepEqual(ids(result), [2, 1]);
+  assert.ok(result.every((item) => item.discovery_distance_from === "you"));
+  assert.deepEqual(ids(catalog), [1, 2, 3, 4]);
+});

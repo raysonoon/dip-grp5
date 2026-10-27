@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, Leaf, MapPin, SlidersHorizontal, Sparkles, Star, Store, Utensils } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Leaf, LocateFixed, MapPin, SlidersHorizontal, Sparkles, Star, Store, Utensils } from "lucide-react";
 import { apiUrl } from "../api/client";
 import { fetchVendors, type parseVendor } from "../api/vendors";
 import { guestDiscoveryOptions, recommendGuestVendors } from "../lib/guestDiscovery.js";
@@ -10,6 +10,7 @@ import { formatDistance } from "../lib/vendorRanking.js";
 type Vendor = ReturnType<typeof parseVendor>;
 type Recommendation = Vendor & {
   discovery_distance_m: number | null;
+  discovery_distance_from: string | null;
   discovery_category_match: boolean;
   discovery_location_match: boolean;
 };
@@ -22,11 +23,52 @@ export default function GuestDiscoverPage() {
   const [attempt, setAttempt] = useState(0);
   const [categories, setCategories] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoStatus, setGeoStatus] = useState<"idle" | "requesting" | "granted" | "denied" | "unavailable">("idle");
   const [halal, setHalal] = useState(false);
   const [vegetarian, setVegetarian] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const locationRequestRef = useRef(0);
+
+  useEffect(() => () => { locationRequestRef.current += 1; }, []);
+
+  function requestLocation() {
+    const requestId = ++locationRequestRef.current;
+    setUserLocation(null);
+    if (!navigator.geolocation) {
+      setGeoStatus("unavailable");
+      return;
+    }
+    setGeoStatus("requesting");
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          if (requestId !== locationRequestRef.current) return;
+          const point = { lat: position.coords.latitude, lng: position.coords.longitude };
+          if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng) || Math.abs(point.lat) > 90 || Math.abs(point.lng) > 180) {
+            setGeoStatus("unavailable");
+            return;
+          }
+          setUserLocation(point);
+          setGeoStatus("granted");
+        },
+        (cause) => {
+          if (requestId === locationRequestRef.current) setGeoStatus(cause.code === 1 ? "denied" : "unavailable");
+        },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
+      );
+    } catch {
+      setGeoStatus("unavailable");
+    }
+  }
+
+  function clearLocation() {
+    locationRequestRef.current += 1;
+    setUserLocation(null);
+    setGeoStatus("idle");
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -49,9 +91,17 @@ export default function GuestDiscoverPage() {
   }, [showResults]);
 
   const options = guestDiscoveryOptions(vendors);
-  const recommendations: Recommendation[] = recommendGuestVendors(vendors, { categories, locations, halal, vegetarian });
-  const selected = [...categories, ...locations, halal ? "Halal" : "", vegetarian ? "Vegetarian" : ""].filter(Boolean);
-  const hasRankingPreferences = categories.length > 0 || locations.length > 0;
+  const recommendations: Recommendation[] = recommendGuestVendors(vendors, { categories, locations, halal, vegetarian, userLocation });
+  const selected = [...categories, ...locations, userLocation ? "Your current location" : "", halal ? "Halal" : "", vegetarian ? "Vegetarian" : ""].filter(Boolean);
+  const hasDistancePreference = userLocation != null || locations.length > 0;
+  const hasRankingPreferences = categories.length > 0 || hasDistancePreference;
+  const distanceReferences = [...(userLocation ? ["you"] : []), ...locations].join(" or ");
+  const locationFallback = locations.length ? `Using ${locations.join(" or ")} instead.` : "Choose a named area above to find nearby places.";
+  const locationStatus = geoStatus === "requesting" ? "Finding your current location…"
+    : geoStatus === "granted" ? locations.length ? "Your current location is included. Each distance shows its closest starting point: you or a selected area." : "Distances are measured from your current location."
+    : geoStatus === "denied" ? `Location access was denied. ${locationFallback}`
+    : geoStatus === "unavailable" ? `We couldn't find your current location. ${locationFallback}`
+    : "Optional. Include places near you, or choose named areas above.";
 
   return (
     <div className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-6 sm:py-14">
@@ -88,6 +138,15 @@ export default function GuestDiscoverPage() {
           </div>
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Pick as many as you like, or leave everything open. Your food types and nearby places come first; other spots stay on the list.</p>
 
+          <fieldset className="mt-6 rounded-2xl border border-border p-4">
+            <legend className="px-1 text-sm font-semibold">Near you (optional)</legend>
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" disabled={geoStatus === "requesting"} onClick={requestLocation} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-semibold hover:bg-muted disabled:cursor-wait disabled:opacity-60"><LocateFixed size={16} className="text-primary" aria-hidden="true" />{geoStatus === "requesting" ? "Finding your location…" : "Use my current location"}</button>
+              {(userLocation || geoStatus === "requesting") && <button type="button" onClick={clearLocation} className="cursor-pointer rounded-xl px-3 py-2 text-xs font-semibold text-muted-foreground underline-offset-4 hover:underline">{geoStatus === "requesting" ? "Cancel location request" : "Clear current location"}</button>}
+            </div>
+            <p role="status" className="mt-3 text-xs leading-relaxed text-muted-foreground">{locationStatus}</p>
+          </fieldset>
+
           <fieldset className="mt-7 border-t border-border pt-6">
             <legend className="float-left mb-3 flex w-full items-center gap-2 text-sm font-semibold"><Leaf size={17} className="text-primary" aria-hidden="true" /> Any dietary preferences?</legend>
             <div className="clear-both flex flex-wrap gap-3">
@@ -118,7 +177,7 @@ export default function GuestDiscoverPage() {
                 {(selected.length ? selected : ["Open to anything"]).map((value) => <span key={value} className="rounded-full bg-primary/5 px-3 py-1 text-xs font-semibold text-primary">{value}</span>)}
               </div>
               <p role="status" className="mt-3 text-xs leading-relaxed text-muted-foreground">{recommendations.length} {recommendations.length === 1 ? "place" : "places"} to explore. {hasRankingPreferences ? "Food preferences and proximity first, with other places included." : "Best rated first."}</p>
-              {locations.length > 0 && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Approximate straight-line distance from the centre of your nearest selected area.</p>}
+              {hasDistancePreference && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Nearest from {distanceReferences}. Approximate straight-line distances; named areas use their centres.</p>}
             </div>
             <button type="button" onClick={() => setShowResults(false)} className="flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-muted"><SlidersHorizontal size={15} aria-hidden="true" /> Change preferences</button>
           </div>
@@ -143,7 +202,7 @@ export default function GuestDiscoverPage() {
                         <h2 className="mt-2 font-display text-lg font-bold leading-snug">{vendor.name}</h2>
                         <p className="mt-1 text-xs text-muted-foreground">{vendor.category || "Food"}</p>
                         {vendor.discovery_category_match && <p className="mt-3 text-xs font-semibold text-primary">One of your food types</p>}
-                        {locations.length > 0 && <p className="mt-2 text-xs text-muted-foreground">{vendor.discovery_distance_m != null ? `~${formatDistance(vendor.discovery_distance_m)} from your nearest selected area` : vendor.discovery_location_match ? "In one of your selected areas" : "Distance unavailable"}</p>}
+                        {hasDistancePreference && <p className="mt-2 text-xs text-muted-foreground">{vendor.discovery_distance_m != null ? `~${formatDistance(vendor.discovery_distance_m)} from ${vendor.discovery_distance_from}` : vendor.discovery_location_match ? `In ${vendor.location}` : "Distance unavailable"}</p>}
                         {rating != null && <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold"><Star size={13} className="fill-primary text-primary" aria-hidden="true" /> {rating.toFixed(1)} <span className="font-normal text-muted-foreground">{vendor.average_rating != null ? "Community rating" : "Google rating"}</span></p>}
                         {(halal || vegetarian) && <p className="mt-3 flex items-center gap-1.5 text-xs text-primary"><Check size={13} aria-hidden="true" /> {[halal && "Halal", vegetarian && "Vegetarian"].filter(Boolean).join(" · ")}</p>}
                         <Link to={`/vendors/${vendor.id}`} className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90">View vendor <ArrowRight size={15} aria-hidden="true" /></Link>
