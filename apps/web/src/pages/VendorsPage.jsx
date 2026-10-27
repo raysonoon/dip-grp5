@@ -16,6 +16,7 @@ import {
 } from "../api/reviews";
 import { fetchMyReviews } from "../api/account.js";
 import { fetchVendorById } from "../api/vendors";
+import VendorFavouriteButton from "../components/VendorFavouriteButton";
 
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -794,6 +795,7 @@ export default function VendorsPage() {
           {[location, category].filter(Boolean).join(" | ")}
           {displayedRating != null ? ` | ⭐ ${displayedRating}` : ""}
         </p>
+        <VendorFavouriteButton key={`${user?.id ?? "guest"}:${numericVendorId}`} vendorId={numericVendorId} />
       </div>
 
       <section className="mb-8 bg-card border border-border p-5 rounded-xl">

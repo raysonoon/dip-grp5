@@ -7,6 +7,7 @@ more tables.
 | Table | Model file | Purpose |
 | --- | --- | --- |
 | `users` | `user.py` | Registered app users |
+| `user_favourites` | `user_favourite.py` | Saved vendors for each user |
 | `vendors` | `vendor.py` | Food stalls / vendors |
 | `vendor_images` | `vendor.py` | Ordered images for a vendor |
 | `reviews` | `review.py` | Community reviews written by users |
@@ -41,6 +42,13 @@ Constraints / indexes:
 - `role_allowed`: `role IN ('user', 'admin')`
 - `email_canonical_matches_address`: `email_canonical = lower(trim(email_address))`
 - `uq_users_email_canonical`: unique index on `email_canonical`
+
+## `user_favourites`
+
+Each `(user_id, vendor_id)` pair is a composite primary key. Both columns are
+foreign keys with `ON DELETE CASCADE`; `created_at` is a non-null timestamptz.
+An index on `(user_id, created_at, vendor_id)` supports recent-first pagination.
+Re-favouriting atomically refreshes `created_at` without creating duplicates.
 
 ## `vendors`
 

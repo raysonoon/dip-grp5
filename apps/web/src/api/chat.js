@@ -128,6 +128,7 @@ function parseSources(value) {
 export const CHAT_IDLE_TIMEOUT_MS = 30_000;
 export const CHAT_REQUEST_TIMEOUT_MS = 30_000;
 
+/** @returns {Promise<ReturnType<typeof parseChatResponse>>} */
 export async function streamChat(
   question,
   /** @type {{ history?: Array<{ role: "user" | "assistant", content: string }>, sessionId?: string, signal?: AbortSignal, onDelta?: (delta: string, answer: string) => void, idleTimeoutMs?: number, timeoutMs?: number }} */
