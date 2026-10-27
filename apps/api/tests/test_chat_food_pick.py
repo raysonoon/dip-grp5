@@ -78,7 +78,7 @@ def test_stream_route_passes_latest_pick_without_server_session_storage(client):
     calls = []
 
     class Service:
-        def stream_answer(self, question, *, history=None, food_pick=None):
+        def stream_answer(self, question, *, history=None, food_pick=None, current_user=None):
             calls.append((question, food_pick))
             yield "delta", "A food idea."
             yield "sources", []
@@ -107,7 +107,7 @@ def test_picker_action_requires_a_pick_but_does_not_require_a_fake_question(clie
     calls = []
 
     class Service:
-        def stream_answer(self, question, *, history=None, food_pick=None, recommend_pick=False):
+        def stream_answer(self, question, *, history=None, food_pick=None, recommend_pick=False, current_user=None):
             calls.append((question, food_pick, recommend_pick))
             yield "delta", "A matching vendor."
             yield "sources", []

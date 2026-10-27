@@ -34,6 +34,7 @@ def stream_chat(
             for event, data in service.stream_answer(
                 payload.question or "",
                 history=payload.history,
+                current_user=_current_user,
                 **picker_context,
             ):
                 if event == "sources":

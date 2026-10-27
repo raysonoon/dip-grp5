@@ -25,6 +25,7 @@ from app.services.retrieval import KnowledgeStore, PgvectorKnowledgeStore
 from app.services.review_knowledge import InternalReviewKnowledgeSync
 from app.services.sql_search import PgSqlStore
 from app.services.structured_filters import StructuredFilter
+from app.services.vendor_recommender import VendorRecommender
 
 
 DbSession = Annotated[Session, Depends(get_db)]
@@ -135,6 +136,7 @@ def get_chat_service(
         query_resolver=query_resolver,
         semantic_routing=True,
         session=session,
+        recommend_fn=VendorRecommender(session, embedder).recommend,
     )
 
 
