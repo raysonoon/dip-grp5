@@ -275,6 +275,10 @@ The API takes `user_id` from the authenticated Supabase token; it does not accep
 `user_id` in the request body. An omitted or whitespace-only comment is stored
 as `NULL`, so rating-only reviews are supported.
 
+Each user can review a food stall only once (a `UNIQUE(user_id, vendor_id)`
+constraint on `reviews`). A second `POST /reviews` for the same stall returns
+`409 Conflict`; edit or delete the existing review instead.
+
 ### Read reviews
 
 Reading community reviews is public and does not require authentication:
@@ -306,10 +310,12 @@ includes `total`, `limit`, and `offset` so the frontend can build pagination.
 ### Read your own reviews
 
 `GET /auth/me/reviews` requires a Supabase bearer token and returns the signed-in
-user's reviews, newest first. It is used by the Account page.
+user's reviews, newest first. It is used by the Account page, and by the
+vendor page to find the user's existing review of that stall.
 
 | Query parameter | Default | Purpose |
 | --- | ---: | --- |
+| `vendor_id` | none | Return only your review of one food stall |
 | `limit` | `10` | Number of reviews to return; maximum `100` |
 | `offset` | `0` | Number of reviews to skip for pagination |
 

@@ -137,6 +137,11 @@ export async function fetchVendorReviews(vendorId, { limit = 10, offset = 0, sig
   return parseReviewList(payload);
 }
 
+export async function fetchReview(reviewId, { signal } = {}) {
+  const payload = await apiClient.get(`/reviews/${reviewId}`, { auth: "optional", signal });
+  return parseReviewDetail(payload);
+}
+
 export function createReview(review) {
   return apiClient.post("/reviews", review, { authMessage: REVIEW_AUTH_MESSAGE });
 }

@@ -32,6 +32,11 @@ class Review(Base):
             "rating_half_steps BETWEEN 2 AND 10",
             name="rating_half_steps_range",
         ),
+        UniqueConstraint(
+            "user_id",
+            "vendor_id",
+            name="uq_reviews_user_vendor",
+        ),
         Index("ix_reviews_user_id", "user_id"),
         Index("ix_reviews_vendor_created_at", "vendor_id", "created_at"),
     )

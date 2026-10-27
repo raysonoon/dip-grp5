@@ -6,6 +6,7 @@ import {
   createReview,
   deleteReview,
   deleteReviewImage,
+  fetchReview,
   fetchVendorReviews,
   reorderReviewImage,
   reviewImageUrl,
@@ -13,6 +14,7 @@ import {
   uploadReviewImage,
   voteReview,
 } from "../api/reviews";
+import { fetchMyReviews } from "../api/account.js";
 import { fetchVendorById } from "../api/vendors";
 
 const MAX_IMAGES = 5;
@@ -178,6 +180,7 @@ export default function VendorsPage() {
     loading: authLoading,
   } = useAuth();
   const canVote = !authLoading && user !== null;
+  const signedInUserId = canVote ? user.id : null;
   const { vendorId } = useParams();
   const numericVendorId = Number(vendorId);
   const isValidVendorId = Number.isInteger(numericVendorId) && numericVendorId > 0;
@@ -209,6 +212,11 @@ export default function VendorsPage() {
   const [comment, setComment] = useState("");
   const [newFiles, setNewFiles] = useState([]);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
+
+  // The signed-in user's own review of this vendor, if any (one per vendor).
+  const [myReview, setMyReview] = useState(null);
+  const [isMyReviewLoading, setIsMyReviewLoading] = useState(false);
+  const [myReviewReload, setMyReviewReload] = useState(0);
 
   useEffect(() => {
     if (!isValidVendorId) {
@@ -268,6 +276,40 @@ export default function VendorsPage() {
     return () => controller.abort();
   }, [isValidVendorId, numericVendorId, reviewOffset, loadAttempt, reviewsReload]);
 
+  // Look up the user's review of this vendor directly, so it is found even when
+  // it is not on the current page of reviews.
+  useEffect(() => {
+    if (!isValidVendorId || signedInUserId === null) {
+      setMyReview(null);
+      setIsMyReviewLoading(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setIsMyReviewLoading(true);
+
+    fetchMyReviews({ vendorId: numericVendorId, limit: 1, signal: controller.signal })
+      .then((page) => (
+        page.items.length
+          ? fetchReview(page.items[0].id, { signal: controller.signal })
+          : null
+      ))
+      .then((review) => {
+        if (!controller.signal.aborted) setMyReview(review);
+      })
+      .catch((error) => {
+        if (error.name === "AbortError") return;
+        // Fall back to the form; the API still rejects a second review.
+        console.error("Unable to load your review", error);
+        setMyReview(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsMyReviewLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [isValidVendorId, numericVendorId, signedInUserId, myReviewReload]);
+
   // After creating/deleting a review, jump back to page 1 and refetch.
   // After editing a review or its images, refetch the current page in place.
   const refreshReviews = useCallback(({ reset = false } = {}) => {
@@ -276,6 +318,7 @@ export default function VendorsPage() {
     } else {
       setReviewsReload((count) => count + 1);
     }
+    setMyReviewReload((count) => count + 1);
   }, [reviewOffset]);
 
   const changeReviewPage = (nextOffset) => {
@@ -292,19 +335,18 @@ export default function VendorsPage() {
 
     try {
       const result = await voteReview(reviewId, vote);
+      const applyVote = (review) =>
+        review.id === reviewId
+          ? {
+              ...review,
+              upvote_count: result.upvote_count,
+              downvote_count: result.downvote_count,
+              current_user_vote: result.current_user_vote,
+            }
+          : review;
 
-      setReviews((currentReviews) =>
-        currentReviews.map((review) =>
-          review.id === reviewId
-            ? {
-                ...review,
-                upvote_count: result.upvote_count,
-                downvote_count: result.downvote_count,
-                current_user_vote: result.current_user_vote,
-              }
-            : review,
-        ),
-      );
+      setReviews((currentReviews) => currentReviews.map(applyVote));
+      setMyReview((current) => (current ? applyVote(current) : current));
     } catch (error) {
       setActionError(displayError(error));
     } finally {
@@ -362,7 +404,13 @@ export default function VendorsPage() {
       setNewFiles([]);
       refreshReviews({ reset: true });
     } catch (error) {
-      setActionError(displayError(error));
+      if (error.status === 409) {
+        // Reviewed elsewhere (e.g. another tab): show that review instead.
+        setActionError("You have already reviewed this vendor.");
+        setMyReviewReload((count) => count + 1);
+      } else {
+        setActionError(displayError(error));
+      }
     } finally {
       setIsCreating(false);
     }
@@ -506,6 +554,231 @@ export default function VendorsPage() {
   const hasNextReviewsPage = reviewOffset + REVIEWS_PAGE_LIMIT < reviewTotal;
   const totalReviewPages = Math.max(1, Math.ceil(reviewTotal / REVIEWS_PAGE_LIMIT));
   const currentReviewPage = Math.floor(reviewOffset / REVIEWS_PAGE_LIMIT) + 1;
+  // The user's own review is pinned as the first card in "Student Reviews" on page 1.
+  const otherReviews = myReview
+    ? reviews.filter((review) => review.id !== myReview.id)
+    : reviews;
+  const visibleReviews = myReview && reviewOffset === 0
+    ? [myReview, ...otherReviews]
+    : otherReviews;
+
+  const renderReviewCard = (review) => {
+    const isOwnReview = review.user.id === localUserId;
+    const canDeleteReview = isOwnReview || localUserRole === "admin";
+    const isEditing = editingReviewId === review.id;
+    const isBusy = busyReviewId === review.id;
+    const isReordering = reorderingReviewId === review.id;
+    const sortedImages = [...review.images].sort((a, b) => a.display_order - b.display_order);
+
+    return (
+      <article key={review.id} className="border-b border-border py-5">
+        <div className="flex justify-between gap-3 flex-wrap">
+          <div>
+            <strong className="text-foreground">{review.user.display_name}</strong>
+            {review.user.affiliation && (
+              <span className="text-muted-foreground ml-2 text-sm">{review.user.affiliation}</span>
+            )}
+            {!isEditing && (
+              <div className="mt-1">
+                <StarPicker value={review.rating} onChange={() => {}} disabled />
+              </div>
+            )}
+          </div>
+          <small className="text-muted-foreground">
+            {displayDate(review.created_at)}
+            {review.is_edited ? " (edited)" : ""}
+          </small>
+        </div>
+
+        {isEditing ? (
+          <form onSubmit={(event) => handleUpdateReview(event, review)} className="grid gap-3 mt-3">
+            <StarPicker value={editRating} onChange={setEditRating} disabled={isBusy} />
+            <textarea
+              value={editComment}
+              onChange={(event) => setEditComment(event.target.value)}
+              rows={3}
+              className="p-3 rounded-lg border border-border bg-background text-sm resize-y"
+            />
+
+            {sortedImages.length > 0 && (
+              <div>
+                <label className="block mb-1.5 text-sm text-muted-foreground">
+                  Photos — use the arrows to reorder
+                </label>
+                <div className="flex gap-3 flex-wrap">
+                  {sortedImages.map((image, index) => (
+                    <div key={image.id}>
+                      <img
+                        src={reviewImageUrl(review.id, image.id)}
+                        alt={`Review by ${review.user.display_name}`}
+                        loading="lazy"
+                        className="w-[90px] h-[68px] object-cover rounded-md border border-border"
+                      />
+                      <div className="flex justify-center gap-1.5 mt-1">
+                        <button
+                          type="button"
+                          disabled={index === 0 || isBusy || isReordering}
+                          className={`text-xs ${
+                            index === 0 || isBusy || isReordering ? "cursor-default opacity-40" : "cursor-pointer"
+                          }`}
+                          onClick={() => handleReorderReviewImage(review, image.id, "up")}
+                        >
+                          ←
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isBusy || isReordering}
+                          className={`text-xs text-destructive ${
+                            isBusy || isReordering ? "cursor-default opacity-40" : "cursor-pointer"
+                          }`}
+                          onClick={() => handleDeleteReviewImage(review.id, image.id)}
+                        >
+                          ✕
+                        </button>
+                        <button
+                          type="button"
+                          disabled={index === sortedImages.length - 1 || isBusy || isReordering}
+                          className={`text-xs ${
+                            index === sortedImages.length - 1 || isBusy || isReordering
+                              ? "cursor-default opacity-40"
+                              : "cursor-pointer"
+                          }`}
+                          onClick={() => handleReorderReviewImage(review, image.id, "down")}
+                        >
+                          →
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <UploadDropzone onFilesSelected={addEditFiles} label="Add more photos" />
+              <FilePreviewGrid files={editNewFiles} onRemove={removeEditFile} onReorder={reorderEditFiles} />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={isBusy}
+                className={`px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold ${
+                  isBusy ? "cursor-wait opacity-70" : "cursor-pointer hover:opacity-90"
+                }`}
+              >
+                {isBusy ? "Saving..." : "Save"}
+              </button>
+              <button
+                type="button"
+                disabled={isBusy}
+                className={`px-4 py-2 rounded-lg border border-border text-sm font-semibold ${
+                  isBusy ? "cursor-default opacity-70" : "cursor-pointer"
+                }`}
+                onClick={() => {
+                  setEditingReviewId(null);
+                  setEditNewFiles([]);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <p className="mt-2 text-foreground">{review.comment || "No written comment."}</p>
+        )}
+
+        {!isEditing && sortedImages.length > 0 && (
+          <div className="flex gap-3 flex-wrap mt-3">
+            {sortedImages.map((image) => (
+              <img
+                key={image.id}
+                src={reviewImageUrl(review.id, image.id)}
+                alt={`Review by ${review.user.display_name}`}
+                loading="lazy"
+                className="w-[120px] h-[90px] object-cover rounded-lg"
+              />
+            ))}
+          </div>
+        )}
+        
+        {!isEditing && (
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <span className="text-sm text-muted-foreground">
+              Helpful?
+            </span>
+
+            <button
+              type="button"
+              disabled={!canVote || votingReviewId === review.id}
+              onClick={() => handleVoteReview(review.id, "up")}
+              aria-pressed={review.current_user_vote === "up"}
+              aria-label={canVote ? "Mark review as helpful" : "Sign in to vote on reviews"}
+              title={canVote ? undefined : "Sign in to vote on reviews"}
+              className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${
+                review.current_user_vote === "up"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border hover:bg-muted"
+              } ${
+                !canVote || votingReviewId === review.id
+                  ? "cursor-not-allowed opacity-60"
+                  : "cursor-pointer"
+              }`}
+            >
+              👍 {review.upvote_count}
+            </button>
+
+            <button
+              type="button"
+              disabled={!canVote || votingReviewId === review.id}
+              onClick={() => handleVoteReview(review.id, "down")}
+              aria-pressed={review.current_user_vote === "down"}
+              aria-label={canVote ? "Mark review as not helpful" : "Sign in to vote on reviews"}
+              title={canVote ? undefined : "Sign in to vote on reviews"}
+              className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${
+                review.current_user_vote === "down"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border hover:bg-muted"
+              } ${
+                !canVote || votingReviewId === review.id
+                  ? "cursor-not-allowed opacity-60"
+                  : "cursor-pointer"
+              }`}
+            >
+              👎 {review.downvote_count}
+            </button>
+          </div>
+        )}
+
+        {canDeleteReview && !isEditing && (
+          <div className="flex gap-2 mt-3">
+            {isOwnReview && (
+              <button
+                type="button"
+                disabled={isBusy}
+                className={`px-3 py-1.5 rounded-lg border border-border text-sm font-medium ${
+                  isBusy ? "cursor-default opacity-70" : "cursor-pointer hover:bg-muted"
+                }`}
+                onClick={() => beginEditing(review)}
+              >
+                Edit
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={deletingReviewId === review.id}
+              className={`px-3 py-1.5 rounded-lg border border-destructive/40 text-destructive text-sm font-medium ${
+                deletingReviewId === review.id ? "cursor-default opacity-60" : "cursor-pointer hover:bg-destructive/10"
+              }`}
+              onClick={() => requestDeleteReview(review.id)}
+            >
+              Delete
+            </button>
+          </div>
+        )}
+      </article>
+    );
+  };
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-10">
@@ -528,36 +801,52 @@ export default function VendorsPage() {
         <p className="text-muted-foreground">Menu information is not available yet.</p>
       </section>
 
-      <section className="mb-8">
-        <h2 className="text-lg font-bold text-foreground mb-3">Leave a Review</h2>
-        <form onSubmit={handleAddReview} className="flex flex-col gap-3">
-          <StarPicker value={rating} onChange={setRating} disabled={isCreating} />
-          <textarea
-            placeholder="Write your review here..."
-            value={comment}
-            onChange={(event) => setComment(event.target.value)}
-            rows={3}
-            className="p-3 rounded-lg border border-border bg-background text-sm resize-y"
-            required
-          />
-          <div>
-            <UploadDropzone onFilesSelected={addNewFiles} label="Add photos to your review" />
-            <FilePreviewGrid files={newFiles} onRemove={removeNewFile} onReorder={reorderNewFiles} />
-          </div>
-          <button
-            type="submit"
-            disabled={isCreating}
-            className={`px-4 py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm ${
-              isCreating ? "cursor-wait opacity-70" : "cursor-pointer hover:opacity-90"
-            }`}
-          >
-            {isCreating ? "Submitting..." : "Submit Review"}
-          </button>
-        </form>
-        {actionError && (
-          <p role="alert" className="text-destructive mt-2 text-sm">{actionError}</p>
-        )}
-      </section>
+      {isMyReviewLoading && !myReview ? (
+        <section className="mb-8">
+          <p className="text-muted-foreground">Checking for your review...</p>
+        </section>
+      ) : myReview ? (
+        <section className="mb-8">
+          <h2 className="text-lg font-bold text-foreground mb-3">Leave a Review</h2>
+          <p className="text-sm text-muted-foreground">
+            You can leave one review per vendor. Edit or delete it below.
+          </p>
+          {actionError && (
+            <p role="alert" className="text-destructive mt-2 text-sm">{actionError}</p>
+          )}
+        </section>
+      ) : (
+        <section className="mb-8">
+          <h2 className="text-lg font-bold text-foreground mb-3">Leave a Review</h2>
+          <form onSubmit={handleAddReview} className="flex flex-col gap-3">
+            <StarPicker value={rating} onChange={setRating} disabled={isCreating} />
+            <textarea
+              placeholder="Write your review here..."
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              rows={3}
+              className="p-3 rounded-lg border border-border bg-background text-sm resize-y"
+              required
+            />
+            <div>
+              <UploadDropzone onFilesSelected={addNewFiles} label="Add photos to your review" />
+              <FilePreviewGrid files={newFiles} onRemove={removeNewFile} onReorder={reorderNewFiles} />
+            </div>
+            <button
+              type="submit"
+              disabled={isCreating}
+              className={`px-4 py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm ${
+                isCreating ? "cursor-wait opacity-70" : "cursor-pointer hover:opacity-90"
+              }`}
+            >
+              {isCreating ? "Submitting..." : "Submit Review"}
+            </button>
+          </form>
+          {actionError && (
+            <p role="alert" className="text-destructive mt-2 text-sm">{actionError}</p>
+          )}
+        </section>
+      )}
 
       <section>
         <h2 className="text-lg font-bold text-foreground mb-3">
@@ -579,223 +868,12 @@ export default function VendorsPage() {
         {!isLoading && !loadError && reviews.length === 0 && (
           <p className="text-muted-foreground">No reviews yet. Be the first to leave one.</p>
         )}
-        {!isLoading && !loadError && reviews.map((review) => {
-          const isOwnReview = review.user.id === localUserId;
-          const canDeleteReview = isOwnReview || localUserRole === "admin";
-          const isEditing = editingReviewId === review.id;
-          const isBusy = busyReviewId === review.id;
-          const isReordering = reorderingReviewId === review.id;
-          const sortedImages = [...review.images].sort((a, b) => a.display_order - b.display_order);
-
-          return (
-            <article key={review.id} className="border-b border-border py-5">
-              <div className="flex justify-between gap-3 flex-wrap">
-                <div>
-                  <strong className="text-foreground">{review.user.display_name}</strong>
-                  {review.user.affiliation && (
-                    <span className="text-muted-foreground ml-2 text-sm">{review.user.affiliation}</span>
-                  )}
-                  {!isEditing && (
-                    <div className="mt-1">
-                      <StarPicker value={review.rating} onChange={() => {}} disabled />
-                    </div>
-                  )}
-                </div>
-                <small className="text-muted-foreground">
-                  {displayDate(review.created_at)}
-                  {review.is_edited ? " (edited)" : ""}
-                </small>
-              </div>
-
-              {isEditing ? (
-                <form onSubmit={(event) => handleUpdateReview(event, review)} className="grid gap-3 mt-3">
-                  <StarPicker value={editRating} onChange={setEditRating} disabled={isBusy} />
-                  <textarea
-                    value={editComment}
-                    onChange={(event) => setEditComment(event.target.value)}
-                    rows={3}
-                    className="p-3 rounded-lg border border-border bg-background text-sm resize-y"
-                  />
-
-                  {sortedImages.length > 0 && (
-                    <div>
-                      <label className="block mb-1.5 text-sm text-muted-foreground">
-                        Photos — use the arrows to reorder
-                      </label>
-                      <div className="flex gap-3 flex-wrap">
-                        {sortedImages.map((image, index) => (
-                          <div key={image.id}>
-                            <img
-                              src={reviewImageUrl(review.id, image.id)}
-                              alt={`Review by ${review.user.display_name}`}
-                              loading="lazy"
-                              className="w-[90px] h-[68px] object-cover rounded-md border border-border"
-                            />
-                            <div className="flex justify-center gap-1.5 mt-1">
-                              <button
-                                type="button"
-                                disabled={index === 0 || isBusy || isReordering}
-                                className={`text-xs ${
-                                  index === 0 || isBusy || isReordering ? "cursor-default opacity-40" : "cursor-pointer"
-                                }`}
-                                onClick={() => handleReorderReviewImage(review, image.id, "up")}
-                              >
-                                ←
-                              </button>
-                              <button
-                                type="button"
-                                disabled={isBusy || isReordering}
-                                className={`text-xs text-destructive ${
-                                  isBusy || isReordering ? "cursor-default opacity-40" : "cursor-pointer"
-                                }`}
-                                onClick={() => handleDeleteReviewImage(review.id, image.id)}
-                              >
-                                ✕
-                              </button>
-                              <button
-                                type="button"
-                                disabled={index === sortedImages.length - 1 || isBusy || isReordering}
-                                className={`text-xs ${
-                                  index === sortedImages.length - 1 || isBusy || isReordering
-                                    ? "cursor-default opacity-40"
-                                    : "cursor-pointer"
-                                }`}
-                                onClick={() => handleReorderReviewImage(review, image.id, "down")}
-                              >
-                                →
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <UploadDropzone onFilesSelected={addEditFiles} label="Add more photos" />
-                    <FilePreviewGrid files={editNewFiles} onRemove={removeEditFile} onReorder={reorderEditFiles} />
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      type="submit"
-                      disabled={isBusy}
-                      className={`px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold ${
-                        isBusy ? "cursor-wait opacity-70" : "cursor-pointer hover:opacity-90"
-                      }`}
-                    >
-                      {isBusy ? "Saving..." : "Save"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      className={`px-4 py-2 rounded-lg border border-border text-sm font-semibold ${
-                        isBusy ? "cursor-default opacity-70" : "cursor-pointer"
-                      }`}
-                      onClick={() => {
-                        setEditingReviewId(null);
-                        setEditNewFiles([]);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <p className="mt-2 text-foreground">{review.comment || "No written comment."}</p>
-              )}
-
-              {!isEditing && sortedImages.length > 0 && (
-                <div className="flex gap-3 flex-wrap mt-3">
-                  {sortedImages.map((image) => (
-                    <img
-                      key={image.id}
-                      src={reviewImageUrl(review.id, image.id)}
-                      alt={`Review by ${review.user.display_name}`}
-                      loading="lazy"
-                      className="w-[120px] h-[90px] object-cover rounded-lg"
-                    />
-                  ))}
-                </div>
-              )}
-              
-              {!isEditing && (
-                <div className="flex flex-wrap items-center gap-2 mt-3">
-                  <span className="text-sm text-muted-foreground">
-                    Helpful?
-                  </span>
-
-                  <button
-                    type="button"
-                    disabled={!canVote || votingReviewId === review.id}
-                    onClick={() => handleVoteReview(review.id, "up")}
-                    aria-pressed={review.current_user_vote === "up"}
-                    aria-label={canVote ? "Mark review as helpful" : "Sign in to vote on reviews"}
-                    title={canVote ? undefined : "Sign in to vote on reviews"}
-                    className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${
-                      review.current_user_vote === "up"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border hover:bg-muted"
-                    } ${
-                      !canVote || votingReviewId === review.id
-                        ? "cursor-not-allowed opacity-60"
-                        : "cursor-pointer"
-                    }`}
-                  >
-                    👍 {review.upvote_count}
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={!canVote || votingReviewId === review.id}
-                    onClick={() => handleVoteReview(review.id, "down")}
-                    aria-pressed={review.current_user_vote === "down"}
-                    aria-label={canVote ? "Mark review as not helpful" : "Sign in to vote on reviews"}
-                    title={canVote ? undefined : "Sign in to vote on reviews"}
-                    className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${
-                      review.current_user_vote === "down"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border hover:bg-muted"
-                    } ${
-                      !canVote || votingReviewId === review.id
-                        ? "cursor-not-allowed opacity-60"
-                        : "cursor-pointer"
-                    }`}
-                  >
-                    👎 {review.downvote_count}
-                  </button>
-                </div>
-              )}
-
-              {canDeleteReview && !isEditing && (
-                <div className="flex gap-2 mt-3">
-                  {isOwnReview && (
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      className={`px-3 py-1.5 rounded-lg border border-border text-sm font-medium ${
-                        isBusy ? "cursor-default opacity-70" : "cursor-pointer hover:bg-muted"
-                      }`}
-                      onClick={() => beginEditing(review)}
-                    >
-                      Edit
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    disabled={deletingReviewId === review.id}
-                    className={`px-3 py-1.5 rounded-lg border border-destructive/40 text-destructive text-sm font-medium ${
-                      deletingReviewId === review.id ? "cursor-default opacity-60" : "cursor-pointer hover:bg-destructive/10"
-                    }`}
-                    onClick={() => requestDeleteReview(review.id)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              )}
-            </article>
-          );
-        })}
+        {!isLoading && !loadError && reviews.length > 0 && visibleReviews.length === 0 && (
+          <p className="text-muted-foreground">
+            {reviewTotal === 1 ? "No other reviews yet." : "No other reviews on this page."}
+          </p>
+        )}
+        {!isLoading && !loadError && visibleReviews.map(renderReviewCard)}
 
         {!isLoading && !loadError && reviews.length > 0 && (hasPrevReviewsPage || hasNextReviewsPage) && (
           <div className="flex justify-center items-center gap-3 mt-8">
