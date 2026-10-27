@@ -5,7 +5,7 @@
 .foodie-header, .foodie-tabs, .foodie-footer-note, .foodie-composer, .foodie-latest-pick, .foodie-window .vendor-wheel-invite { flex-shrink: 0; }
 .foodie-messages, .foodie-picker-scroll { min-height: 0; }
 .foodie-header { display: flex; align-items: center; gap: 11px; padding: 15px 18px 12px; background: linear-gradient(120deg,#fff2d8,#ffe5de 68%,#fce0d9); }
-.foodie-avatar { display: inline-block; flex-shrink: 0; width: 49px; height: 49px; border-radius: 16px; overflow: hidden; background: white; border: 1px solid #f0d7b3; }
+.foodie-avatar { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; flex-shrink: 0; width: 49px; height: 49px; border-radius: 16px; overflow: hidden; background: white; border: 1px solid #f0d7b3; }
 .foodie-avatar img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }
 .foodie-avatar-speaking { animation: foodie-talk .7s ease-in-out infinite alternate; }
 .foodie-avatar-waving { animation: foodie-hello .8s ease-in-out both; }
@@ -30,8 +30,8 @@
 .foodie-message-user { align-self: flex-end; border-radius: 17px 4px 17px 17px; background: #b9223f; color: white; }
 .foodie-latest-pick { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; background: #fff0d8; border-bottom: 1px solid #eddbc2; font-size: 11px; color: #946749; }
 .foodie-latest-pick strong { color: #75472a; font-weight: 700; }
-.foodie-welcome-art { position: relative; align-self: center; flex-shrink: 0; margin: -7px 0 -3px; width: 122px; height: 129px; cursor: pointer; border-radius: 20px; }
-.foodie-avatar-large { width: 101px; height: 129px; margin-left: 8px; border: 0; border-radius: 0; background: transparent; overflow: visible; mix-blend-mode: multiply; animation: foodie-hello 1s ease-in-out both; }
+.foodie-welcome-art { position: relative; display: grid; place-items: center; align-self: center; flex-shrink: 0; margin: -7px 0 -3px; padding: 0; width: 122px; height: 129px; cursor: pointer; border-radius: 20px; }
+.foodie-avatar-large { width: 101px; height: 129px; border: 0; border-radius: 0; background: transparent; overflow: visible; mix-blend-mode: multiply; animation: foodie-hello 1s ease-in-out both; }
 .foodie-avatar-large img { object-fit: contain; mix-blend-mode: multiply; }
 .foodie-welcome-star { position: absolute; right: -9px; top: 27px; color: #dc9a27; font-size: 24px; }
 .foodie-welcome-wave { position: absolute; left: -13px; top: 44px; font-size: 22px; transform-origin: bottom; animation: foodie-wave .6s ease-in-out 3 alternate; }
