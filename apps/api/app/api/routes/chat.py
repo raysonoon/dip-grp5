@@ -30,6 +30,7 @@ def stream_chat(
             for event, data in service.stream_answer(
                 payload.question,
                 history=payload.history,
+                current_user=_current_user,
             ):
                 if event == "sources":
                     sources = [source.model_dump(mode="json") for source in data]
