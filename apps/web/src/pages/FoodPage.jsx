@@ -291,6 +291,9 @@ export default function FoodPage() {
 
   const [sort, setSort] = useState("recommended");
 
+    // undefined = still asking, null = unavailable/denied, {lat, lng} = known
+  const [userLocation, setUserLocation] = useState(undefined);
+
   const [locations, setLocations] = useState([]);
 
   const [categories, setCategories] = useState([]);
@@ -360,13 +363,41 @@ export default function FoodPage() {
   }, [searchTerm, setSearchParams]);
 
 
+  // Ask for the user's location once; the recommended sort uses it to rank
+  // nearby vendors. Denied, unsupported or slow -> fall back to A-Z.
+  useEffect(() => {
+    if (!("geolocation" in navigator)) {
+      setUserLocation(null);
+      return undefined;
+    }
 
+    let cancelled = false;
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (!cancelled) {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        }
+      },
+      () => {
+        if (!cancelled) setUserLocation(null);
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // Load filter dropdown values once
 
   useEffect(() => {
 
     const controller = new AbortController();
-
+    
 
 
     fetchVendorFilters(controller.signal)
@@ -401,10 +432,17 @@ export default function FoodPage() {
 
   // Load one filtered/paginated vendor page
 
-  useEffect(() => {
+   useEffect(() => {
 
     const controller = new AbortController();
 
+    // Wait for the location answer before the first recommended fetch,
+    // so the list loads once in the right order instead of twice.
+    if (sort === "recommended" && userLocation === undefined) {
+      return () => controller.abort();
+    }
+
+    setIsLoading(true);
 
 
     setIsLoading(true);
@@ -422,6 +460,10 @@ export default function FoodPage() {
       category: selectedCategory,
 
       sort,
+
+      lat: userLocation?.lat,
+
+      lng: userLocation?.lng,
 
       limit: PAGE_LIMIT,
 
@@ -463,7 +505,7 @@ export default function FoodPage() {
 
     return () => controller.abort();
 
-  }, [debouncedSearchTerm, selectedLocation, sort, selectedCategory, offset, loadAttempt]);
+    }, [debouncedSearchTerm, selectedLocation, sort, selectedCategory, offset, loadAttempt, userLocation]);
 
 
 

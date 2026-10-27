@@ -127,6 +127,16 @@ def _resolve_vendor_image(
     )
 
 
+def _user_point(lat: float, lng: float):
+    """PostGIS geography point for a user location. WKT is (lng lat)."""
+    return func.ST_GeogFromText(f"POINT({lng:.7f} {lat:.7f})")
+
+
+def _distance_from(lat: float, lng: float):
+    """Metres from each vendor's map_coordinates to the user point (NULL if no coords)."""
+    return func.ST_Distance(Vendor.map_coordinates, _user_point(lat, lng))
+
+
 @router.get("", response_model=VendorListRead)
 def list_vendors(
     session: DbSession,
@@ -139,9 +149,17 @@ def list_vendors(
         Literal["recommended", "reviews", "rating"],
         Query(),
     ] = "recommended",
+    lat: Annotated[float | None, Query(ge=-90, le=90)] = None,
+    lng: Annotated[float | None, Query(ge=-180, le=180)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> VendorListRead:
+    if (lat is None) != (lng is None):
+        raise HTTPException(
+            status_code=422,
+            detail="lat and lng must be provided together.",
+        )
+
     search_plan = build_vendor_search_plan(session, q)
     filters = list(search_plan.filters)
 
@@ -170,7 +188,6 @@ def list_vendors(
                 UserFoodPreferences.user_id == current_user.id
             )
         )
-
         if (
             preferences is not None
             and preferences.onboarding_status == "completed"
@@ -226,30 +243,36 @@ def list_vendors(
             Vendor.id.desc(),
         )
 
-    elif recommended_ids:
-        recommendation_order = case(
-            {
-                vendor_id: index
-                for index, vendor_id in enumerate(recommended_ids)
-            },
-            value=Vendor.id,
-            else_=len(recommended_ids),
-        )
-
-        statement = statement.order_by(
-            *search_plan.order_by,
-            recommendation_order.asc(),
-            Vendor.created_at.desc(),
-            Vendor.id.desc(),
-        )
-
     else:
-        # Fallback when no stalls are recommended: alphabetical, A-Z.
-        statement = statement.order_by(
-            *search_plan.order_by,
-            func.lower(Vendor.name).asc(),
-            Vendor.id.asc(),
+        # sort == "recommended": recommended first, then nearest-first
+        # (when the client sent a location), then alphabetical A-Z.
+        # Applies to every user; anonymous users and users without
+        # completed preferences simply have no recommended tier.
+        order_by = list(search_plan.order_by)
+
+        if recommended_ids:
+            recommendation_order = case(
+                {
+                    vendor_id: index
+                    for index, vendor_id in enumerate(recommended_ids)
+                },
+                value=Vendor.id,
+                else_=len(recommended_ids),
+            )
+            order_by.append(recommendation_order.asc())
+
+        if lat is not None and lng is not None:
+            # No distance cutoff. Vendors without map_coordinates get a NULL
+            # distance and sort after every vendor that has one.
+            order_by.append(_distance_from(lat, lng).asc().nullslast())
+
+        order_by.extend(
+            [
+                func.lower(Vendor.name).asc(),
+                Vendor.id.asc(),
+            ]
         )
+        statement = statement.order_by(*order_by)
 
     rows = session.execute(
         statement
@@ -330,7 +353,7 @@ def list_nearby_vendors(
     Distance is computed by PostGIS on each vendor's geography column, so it
     is in metres and accounts for the curvature of the earth.
     """
-    user_point = func.ST_GeogFromText(f"POINT({lng:.7f} {lat:.7f})")
+    user_point = _user_point(lat, lng)
     distance = func.ST_Distance(Vendor.map_coordinates, user_point)
     rating = func.coalesce(Vendor.average_rating, Vendor.average_google_rating)
 

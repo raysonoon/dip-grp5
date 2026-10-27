@@ -125,6 +125,8 @@ export async function fetchVendorPage({
   location = "",
   category = "",
   sort = "recommended",
+  lat,
+  lng,
   limit = 100,
   offset = 0,
   signal,
@@ -148,6 +150,15 @@ export async function fetchVendorPage({
 
   if (sort) {
     params.set("sort", sort);
+      // Location only matters for the recommended sort (nearest-first tier).
+  if (
+    sort === "recommended" &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng)
+  ) {
+    params.set("lat", String(lat));
+    params.set("lng", String(lng));
+  }
   }
 
   const payload = await apiClient.get(
