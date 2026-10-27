@@ -554,10 +554,13 @@ export default function VendorsPage() {
   const hasNextReviewsPage = reviewOffset + REVIEWS_PAGE_LIMIT < reviewTotal;
   const totalReviewPages = Math.max(1, Math.ceil(reviewTotal / REVIEWS_PAGE_LIMIT));
   const currentReviewPage = Math.floor(reviewOffset / REVIEWS_PAGE_LIMIT) + 1;
-  // The user's own review is shown above, so leave it out of the list below.
-  const visibleReviews = myReview
+  // The user's own review is pinned as the first card in "Student Reviews" on page 1.
+  const otherReviews = myReview
     ? reviews.filter((review) => review.id !== myReview.id)
     : reviews;
+  const visibleReviews = myReview && reviewOffset === 0
+    ? [myReview, ...otherReviews]
+    : otherReviews;
 
   const renderReviewCard = (review) => {
     const isOwnReview = review.user.id === localUserId;
@@ -804,11 +807,10 @@ export default function VendorsPage() {
         </section>
       ) : myReview ? (
         <section className="mb-8">
-          <h2 className="text-lg font-bold text-foreground mb-1">Your Review</h2>
+          <h2 className="text-lg font-bold text-foreground mb-3">Leave a Review</h2>
           <p className="text-sm text-muted-foreground">
             You can leave one review per vendor. Edit or delete it below.
           </p>
-          {renderReviewCard(myReview)}
           {actionError && (
             <p role="alert" className="text-destructive mt-2 text-sm">{actionError}</p>
           )}
