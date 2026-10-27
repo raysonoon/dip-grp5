@@ -9,7 +9,7 @@ import "./vendorMap.css";
 import { vendorLatLng } from "../lib/locationBoundaries.js";
 
 export function googleMapsDirectionsUrl(name, lat, lng) {
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${name} ${lat},${lng}`)}`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 }
 
 const pinIcon = L.divIcon({
