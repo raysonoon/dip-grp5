@@ -879,6 +879,46 @@ function VendorDetails() {
         <h2 className="text-lg font-bold text-foreground mb-3">
           Student Reviews {reviewTotal > 0 ? `(${reviewTotal})` : ""}
         </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+            Sort
+            <select
+              value={reviewSort}
+              onChange={(event) => changeReviewFilter(setReviewSort, event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="best">Best</option>
+              <option value="controversial">Controversial</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+            Rating
+            <select
+              value={reviewRating}
+              onChange={(event) => changeReviewFilter(setReviewRating, event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="">Any rating</option>
+              {Array.from({ length: 10 }, (_, index) => (5 - index * 0.5).toFixed(1)).map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+            Media
+            <select
+              value={reviewMedia}
+              onChange={(event) => changeReviewFilter(setReviewMedia, event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="all">All</option>
+              <option value="with_photos">With photos</option>
+              <option value="without_photos">Without photos</option>
+            </select>
+          </label>
+        </div>
         {isLoading && <p className="text-muted-foreground">Loading reviews...</p>}
         {!isLoading && loadError && (
           <div role="alert" className="text-destructive">
@@ -892,13 +932,15 @@ function VendorDetails() {
             </button>
           </div>
         )}
-        {!isLoading && !loadError && reviews.length === 0 && (
-          <p className="text-muted-foreground">No reviews yet. Be the first to leave one.</p>
-        )}
-        {!isLoading && !loadError && reviews.length > 0 && visibleReviews.length === 0 && (
+        {!isLoading && !loadError && visibleReviews.length === 0 && (
           <p className="text-muted-foreground">
-            {reviewTotal === 1 ? "No other reviews yet." : "No other reviews on this page."}
+            {reviewRating !== "" || reviewMedia !== "all"
+              ? "No reviews match these filters."
+              : "No reviews yet. Be the first to leave one."}
           </p>
+        )}
+        {!isLoading && !loadError && myReview && reviewOffset === 0 && otherReviews.length === 0 && (
+          <p className="text-muted-foreground">No other reviews yet.</p>
         )}
         {!isLoading && !loadError && visibleReviews.map(renderReviewCard)}
 
