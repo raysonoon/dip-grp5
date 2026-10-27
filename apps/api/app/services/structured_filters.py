@@ -115,6 +115,56 @@ _CUISINE_CLAUSE_BOUNDARY_RE = re.compile(r"\b(?:but|or)\b", re.IGNORECASE)
 _CUISINE_CLAUSE_TRAILING_PUNCT_RE = re.compile(
     r"[\s,;:.!?\uff0c\uff1b\uff1a\uff0e\uff01\uff1f]+$"
 )
+# List-reference and retrieval language ("previously recommended", "listed",
+# "above", "those", "the remaining") describes which vendors the user means,
+# not a cuisine. Treat it as request filler so it is stripped from cuisine
+# candidates, and as a blocker so it can never become a cuisine value itself.
+_CUISINE_DISCOURSE_WORDS = {
+    "above",
+    "aforementioned",
+    "below",
+    "earlier",
+    "first",
+    "former",
+    "following",
+    "last",
+    "latter",
+    "listed",
+    "listing",
+    "mentioned",
+    "mentioning",
+    "next",
+    "other",
+    "previous",
+    "previously",
+    "recommend",
+    "recommended",
+    "recommending",
+    "recommendation",
+    "recommendations",
+    "recommends",
+    "remaining",
+    "same",
+    "second",
+    "shown",
+    "showing",
+    "similar",
+    "stated",
+    "stating",
+    "suggested",
+    "suggesting",
+    "suggestion",
+    "suggestions",
+    "suggests",
+    "that",
+    "these",
+    "third",
+    "this",
+    "those",
+}
+# Adverbs such as "previously" or "recently" are discourse markers, never a
+# cuisine. This catches unseen variants without growing the explicit set.
+_CUISINE_ADVERB_RE = re.compile(r"[A-Za-z]{3,}ly\Z", re.IGNORECASE)
 _CUISINE_REQUEST_WORDS = {
     "a",
     "an",
@@ -163,7 +213,7 @@ _CUISINE_REQUEST_WORDS = {
     "there",
     "was",
     "were",
-}
+} | _CUISINE_DISCOURSE_WORDS
 _CUISINE_BOUNDARY_WORDS = {
     "craving",
     "find",
@@ -183,7 +233,7 @@ _CUISINE_BOUNDARY_WORDS = {
     "looking",
     "show",
     "suggest",
-}
+} | _CUISINE_DISCOURSE_WORDS
 _CUISINE_STOP_WORDS = {
     "affordable",
     "best",
@@ -224,13 +274,53 @@ _CUISINE_STOP_WORDS = {
     "vegan",
     "vegetarian",
     "worst",
-}
+} | _CUISINE_DISCOURSE_WORDS
 
 
 def _vocabulary_tokens(mapping: dict[str, str | None]) -> set[str]:
     return {
         token for key in mapping for token in key.casefold().split()
     }
+
+
+def is_discourse_cuisine(value: str) -> bool:
+    """Return whether a cuisine value is only list/reference language.
+
+    LLM extractors occasionally copy phrases such as "previously recommended"
+    or "listed" into ``cuisine``. Those describe which vendors the user means,
+    not a type of food, so callers must drop them.
+    """
+
+    words = re.findall(r"[A-Za-z][A-Za-z'\u2019-]*", value)
+    if not words:
+        return False
+    neutral = {
+        "a",
+        "an",
+        "cuisine",
+        "food",
+        "option",
+        "options",
+        "place",
+        "places",
+        "restaurant",
+        "restaurants",
+        "stall",
+        "stalls",
+        "the",
+        "vendor",
+        "vendors",
+    }
+    has_discourse = False
+    for word in words:
+        folded = word.casefold()
+        if folded in _CUISINE_DISCOURSE_WORDS:
+            has_discourse = True
+            continue
+        if folded in neutral or _CUISINE_ADVERB_RE.fullmatch(word):
+            continue
+        return False
+    return has_discourse
 
 
 _CUISINE_REJECTION_WORDS = (
@@ -263,7 +353,7 @@ _CUISINE_PHRASE_BLOCKERS = {
     "versus",
     "vs",
     "prefer",
-}
+} | _CUISINE_DISCOURSE_WORDS
 _CUISINE_REQUEST_CUES = _CUISINE_BOUNDARY_WORDS | {
     "any",
     "some",
@@ -478,6 +568,7 @@ def _extract_explicit_cuisine_phrase(
         if not candidate_words or any(
             word.casefold()
             in _CUISINE_REJECTION_WORDS | _CUISINE_PHRASE_BLOCKERS
+            or _CUISINE_ADVERB_RE.fullmatch(word)
             for word in candidate_words
         ):
             continue

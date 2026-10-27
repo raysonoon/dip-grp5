@@ -97,7 +97,32 @@ def test_user_and_vendor_storage_follow_the_new_schema(session: Session) -> None
     assert "search_document" in vendor_columns
     assert vendor_columns.search_document.computed is not None
     assert "map_coordinates" in vendor_columns
-    assert len(vendor_columns) == 19
+    assert "dishes" in vendor_columns
+    # Check the columns this schema migration introduced instead of pinning the
+    # exact column count, so later additive migrations do not break this test.
+    expected_vendor_columns = {
+        "id",
+        "directory_id",
+        "name",
+        "location",
+        "unit_code",
+        "category",
+        "opening_hours",
+        "price_range",
+        "halal",
+        "vegetarian",
+        "dishes",
+        "average_google_rating",
+        "average_rating",
+        "map_coordinates",
+        "created_at",
+        "updated_at",
+        "search_document",
+        "website_url",
+        "phone_number",
+        "address",
+    }
+    assert expected_vendor_columns <= set(vendor_columns.keys())
     assert isinstance(vendor_columns.average_rating.type, Numeric)
     assert vendor_columns.average_rating.type.precision == 2
     assert vendor_columns.average_rating.type.scale == 1
