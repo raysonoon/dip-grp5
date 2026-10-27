@@ -6,6 +6,13 @@ const VENDOR_SOURCE_TYPES = new Set(["vendor", "reddit", "google_review"]);
 const text = (value) => typeof value === "string" && value.trim() ? value.trim() : null;
 const rating = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 5 ? value : null;
 
+/** Keep readable name labels on dense wheels, with full names in the details. */
+export function wheelVendorLabel(name, count) {
+  const characters = Array.from(name);
+  const limit = count > 30 ? 12 : count > 8 ? 15 : 17;
+  return characters.length > limit ? `${characters.slice(0, limit - 3).join("")}...` : name;
+}
+
 /** @returns {WheelSession} */
 export function createWheelSession() {
   return { vendors: [], excludedIds: [] };
