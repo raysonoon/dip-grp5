@@ -207,3 +207,88 @@ test("API errors expose a readable backend message", async (context) => {
     /You may edit only your own reviews/,
   );
 });
+
+for (const sort of ["newest", "oldest", "best", "controversial"]) {
+  test(`fetchVendorReviews requests server sorting: ${sort}`, async (context) => {
+    const originalFetch = globalThis.fetch;
+    context.after(() => { globalThis.fetch = originalFetch; });
+    globalThis.fetch = async (path) => {
+      const params = new URL(path).searchParams;
+      assert.equal(params.get("sort"), sort);
+      assert.equal(params.get("vendor_id"), "7");
+      assert.equal(params.get("offset"), "10");
+      // Keep the server's order, even when it differs from chronological order.
+      return jsonResponse({
+        items: [REVIEW_DETAIL, { ...REVIEW_DETAIL, id: 43, created_at: "2026-09-10T08:00:00Z" }],
+        total: 12, limit: 10, offset: 10,
+      });
+    };
+    const page = await fetchVendorReviews(7, { sort, offset: 10 });
+    assert.deepEqual(page.items.map((review) => review.id), [42, 43]);
+    assert.equal(page.total, 12);
+  });
+}
+
+for (const media of ["all", "with_photos", "without_photos"]) {
+  test(`fetchVendorReviews combines rating and media: ${media}`, async (context) => {
+    const originalFetch = globalThis.fetch;
+    context.after(() => { globalThis.fetch = originalFetch; });
+    globalThis.fetch = async (path) => {
+      const params = new URL(path).searchParams;
+      assert.equal(params.get("sort"), "best");
+      assert.equal(params.get("rating"), "4.5");
+      assert.equal(params.get("media"), media);
+      assert.equal(params.get("limit"), "5");
+      return jsonResponse({ items: [REVIEW_DETAIL], total: 1, limit: 5, offset: 0 });
+    };
+    await fetchVendorReviews(7, { sort: "best", rating: 4.5, media, limit: 5 });
+  });
+}
+
+for (const rating of [undefined, null, ""]) {
+  test(`fetchVendorReviews omits an unset rating (${JSON.stringify(rating)})`, async (context) => {
+    const originalFetch = globalThis.fetch;
+    context.after(() => { globalThis.fetch = originalFetch; });
+    globalThis.fetch = async (path) => {
+      assert.equal(new URL(path).searchParams.has("rating"), false);
+      return jsonResponse({ items: [], total: 0, limit: 10, offset: 0 });
+    };
+    await fetchVendorReviews(7, { rating });
+  });
+}
+
+test("fetchVendorReviews supports the lowest half-star filter", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async (path) => {
+    assert.equal(new URL(path).searchParams.get("rating"), "0.5");
+    return jsonResponse({ items: [], total: 0, limit: 10, offset: 0 });
+  };
+  await fetchVendorReviews(7, { rating: "0.5" });
+});
+
+test("fetchVendorReviews preserves homepage limit/signal calls and cancellation", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => { globalThis.fetch = originalFetch; });
+  const controller = new AbortController();
+  globalThis.fetch = async (path, options) => {
+    assert.equal(path, "https://api.example.test/reviews?vendor_id=7&limit=3&offset=0");
+    assert.equal(options.signal.aborted, false);
+    controller.abort();
+    assert.equal(options.signal.aborted, true);
+    throw new DOMException("Aborted", "AbortError");
+  };
+  await assert.rejects(fetchVendorReviews(7, { limit: 3, signal: controller.signal }), { name: "AbortError" });
+});
+
+test("fetchVendorReviews sends optional auth to preserve the current user's vote", async (context) => {
+  configureSession(context, "27");
+  const originalFetch = globalThis.fetch;
+  context.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async (_path, options) => {
+    assert.equal(options.headers.Authorization, "Bearer 27");
+    return jsonResponse({ items: [{ ...REVIEW_DETAIL, current_user_vote: "up" }], total: 1, limit: 10, offset: 0 });
+  };
+  const page = await fetchVendorReviews(7, { sort: "best" });
+  assert.equal(page.items[0].current_user_vote, "up");
+});
