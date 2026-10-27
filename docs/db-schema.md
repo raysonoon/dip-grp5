@@ -7,6 +7,7 @@ more tables.
 | Table | Model file | Purpose |
 | --- | --- | --- |
 | `users` | `user.py` | Registered app users |
+| `user_favourites` | `user_favourite.py` | Saved vendors for each user |
 | `vendors` | `vendor.py` | Food stalls / vendors |
 | `vendor_images` | `vendor.py` | Ordered images for a vendor |
 | `reviews` | `review.py` | Community reviews written by users |
@@ -41,6 +42,13 @@ Constraints / indexes:
 - `role_allowed`: `role IN ('user', 'admin')`
 - `email_canonical_matches_address`: `email_canonical = lower(trim(email_address))`
 - `uq_users_email_canonical`: unique index on `email_canonical`
+
+## `user_favourites`
+
+Each `(user_id, vendor_id)` pair is a composite primary key. Both columns are
+foreign keys with `ON DELETE CASCADE`; `created_at` is a non-null timestamptz.
+An index on `(user_id, created_at, vendor_id)` supports recent-first pagination.
+Re-favouriting atomically refreshes `created_at` without creating duplicates.
 
 ## `vendors`
 
@@ -105,14 +113,14 @@ Community reviews of vendors written by users.
 | `id` | integer (identity PK) | no | |
 | `user_id` | integer (FK `users.id`) | no | On delete `RESTRICT` |
 | `vendor_id` | integer (FK `vendors.id`) | no | On delete `RESTRICT` |
-| `rating_half_steps` | smallint | no | `2` to `10` (maps to 1.0–5.0 in 0.5 steps) |
+| `rating_half_steps` | smallint | no | `1` to `10` (maps to 0.5–5.0 in 0.5 steps) |
 | `comment` | text | yes | Whitespace-only stored as `NULL` |
 | `created_at` | timestamptz | no | Defaults to `now()` |
 | `updated_at` | timestamptz | yes | Set when edited |
 
 Constraints / indexes:
 
-- `rating_half_steps_range`: `rating_half_steps BETWEEN 2 AND 10`
+- `rating_half_steps_range`: `rating_half_steps BETWEEN 1 AND 10`
 - `ix_reviews_user_id`: index on `user_id`
 - `ix_reviews_vendor_created_at`: index on (`vendor_id`, `created_at`)
 
