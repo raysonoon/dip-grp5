@@ -12,7 +12,7 @@ export function googleMapsDirectionsUrl(name, lat, lng) {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${name} ${lat},${lng}`)}`;
 }
 
-const pinIcon = L.divIcon({
+export const pinIcon = L.divIcon({
   className: "vendor-pin-wrapper",
   html: '<span class="vendor-pin"></span>',
   iconSize: [18, 18],

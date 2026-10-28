@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useOutletContext, useSearchParams } from "react-router-dom";
 import {
   ChevronDown,
@@ -9,6 +9,8 @@ import {
 import { apiUrl } from "../api/client";
 
 import { fetchVendorFilters, fetchVendorPage } from "../api/vendors";
+
+import { formatDistance } from "../lib/vendorRanking.js";
 
 
 
@@ -291,6 +293,13 @@ export default function FoodPage() {
 
   const [sort, setSort] = useState("recommended");
 
+  // undefined = still detecting, null = unavailable/denied, {lat,lng} = known
+  const [userCoords, setUserCoords] = useState(undefined);
+
+  const [geoStatus, setGeoStatus] = useState("idle");
+
+  const [useDistance, setUseDistance] = useState(true);
+
   const [locations, setLocations] = useState([]);
 
   const [categories, setCategories] = useState([]);
@@ -360,13 +369,43 @@ export default function FoodPage() {
   }, [searchTerm, setSearchParams]);
 
 
+  // Ask for the user's location once; the recommended sort uses it to rank
+  // nearby vendors. Denied, unsupported or slow -> fall back to A-Z.
+  const requestLocation = useCallback(() => {
+    if (!("geolocation" in navigator)) {
+      setUserCoords(null);
+      setGeoStatus("unavailable");
+      return;
+    }
+
+    setGeoStatus("requesting");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserCoords({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setGeoStatus("granted");
+      },
+      (error) => {
+        setUserCoords(null);
+        setGeoStatus(error.code === error.PERMISSION_DENIED ? "denied" : "unavailable");
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 5 * 60 * 1000 },
+    );
+  }, []);
+
+  useEffect(() => {
+    requestLocation();
+  }, [requestLocation]);
 
   // Load filter dropdown values once
 
   useEffect(() => {
 
     const controller = new AbortController();
-
+    
 
 
     fetchVendorFilters(controller.signal)
@@ -399,13 +438,22 @@ export default function FoodPage() {
 
 
 
+  // Distance ordering only applies while the "Near me" toggle is on.
+  const coords = useDistance ? userCoords : null;
+
+  const isNearby = useDistance && userCoords != null;
+
   // Load one filtered/paginated vendor page
 
-  useEffect(() => {
+   useEffect(() => {
 
     const controller = new AbortController();
 
-
+    // Wait for the location answer before the first recommended fetch,
+    // so the list loads once in the right order instead of twice.
+    if (sort === "recommended" && userCoords === undefined) {
+      return () => controller.abort();
+    }
 
     setIsLoading(true);
 
@@ -426,6 +474,10 @@ export default function FoodPage() {
       limit: PAGE_LIMIT,
 
       offset,
+
+      lat: coords?.lat ?? null,
+
+      lng: coords?.lng ?? null,
 
       signal: controller.signal,
 
@@ -463,7 +515,7 @@ export default function FoodPage() {
 
     return () => controller.abort();
 
-  }, [debouncedSearchTerm, selectedLocation, sort, selectedCategory, offset, loadAttempt]);
+  }, [debouncedSearchTerm, selectedLocation, sort, selectedCategory, offset, loadAttempt, userCoords, useDistance]);
 
 
 
@@ -478,6 +530,18 @@ export default function FoodPage() {
   const hasActiveFilters = Boolean(searchTerm.trim() || selectedLocation || selectedCategory);
 
 
+
+  const requestNearbyCoords = () => {
+    setOffset(0);
+
+    if (isNearby) {
+      setUseDistance(false);
+      return;
+    }
+
+    setUseDistance(true);
+    if (userCoords == null) requestLocation();
+  };
 
   return (
 
@@ -596,6 +660,21 @@ export default function FoodPage() {
           <option value="rating">Highest Rating</option>
         </select>
 
+        <button
+          type="button"
+          onClick={requestNearbyCoords}
+          disabled={geoStatus === "requesting"}
+          aria-pressed={isNearby}
+          title={isNearby ? "Stop sorting by distance" : "Sort vendors by distance from you"}
+          className={`w-full sm:w-auto px-3.5 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${
+            isNearby
+              ? "border-primary bg-primary/10 text-primary cursor-pointer"
+              : "border-border bg-background text-foreground cursor-pointer hover:bg-muted"
+          } ${geoStatus === "requesting" ? "cursor-wait opacity-70" : ""}`}
+        >
+          {geoStatus === "requesting" ? "Locating..." : isNearby ? "Nearby ✓" : "Near me"}
+        </button>
+
         {hasActiveFilters && (
 
           <button
@@ -627,6 +706,26 @@ export default function FoodPage() {
       </div>
 
 
+
+      {!isNearby && geoStatus === "denied" && (
+
+        <p className="mb-4 text-center text-sm text-muted-foreground">
+
+          Location access was denied — vendors are shown alphabetically. Allow location in your browser to sort by distance.
+
+        </p>
+
+      )}
+
+      {!isNearby && geoStatus === "unavailable" && (
+
+        <p className="mb-4 text-center text-sm text-muted-foreground">
+
+          We couldn't determine your location — vendors are shown alphabetically.
+
+        </p>
+
+      )}
 
       {isLoading && <p className="text-center text-muted-foreground">Loading vendors...</p>}
 
@@ -746,6 +845,16 @@ export default function FoodPage() {
                       {` • ${vendor.review_count} reviews`}
 
                     </p>
+
+                    {isNearby && vendor.distance_m != null && (
+
+                      <p className="mb-2.5 text-xs font-semibold text-primary">
+
+                        {formatDistance(vendor.distance_m)} from you
+
+                      </p>
+
+                    )}
 
                     <Link
 

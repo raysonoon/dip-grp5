@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models import Vendor
+from app.models import User, UserFoodPreferences, Vendor
+from app.services.vendor_recommender import VendorRecommendation
 
 
 def _stamp(value: str) -> datetime:
@@ -55,4 +56,109 @@ def test_vendor_list_alphabetical_order_survives_pagination(
     ]
     assert [item["name"] for item in second.json()["items"]] == [
         "Zhao Ji Noodle House"
+    ]
+
+
+def test_vendor_list_accepts_coordinates_and_still_orders_alphabetically(
+    client,
+    session: Session,
+) -> None:
+    # SQLite has no PostGIS, so the distance tiebreak is skipped and the
+    # alphabetical fallback must still hold.
+    _add_vendors(session)
+
+    response = client.get(
+        "/vendors",
+        params={"lat": 1.3483, "lng": 103.6831},
+    )
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    names = [item["name"] for item in items]
+    assert names == [
+        "ban mian corner",
+        "Chicken Rice Stall",
+        "Zhao Ji Noodle House",
+    ]
+    # No PostGIS on SQLite, so distance is unavailable but the field is present.
+    assert all(item["distance_m"] is None for item in items)
+
+
+def test_vendor_list_rejects_out_of_range_coordinates(client) -> None:
+    assert client.get("/vendors", params={"lat": 91, "lng": 103.68}).status_code == 422
+    assert client.get("/vendors", params={"lat": 1.34, "lng": 181}).status_code == 422
+
+
+def test_recommended_vendors_come_first_then_alphabetical(
+    client,
+    session: Session,
+    monkeypatch,
+) -> None:
+    user = User(
+        display_name="Ordering User",
+        email_address="ordering@test.com",
+        email_canonical="ordering@test.com",
+        password_hash="test",
+        role="user",
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    session.add(
+        UserFoodPreferences(
+            user_id=user.id,
+            dietary_restrictions=[],
+            cuisines=[],
+            locations=[],
+            likes=[],
+            dislikes=[],
+            lifestyle=[],
+            onboarding_status="completed",
+        )
+    )
+
+    # Inserted newest-last so a recency tiebreak would surface Zulu last.
+    session.add_all(
+        [
+            Vendor(name="Alpha Cafe", created_at=_stamp("2024-01-01")),
+            Vendor(name="Mike Cafe", created_at=_stamp("2024-02-01")),
+            Vendor(name="Zulu Cafe", created_at=_stamp("2024-03-01")),
+            Vendor(name="Beta Cafe", created_at=_stamp("2024-04-01")),
+        ]
+    )
+    session.commit()
+
+    zulu = session.query(Vendor).filter_by(name="Zulu Cafe").one()
+
+    monkeypatch.setattr(
+        "app.api.routes.vendors.VendorRecommender.recommend",
+        lambda self, preferences, *, limit=6: [
+            VendorRecommendation(vendor=zulu, similarity=0.9, score=0.9)
+        ],
+    )
+
+    response = client.get(
+        "/vendors",
+        headers={"Authorization": f"Bearer {user.id}"},
+        params={
+            "sort": "recommended",
+            "lat": 1.3483,
+            "lng": 103.6831,
+        },
+    )
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [item["name"] for item in items] == [
+        "Zulu Cafe",
+        "Alpha Cafe",
+        "Beta Cafe",
+        "Mike Cafe",
+    ]
+    assert [item["recommended"] for item in items] == [
+        True,
+        False,
+        False,
+        False,
     ]
