@@ -15,7 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from geoalchemy2.shape import to_shape
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, literal, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -184,6 +184,7 @@ def list_vendors(
     # that share their position see nearby vendors first. PostGIS computes it;
     # SQLite test runs fall back to the alphabetical order below.
     nearby_order: tuple[object, ...] = ()
+    distance_expr = None
 
     if (
         lat is not None
@@ -191,8 +192,8 @@ def list_vendors(
         and session.get_bind().dialect.name == "postgresql"
     ):
         user_point = func.ST_GeogFromText(f"POINT({lng:.7f} {lat:.7f})")
-        distance = func.ST_Distance(Vendor.map_coordinates, user_point)
-        nearby_order = (distance.asc().nullslast(),)
+        distance_expr = func.ST_Distance(Vendor.map_coordinates, user_point)
+        nearby_order = (distance_expr.asc().nullslast(),)
 
     recommended_ids: list[int] = []
 
@@ -223,11 +224,17 @@ def list_vendors(
                 recommended_ids = []
 
     review_count = func.count(Review.id).label("review_count")
+    distance_column = (
+        distance_expr.label("distance_m")
+        if distance_expr is not None
+        else literal(None).label("distance_m")
+    )
 
     statement = (
         select(
             Vendor,
             review_count,
+            distance_column,
         )
         .options(
             selectinload(Vendor.images),
@@ -286,7 +293,6 @@ def list_vendors(
             func.lower(Vendor.name).asc(),
             Vendor.id.asc(),
         )
-        statement = statement.order_by(*order_by)
 
     rows = session.execute(
         statement
@@ -298,7 +304,7 @@ def list_vendors(
 
     recommended_id_set = set(recommended_ids)
 
-    for vendor, review_count_value in rows:
+    for vendor, review_count_value, distance_value in rows:
         items.append(
             VendorListItem(
                 id=vendor.id,
@@ -343,6 +349,9 @@ def list_vendors(
                 ],
                 map_coordinates=_vendor_coordinates(vendor),
                 recommended=vendor.id in recommended_id_set,
+                distance_m=(
+                    None if distance_value is None else float(distance_value)
+                ),
             )
         )
 
@@ -392,13 +401,11 @@ def list_nearby_vendors(
         .limit(limit)
     ).all()
 
-    items = [
-        VendorNearbyItem(
-            **_vendor_list_item(vendor, review_count).model_dump(),
-            distance_m=float(distance_m),
-        )
-        for vendor, review_count, distance_m in rows
-    ]
+    items: list[VendorNearbyItem] = []
+    for vendor, review_count, distance_m in rows:
+        item = _vendor_list_item(vendor, review_count).model_dump()
+        item.pop("distance_m", None)
+        items.append(VendorNearbyItem(**item, distance_m=float(distance_m)))
     return VendorNearbyRead(items=items, total=len(items))
 
 

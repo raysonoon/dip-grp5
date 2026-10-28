@@ -68,6 +68,7 @@ class VendorListItem(BaseModel):
     images: list[VendorImageRead]
     map_coordinates: VendorCoordinates | None
     recommended: bool = False
+    distance_m: float | None = None
 
 
 class VendorNearbyItem(VendorListItem):

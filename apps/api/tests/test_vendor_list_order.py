@@ -73,12 +73,15 @@ def test_vendor_list_accepts_coordinates_and_still_orders_alphabetically(
     )
 
     assert response.status_code == 200
-    names = [item["name"] for item in response.json()["items"]]
+    items = response.json()["items"]
+    names = [item["name"] for item in items]
     assert names == [
         "ban mian corner",
         "Chicken Rice Stall",
         "Zhao Ji Noodle House",
     ]
+    # No PostGIS on SQLite, so distance is unavailable but the field is present.
+    assert all(item["distance_m"] is None for item in items)
 
 
 def test_vendor_list_rejects_out_of_range_coordinates(client) -> None:
