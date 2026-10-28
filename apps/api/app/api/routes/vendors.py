@@ -141,6 +141,8 @@ def list_vendors(
     ] = "recommended",
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
+    lat: Annotated[float | None, Query(ge=-90, le=90)] = None,
+    lng: Annotated[float | None, Query(ge=-180, le=180)] = None,
 ) -> VendorListRead:
     search_plan = build_vendor_search_plan(session, q)
     filters = list(search_plan.filters)
@@ -161,6 +163,20 @@ def list_vendors(
     total = session.scalar(
         select(func.count(Vendor.id)).where(*filters)
     )
+
+    # Distance ordering, used as a tiebreak after the primary sort so callers
+    # that share their position see nearby vendors first. PostGIS computes it;
+    # SQLite test runs fall back to the alphabetical order below.
+    nearby_order: tuple[object, ...] = ()
+
+    if (
+        lat is not None
+        and lng is not None
+        and session.get_bind().dialect.name == "postgresql"
+    ):
+        user_point = func.ST_GeogFromText(f"POINT({lng:.7f} {lat:.7f})")
+        distance = func.ST_Distance(Vendor.map_coordinates, user_point)
+        nearby_order = (distance.asc().nullslast(),)
 
     recommended_ids: list[int] = []
 
@@ -210,6 +226,7 @@ def list_vendors(
         statement = statement.order_by(
             *search_plan.order_by,
             review_count.desc(),
+            *nearby_order,
             Vendor.created_at.desc(),
             Vendor.id.desc(),
         )
@@ -222,6 +239,7 @@ def list_vendors(
         statement = statement.order_by(
             *search_plan.order_by,
             rating.desc().nullslast(),
+            *nearby_order,
             Vendor.created_at.desc(),
             Vendor.id.desc(),
         )
@@ -239,14 +257,17 @@ def list_vendors(
         statement = statement.order_by(
             *search_plan.order_by,
             recommendation_order.asc(),
-            Vendor.created_at.desc(),
-            Vendor.id.desc(),
+            *nearby_order,
+            func.lower(Vendor.name).asc(),
+            Vendor.id.asc(),
         )
 
     else:
-        # Fallback when no stalls are recommended: alphabetical, A-Z.
+        # Fallback when no stalls are recommended: nearby first (when the caller
+        # shares a position), otherwise alphabetical, A-Z.
         statement = statement.order_by(
             *search_plan.order_by,
+            *nearby_order,
             func.lower(Vendor.name).asc(),
             Vendor.id.asc(),
         )
