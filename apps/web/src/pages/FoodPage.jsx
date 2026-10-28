@@ -291,8 +291,9 @@ export default function FoodPage() {
 
   const [sort, setSort] = useState("recommended");
 
-    // undefined = still asking, null = unavailable/denied, {lat, lng} = known
-  const [userLocation, setUserLocation] = useState(undefined);
+  const [nearbyCoords, setNearbyCoords] = useState(null);
+  
+  const [geoStatus, setGeoStatus] = useState("idle");
 
   const [locations, setLocations] = useState([]);
 
@@ -469,6 +470,10 @@ export default function FoodPage() {
 
       offset,
 
+      lat: nearbyCoords?.lat ?? null,
+
+      lng: nearbyCoords?.lng ?? null,
+
       signal: controller.signal,
 
     })
@@ -505,7 +510,7 @@ export default function FoodPage() {
 
     return () => controller.abort();
 
-    }, [debouncedSearchTerm, selectedLocation, sort, selectedCategory, offset, loadAttempt, userLocation]);
+  }, [debouncedSearchTerm, selectedLocation, sort, selectedCategory, offset, loadAttempt, nearbyCoords]);
 
 
 
@@ -518,6 +523,72 @@ export default function FoodPage() {
   const currentPage = Math.floor(offset / PAGE_LIMIT) + 1;
 
   const hasActiveFilters = Boolean(searchTerm.trim() || selectedLocation || selectedCategory);
+
+
+
+  const requestNearbyCoords = () => {
+
+    setOffset(0);
+
+
+
+    if (nearbyCoords) {
+
+      setNearbyCoords(null);
+
+      setGeoStatus("idle");
+
+      return;
+
+    }
+
+
+
+    if (!("geolocation" in navigator)) {
+
+      setGeoStatus("unavailable");
+
+      return;
+
+    }
+
+
+
+    setGeoStatus("requesting");
+
+
+
+    navigator.geolocation.getCurrentPosition(
+
+      (position) => {
+
+        setNearbyCoords({
+
+          lat: position.coords.latitude,
+
+          lng: position.coords.longitude,
+
+        });
+
+        setGeoStatus("granted");
+
+      },
+
+      (error) => {
+
+        setGeoStatus(error.code === error.PERMISSION_DENIED ? "denied" : "unavailable");
+
+      },
+
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
+
+    );
+
+  };
+
+
+
+  const isNearby = nearbyCoords !== null;
 
 
 
@@ -638,6 +709,21 @@ export default function FoodPage() {
           <option value="rating">Highest Rating</option>
         </select>
 
+        <button
+          type="button"
+          onClick={requestNearbyCoords}
+          disabled={geoStatus === "requesting"}
+          aria-pressed={isNearby}
+          title={isNearby ? "Stop sorting by distance" : "Sort vendors by distance from you"}
+          className={`w-full sm:w-auto px-3.5 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${
+            isNearby
+              ? "border-primary bg-primary/10 text-primary cursor-pointer"
+              : "border-border bg-background text-foreground cursor-pointer hover:bg-muted"
+          } ${geoStatus === "requesting" ? "cursor-wait opacity-70" : ""}`}
+        >
+          {geoStatus === "requesting" ? "Locating..." : isNearby ? "Nearby ✓" : "Near me"}
+        </button>
+
         {hasActiveFilters && (
 
           <button
@@ -669,6 +755,26 @@ export default function FoodPage() {
       </div>
 
 
+
+      {!isNearby && geoStatus === "denied" && (
+
+        <p className="mb-4 text-center text-sm text-muted-foreground">
+
+          Location access was denied — vendors are shown alphabetically. Allow location in your browser to sort by distance.
+
+        </p>
+
+      )}
+
+      {!isNearby && geoStatus === "unavailable" && (
+
+        <p className="mb-4 text-center text-sm text-muted-foreground">
+
+          We couldn't determine your location — vendors are shown alphabetically.
+
+        </p>
+
+      )}
 
       {isLoading && <p className="text-center text-muted-foreground">Loading vendors...</p>}
 

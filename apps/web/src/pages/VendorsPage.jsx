@@ -17,6 +17,7 @@ import {
 import { fetchMyReviews } from "../api/account.js";
 import { fetchVendorById } from "../api/vendors";
 import VendorFavouriteButton from "../components/VendorFavouriteButton";
+import VendorLocationMap from "../components/VendorLocationMap";
 
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -822,7 +823,7 @@ function VendorDetails() {
         </p>
         <VendorFavouriteButton key={`${user?.id ?? "guest"}:${numericVendorId}`} vendorId={numericVendorId} />
       </div>
-
+      <VendorLocationMap vendor={vendor} />
       <section className="mb-8 bg-card border border-border p-5 rounded-xl">
         <h2 className="text-lg font-bold text-foreground mb-3">Menu</h2>
         <p className="text-muted-foreground">Menu information is not available yet.</p>

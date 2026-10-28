@@ -153,6 +153,8 @@ def list_vendors(
     lng: Annotated[float | None, Query(ge=-180, le=180)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
+    lat: Annotated[float | None, Query(ge=-90, le=90)] = None,
+    lng: Annotated[float | None, Query(ge=-180, le=180)] = None,
 ) -> VendorListRead:
     if (lat is None) != (lng is None):
         raise HTTPException(
@@ -179,6 +181,20 @@ def list_vendors(
     total = session.scalar(
         select(func.count(Vendor.id)).where(*filters)
     )
+
+    # Distance ordering, used as a tiebreak after the primary sort so callers
+    # that share their position see nearby vendors first. PostGIS computes it;
+    # SQLite test runs fall back to the alphabetical order below.
+    nearby_order: tuple[object, ...] = ()
+
+    if (
+        lat is not None
+        and lng is not None
+        and session.get_bind().dialect.name == "postgresql"
+    ):
+        user_point = func.ST_GeogFromText(f"POINT({lng:.7f} {lat:.7f})")
+        distance = func.ST_Distance(Vendor.map_coordinates, user_point)
+        nearby_order = (distance.asc().nullslast(),)
 
     recommended_ids: list[int] = []
 
@@ -227,6 +243,7 @@ def list_vendors(
         statement = statement.order_by(
             *search_plan.order_by,
             review_count.desc(),
+            *nearby_order,
             Vendor.created_at.desc(),
             Vendor.id.desc(),
         )
@@ -239,38 +256,37 @@ def list_vendors(
         statement = statement.order_by(
             *search_plan.order_by,
             rating.desc().nullslast(),
+            *nearby_order,
             Vendor.created_at.desc(),
             Vendor.id.desc(),
         )
 
+    elif recommended_ids:
+        recommendation_order = case(
+            {
+                vendor_id: index
+                for index, vendor_id in enumerate(recommended_ids)
+            },
+            value=Vendor.id,
+            else_=len(recommended_ids),
+        )
+
+        statement = statement.order_by(
+            *search_plan.order_by,
+            recommendation_order.asc(),
+            *nearby_order,
+            func.lower(Vendor.name).asc(),
+            Vendor.id.asc(),
+        )
+
     else:
-        # sort == "recommended": recommended first, then nearest-first
-        # (when the client sent a location), then alphabetical A-Z.
-        # Applies to every user; anonymous users and users without
-        # completed preferences simply have no recommended tier.
-        order_by = list(search_plan.order_by)
-
-        if recommended_ids:
-            recommendation_order = case(
-                {
-                    vendor_id: index
-                    for index, vendor_id in enumerate(recommended_ids)
-                },
-                value=Vendor.id,
-                else_=len(recommended_ids),
-            )
-            order_by.append(recommendation_order.asc())
-
-        if lat is not None and lng is not None:
-            # No distance cutoff. Vendors without map_coordinates get a NULL
-            # distance and sort after every vendor that has one.
-            order_by.append(_distance_from(lat, lng).asc().nullslast())
-
-        order_by.extend(
-            [
-                func.lower(Vendor.name).asc(),
-                Vendor.id.asc(),
-            ]
+        # Fallback when no stalls are recommended: nearby first (when the caller
+        # shares a position), otherwise alphabetical, A-Z.
+        statement = statement.order_by(
+            *search_plan.order_by,
+            *nearby_order,
+            func.lower(Vendor.name).asc(),
+            Vendor.id.asc(),
         )
         statement = statement.order_by(*order_by)
 

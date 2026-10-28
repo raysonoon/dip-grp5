@@ -122,7 +122,8 @@ export function parseVendorList(value) {
 
 /**
  * @param {{ q?: string, location?: string, category?: string, sort?: string,
- *   limit?: number, offset?: number, signal?: AbortSignal }} options
+ *   limit?: number, offset?: number, lat?: number|null, lng?: number|null,
+ *   signal?: AbortSignal }} options
  */
 export async function fetchVendorPage({
   q = "",
@@ -133,6 +134,8 @@ export async function fetchVendorPage({
   lng,
   limit = 100,
   offset = 0,
+  lat = null,
+  lng = null,
   signal,
 } = {}) {
   const params = new URLSearchParams({
@@ -163,6 +166,12 @@ export async function fetchVendorPage({
     params.set("lat", String(lat));
     params.set("lng", String(lng));
   }
+  }
+
+  // The API orders nearby vendors first when both coordinates are present.
+  if (lat != null && lng != null) {
+    params.set("lat", String(lat));
+    params.set("lng", String(lng));
   }
 
   const payload = await apiClient.get(
