@@ -9,6 +9,7 @@ set "DOCS_URL=http://127.0.0.1:8000/docs"
 set "OPENAPI_URL=http://127.0.0.1:8000/openapi.json"
 set "DOCKER_EXE="
 set "DOCKER_DESKTOP="
+set "ERR_MSG="
 
 echo [1/7] Checking the project environment...
 if not exist "%API_DIR%\compose.yaml" goto missing_project
@@ -67,7 +68,8 @@ echo [7/7] Starting FastAPI...
 call :api_is_ready
 if not errorlevel 1 goto open_docs
 
-start "DIP FastAPI Server" /D "%API_DIR%" "%PYTHON_EXE%" -m fastapi dev app\main.py
+rem Keep the server's own window open when it crashes, so the traceback stays readable.
+start "DIP FastAPI Server" /D "%API_DIR%" cmd /d /s /c "call "%PYTHON_EXE%" -m fastapi dev app\main.py || (echo. & echo [ERROR] FastAPI server exited with an error. See the traceback above. & pause)"
 for /l %%I in (1,1,60) do (
     call :api_is_ready
     if not errorlevel 1 goto open_docs
@@ -87,67 +89,55 @@ exit /b 0
 exit /b %errorlevel%
 
 :pip_failed
-echo.
-echo [ERROR] Failed to install Python dependencies.
-goto stop_with_error
+set "ERR_MSG=Failed to install Python dependencies."
+goto fail
 
 :missing_project
-echo.
-echo [ERROR] Cannot find apps\api\compose.yaml under:
-echo         %PROJECT_DIR%
-goto stop_with_error
+set "ERR_MSG=Cannot find apps\api\compose.yaml under: %PROJECT_DIR%"
+goto fail
 
 :missing_python
-echo.
-echo [ERROR] The Python virtual environment is missing:
-echo         %PYTHON_EXE%
-echo         Run the project setup before using this launcher.
-goto stop_with_error
+set "ERR_MSG=The Python virtual environment is missing: %PYTHON_EXE% (run the project setup first)."
+goto fail
 
 :missing_docker
-echo.
-echo [ERROR] Docker CLI was not found. Install or repair Docker Desktop.
-goto stop_with_error
+set "ERR_MSG=Docker CLI was not found. Install or repair Docker Desktop."
+goto fail
 
 :docker_not_running
-echo.
-echo [ERROR] Docker is not running and Docker Desktop could not be located.
-goto stop_with_error
+set "ERR_MSG=Docker is not running and Docker Desktop could not be located."
+goto fail
 
 :docker_timeout
-echo.
-echo [ERROR] Docker Desktop did not become ready within 180 seconds.
-goto stop_with_error
+set "ERR_MSG=Docker Desktop did not become ready within 180 seconds."
+goto fail
 
 :compose_failed
-echo.
-echo [ERROR] Docker Compose could not start the database.
-goto stop_with_error_popd
+set "ERR_MSG=Docker Compose could not start the database."
+goto fail_popd
 
 :database_timeout
-echo.
-echo [ERROR] PostgreSQL did not become ready within 90 seconds.
-goto stop_with_error_popd
+set "ERR_MSG=PostgreSQL did not become ready within 90 seconds."
+goto fail_popd
 
 :migration_failed
-echo.
-echo [ERROR] Database migration failed.
-goto stop_with_error_popd
+set "ERR_MSG=Database migration failed."
+goto fail_popd
 
 :seed_failed
-echo.
-echo [ERROR] Development data setup failed.
-goto stop_with_error_popd
+set "ERR_MSG=Development data setup failed."
+goto fail_popd
 
 :api_timeout
-echo.
-echo [ERROR] FastAPI did not become ready within 60 seconds.
-goto stop_with_error_popd
+set "ERR_MSG=FastAPI did not become ready within 60 seconds (see the DIP FastAPI Server window)."
+goto fail_popd
 
-:stop_with_error_popd
+:fail_popd
 popd
 
-:stop_with_error
+:fail
+echo.
+echo [ERROR] %ERR_MSG%
 echo.
 pause
 exit /b 1
