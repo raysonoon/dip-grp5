@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useOutletContext, useSearchParams } from "react-router-dom";
 import {
   ChevronDown,
@@ -291,9 +291,12 @@ export default function FoodPage() {
 
   const [sort, setSort] = useState("recommended");
 
-  const [nearbyCoords, setNearbyCoords] = useState(null);
-  
+  // undefined = still detecting, null = unavailable/denied, {lat,lng} = known
+  const [userCoords, setUserCoords] = useState(undefined);
+
   const [geoStatus, setGeoStatus] = useState("idle");
+
+  const [useDistance, setUseDistance] = useState(true);
 
   const [locations, setLocations] = useState([]);
 
@@ -366,33 +369,35 @@ export default function FoodPage() {
 
   // Ask for the user's location once; the recommended sort uses it to rank
   // nearby vendors. Denied, unsupported or slow -> fall back to A-Z.
-  useEffect(() => {
+  const requestLocation = useCallback(() => {
     if (!("geolocation" in navigator)) {
-      setUserLocation(null);
-      return undefined;
+      setUserCoords(null);
+      setGeoStatus("unavailable");
+      return;
     }
 
-    let cancelled = false;
+    setGeoStatus("requesting");
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        if (!cancelled) {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        }
+        setUserCoords({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setGeoStatus("granted");
       },
-      () => {
-        if (!cancelled) setUserLocation(null);
+      (error) => {
+        setUserCoords(null);
+        setGeoStatus(error.code === error.PERMISSION_DENIED ? "denied" : "unavailable");
       },
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 5 * 60 * 1000 },
     );
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  useEffect(() => {
+    requestLocation();
+  }, [requestLocation]);
+
   // Load filter dropdown values once
 
   useEffect(() => {
@@ -431,6 +436,11 @@ export default function FoodPage() {
 
 
 
+  // Distance ordering only applies while the "Near me" toggle is on.
+  const coords = useDistance ? userCoords : null;
+
+  const isNearby = useDistance && userCoords != null;
+
   // Load one filtered/paginated vendor page
 
    useEffect(() => {
@@ -439,12 +449,9 @@ export default function FoodPage() {
 
     // Wait for the location answer before the first recommended fetch,
     // so the list loads once in the right order instead of twice.
-    if (sort === "recommended" && userLocation === undefined) {
+    if (sort === "recommended" && userCoords === undefined) {
       return () => controller.abort();
     }
-
-    setIsLoading(true);
-
 
     setIsLoading(true);
 
@@ -462,17 +469,13 @@ export default function FoodPage() {
 
       sort,
 
-      lat: userLocation?.lat,
-
-      lng: userLocation?.lng,
-
       limit: PAGE_LIMIT,
 
       offset,
 
-      lat: nearbyCoords?.lat ?? null,
+      lat: coords?.lat ?? null,
 
-      lng: nearbyCoords?.lng ?? null,
+      lng: coords?.lng ?? null,
 
       signal: controller.signal,
 
@@ -510,7 +513,7 @@ export default function FoodPage() {
 
     return () => controller.abort();
 
-  }, [debouncedSearchTerm, selectedLocation, sort, selectedCategory, offset, loadAttempt, nearbyCoords]);
+  }, [debouncedSearchTerm, selectedLocation, sort, selectedCategory, offset, loadAttempt, userCoords, useDistance]);
 
 
 
@@ -527,70 +530,16 @@ export default function FoodPage() {
 
 
   const requestNearbyCoords = () => {
-
     setOffset(0);
 
-
-
-    if (nearbyCoords) {
-
-      setNearbyCoords(null);
-
-      setGeoStatus("idle");
-
+    if (isNearby) {
+      setUseDistance(false);
       return;
-
     }
 
-
-
-    if (!("geolocation" in navigator)) {
-
-      setGeoStatus("unavailable");
-
-      return;
-
-    }
-
-
-
-    setGeoStatus("requesting");
-
-
-
-    navigator.geolocation.getCurrentPosition(
-
-      (position) => {
-
-        setNearbyCoords({
-
-          lat: position.coords.latitude,
-
-          lng: position.coords.longitude,
-
-        });
-
-        setGeoStatus("granted");
-
-      },
-
-      (error) => {
-
-        setGeoStatus(error.code === error.PERMISSION_DENIED ? "denied" : "unavailable");
-
-      },
-
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
-
-    );
-
+    setUseDistance(true);
+    if (userCoords == null) requestLocation();
   };
-
-
-
-  const isNearby = nearbyCoords !== null;
-
-
 
   return (
 
