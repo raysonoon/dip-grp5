@@ -17,6 +17,7 @@ import {
 import { fetchMyReviews } from "../api/account.js";
 import { fetchVendorById } from "../api/vendors";
 import VendorFavouriteButton from "../components/VendorFavouriteButton";
+import VendorLocationMap from "../components/VendorLocationMap";
 
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -174,6 +175,11 @@ function UploadDropzone({ onFilesSelected, label }) {
 }
 
 export default function VendorsPage() {
+  const { vendorId } = useParams();
+  return <VendorDetails key={vendorId} />;
+}
+
+function VendorDetails() {
   const {
     localUserId,
     localUserRole,
@@ -192,6 +198,9 @@ export default function VendorsPage() {
 
   const [reviews, setReviews] = useState([]);
   const [reviewOffset, setReviewOffset] = useState(0);
+  const [reviewSort, setReviewSort] = useState("newest");
+  const [reviewRating, setReviewRating] = useState("");
+  const [reviewMedia, setReviewMedia] = useState("all");
   const [reviewTotal, setReviewTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(isValidVendorId);
   const [loadError, setLoadError] = useState("");
@@ -257,11 +266,19 @@ export default function VendorsPage() {
     fetchVendorReviews(numericVendorId, {
       limit: REVIEWS_PAGE_LIMIT,
       offset: reviewOffset,
+      sort: reviewSort,
+      rating: reviewRating,
+      media: reviewMedia,
       signal: controller.signal,
     })
       .then((page) => {
+        if (controller.signal.aborted) return;
         setReviews(page.items);
         setReviewTotal(page.total);
+        // An edit or image deletion can remove the last match on this page.
+        if (reviewOffset > 0 && reviewOffset >= page.total) {
+          setReviewOffset(Math.max(0, Math.ceil(page.total / REVIEWS_PAGE_LIMIT) - 1) * REVIEWS_PAGE_LIMIT);
+        }
       })
       .catch((error) => {
         if (error.name !== "AbortError") {
@@ -275,7 +292,7 @@ export default function VendorsPage() {
       });
 
     return () => controller.abort();
-  }, [isValidVendorId, numericVendorId, reviewOffset, loadAttempt, reviewsReload]);
+  }, [isValidVendorId, numericVendorId, reviewOffset, reviewSort, reviewRating, reviewMedia, loadAttempt, reviewsReload]);
 
   // Look up the user's review of this vendor directly, so it is found even when
   // it is not on the current page of reviews.
@@ -327,6 +344,12 @@ export default function VendorsPage() {
     setReviewOffset(nextOffset);
   };
 
+  const changeReviewFilter = (setFilter, value) => {
+    setFilter(value);
+    setReviewOffset(0);
+    setActionError("");
+  };
+
   const handleVoteReview = async (reviewId, vote) => {
     if (!canVote) return;
     if (votingReviewId === reviewId) return;
@@ -348,6 +371,9 @@ export default function VendorsPage() {
 
       setReviews((currentReviews) => currentReviews.map(applyVote));
       setMyReview((current) => (current ? applyVote(current) : current));
+      if (reviewSort === "best" || reviewSort === "controversial") {
+        refreshReviews();
+      }
     } catch (error) {
       setActionError(displayError(error));
     } finally {
@@ -797,7 +823,7 @@ export default function VendorsPage() {
         </p>
         <VendorFavouriteButton key={`${user?.id ?? "guest"}:${numericVendorId}`} vendorId={numericVendorId} />
       </div>
-
+      <VendorLocationMap vendor={vendor} />
       <section className="mb-8 bg-card border border-border p-5 rounded-xl">
         <h2 className="text-lg font-bold text-foreground mb-3">Menu</h2>
         <p className="text-muted-foreground">Menu information is not available yet.</p>
@@ -854,6 +880,46 @@ export default function VendorsPage() {
         <h2 className="text-lg font-bold text-foreground mb-3">
           Student Reviews {reviewTotal > 0 ? `(${reviewTotal})` : ""}
         </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+            Sort
+            <select
+              value={reviewSort}
+              onChange={(event) => changeReviewFilter(setReviewSort, event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="best">Best</option>
+              <option value="controversial">Controversial</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+            Rating
+            <select
+              value={reviewRating}
+              onChange={(event) => changeReviewFilter(setReviewRating, event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="">Any rating</option>
+              {Array.from({ length: 10 }, (_, index) => (5 - index * 0.5).toFixed(1)).map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+            Media
+            <select
+              value={reviewMedia}
+              onChange={(event) => changeReviewFilter(setReviewMedia, event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="all">All</option>
+              <option value="with_photos">With photos</option>
+              <option value="without_photos">Without photos</option>
+            </select>
+          </label>
+        </div>
         {isLoading && <p className="text-muted-foreground">Loading reviews...</p>}
         {!isLoading && loadError && (
           <div role="alert" className="text-destructive">
@@ -867,13 +933,15 @@ export default function VendorsPage() {
             </button>
           </div>
         )}
-        {!isLoading && !loadError && reviews.length === 0 && (
-          <p className="text-muted-foreground">No reviews yet. Be the first to leave one.</p>
-        )}
-        {!isLoading && !loadError && reviews.length > 0 && visibleReviews.length === 0 && (
+        {!isLoading && !loadError && visibleReviews.length === 0 && (
           <p className="text-muted-foreground">
-            {reviewTotal === 1 ? "No other reviews yet." : "No other reviews on this page."}
+            {reviewRating !== "" || reviewMedia !== "all"
+              ? "No reviews match these filters."
+              : "No reviews yet. Be the first to leave one."}
           </p>
+        )}
+        {!isLoading && !loadError && myReview && reviewOffset === 0 && otherReviews.length === 0 && (
+          <p className="text-muted-foreground">No other reviews yet.</p>
         )}
         {!isLoading && !loadError && visibleReviews.map(renderReviewCard)}
 

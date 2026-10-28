@@ -354,8 +354,8 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
     assert result[3] == 1
     assert result[4] == 0
 
-    # Existing vendor gets updated Google metadata.
-    assert existing_vendor.name == "Updated Vendor on Google"
+    # Existing vendor gets updated Google metadata, but the directory name wins.
+    assert existing_vendor.name == "Directory Vendor"
     assert existing_vendor.location is None
     assert existing_vendor.unit_code == "NS3-01-01"
     assert existing_vendor.category == "Restaurant"
@@ -377,7 +377,7 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
         "POINT(103.6806362 1.3467033)"
     )
 
-    assert mojibake_vendor.name == "Gelare @ NTU"
+    assert mojibake_vendor.name == "Geláre"
     assert mojibake_vendor.location == "NS3-01-19"
     assert mojibake_vendor.category == "Desserts / café"
     assert mojibake_vendor.halal is True

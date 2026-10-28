@@ -100,7 +100,6 @@ def _normalize_location(value: str | None) -> str | None:
     return LOCATION_ALIASES.get(cleaned.lower(), cleaned)
 
 GOOGLE_VENDOR_CORE_FIELD_MAP = (
-    ("name", "name"),
     ("Level / unit", "unit_code"),
     ("main_category", "category"),
     ("Opening hours", "opening_hours"),
@@ -1422,7 +1421,7 @@ def main() -> None:
         action = "Created" if created else "Confirmed"
         print(
             f"{action} NTU vendor: "
-            f"{vendor.directory_id}"
+            f"{vendor.directory_id} "
             f"{vendor.name} (id={vendor.id})"
         )
 

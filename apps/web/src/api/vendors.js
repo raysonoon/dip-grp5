@@ -122,7 +122,8 @@ export function parseVendorList(value) {
 
 /**
  * @param {{ q?: string, location?: string, category?: string, sort?: string,
- *   limit?: number, offset?: number, signal?: AbortSignal }} options
+ *   limit?: number, offset?: number, lat?: number|null, lng?: number|null,
+ *   signal?: AbortSignal }} options
  */
 export async function fetchVendorPage({
   q = "",
@@ -131,6 +132,8 @@ export async function fetchVendorPage({
   sort = "recommended",
   limit = 100,
   offset = 0,
+  lat = null,
+  lng = null,
   signal,
 } = {}) {
   const params = new URLSearchParams({
@@ -152,6 +155,12 @@ export async function fetchVendorPage({
 
   if (sort) {
     params.set("sort", sort);
+  }
+
+  // The API uses the position as a nearest-first tiebreak for every sort.
+  if (lat != null && lng != null) {
+    params.set("lat", String(lat));
+    params.set("lng", String(lng));
   }
 
   const payload = await apiClient.get(
