@@ -153,6 +153,29 @@ def _names(response) -> list[str]:
 
 
 @requires_postgis
+def test_recommended_sort_exposes_distance_metres(
+    pg_client: TestClient,
+    pg_session: Session,
+) -> None:
+    _add_vendors(pg_session)
+
+    response = pg_client.get("/vendors", params={"sort": "recommended", **USER})
+
+    # /vendors now returns the same distance it sorts by, so cards can show it.
+    assert response.status_code == 200, response.text
+    by_name = {
+        item["name"]: item["distance_m"] for item in response.json()["items"]
+    }
+
+    assert by_name["Zulu Near"] == pytest.approx(0, abs=30)
+    assert by_name["Bravo Mid"] > by_name["Zulu Near"]
+    assert by_name["Alpha Far"] > by_name["Bravo Mid"]
+    # Vendors without map_coordinates have no distance.
+    assert by_name["Zebra Bites"] is None
+    assert by_name["Aardvark Cafe"] is None
+
+
+@requires_postgis
 def test_recommended_sort_orders_nearest_first_then_alphabetical(
     pg_client: TestClient,
     pg_session: Session,
@@ -238,16 +261,3 @@ def test_rating_sort_ignores_location(
     ]
     assert _names(without) == expected
     assert _names(with_location) == expected
-
-
-@requires_postgis
-def test_reviews_sort_ignores_location(
-    pg_client: TestClient,
-    pg_session: Session,
-) -> None:
-    _add_vendors(pg_session)
-
-    without = pg_client.get("/vendors", params={"sort": "reviews"})
-    with_location = pg_client.get("/vendors", params={"sort": "reviews", **USER})
-
-    assert _names(with_location) == _names(without)

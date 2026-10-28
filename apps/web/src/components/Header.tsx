@@ -2,8 +2,10 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ChevronDown, Loader2, LogOut, Menu, X, Search, Store, UserRound } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { fetchVendorPage, fetchVendors } from "../api/vendors";
+import { fetchVendorPage, fetchVendors, type parseVendor } from "../api/vendors";
 import { rankTrendingVendors } from "../lib/trendingVendors";
+
+type Vendor = ReturnType<typeof parseVendor>;
 
 const QUICK_SEARCH_TAGS = [
   { emoji: "🍗", label: "Chicken Rice", query: "Chicken Rice" },
@@ -141,7 +143,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
         });
 
         const personalized = (data.items ?? []).filter(
-          (vendor: any) => vendor.recommended,
+          (vendor: Vendor) => vendor.recommended,
         );
 
         if (personalized.length > 0) {
@@ -364,7 +366,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
         <div className="hidden md:flex items-center gap-3 flex-shrink-0">
           {authControls}
           <Link
-            to="/food"
+            to="/discover"
             className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity"
           >
             Discover
@@ -471,7 +473,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
         <div className="md:hidden border-t border-border bg-background px-6 py-4 flex flex-col gap-4 text-sm">
           {authControls}
           <Link
-            to="/food"
+            to="/discover"
             onClick={() => setMobileMenuOpen(false)}
             className="text-sm text-muted-foreground hover:text-foreground transition-colors"
           >

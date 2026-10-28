@@ -10,6 +10,8 @@ import { apiUrl } from "../api/client";
 
 import { fetchVendorFilters, fetchVendorPage } from "../api/vendors";
 
+import { formatDistance } from "../lib/vendorRanking.js";
+
 
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -843,6 +845,16 @@ export default function FoodPage() {
                       {` • ${vendor.review_count} reviews`}
 
                     </p>
+
+                    {isNearby && vendor.distance_m != null && (
+
+                      <p className="mb-2.5 text-xs font-semibold text-primary">
+
+                        {formatDistance(vendor.distance_m)} from you
+
+                      </p>
+
+                    )}
 
                     <Link
 
