@@ -21,7 +21,6 @@ import {
   MapPin,
   ChevronRight,
   Clock,
-  TrendingUp,
 } from "lucide-react";
 import { rankTrendingVendors } from "./lib/trendingVendors";
 
@@ -58,7 +57,6 @@ type TrendingVendor = {
   topReview: string | null;
 };
 
-
 function StarRow({
   rating,
   size = "sm",
@@ -73,8 +71,8 @@ function StarRow({
           key={i}
           className={`${size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4"} ${
             i <= Math.round(rating)
-              ? "fill-primary text-primary"
-              : "fill-transparent text-muted"
+              ? "fill-amber-500 text-amber-500"
+              : "fill-transparent text-amber-200/50"
           }`}
         />
       ))}
@@ -147,10 +145,7 @@ function HomePage() {
         const withTopReviews = await Promise.all(
           ranked.map(async (vendor) => {
             try {
-              const page = await fetchVendorReviews(vendor.id, {
-                limit: 1,
-                signal: controller.signal,
-              });
+              const page = await fetchVendorReviews(vendor.id, { limit: 1 });
               return { ...vendor, topReview: page.items[0]?.comment ?? null };
             } catch {
               return { ...vendor, topReview: null };
@@ -172,112 +167,160 @@ function HomePage() {
 
   return (
     <div
-      className="min-h-screen bg-background text-foreground overflow-x-hidden"
+      className="min-h-screen bg-[#FAF6F0] text-[#5C4033] overflow-x-hidden"
       style={{ fontFamily: BODY_FONT }}
     >
       {/* ── NAV ──────────────────────────────────────── */}
       <Header fixed />
 
-      {/* ── HERO ─────────────────────────────────────── */}
-      <section className="relative min-h-screen flex items-center pt-16">
-        <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat bg-muted"
-          style={{
-            backgroundImage:
-              "url('https://images.unsplash.com/photo-1628532429788-c35922b5e6c1?w=1600&h=900&fit=crop&auto=format')",
-          }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-background/96 via-background/84 to-background/20" />
-        <div className="absolute inset-0 bg-gradient-to-t from-background/50 via-transparent to-transparent" />
+      {/* ── EDITORIAL DARK RED BANNER SECTION ── */}
+      <section className="pt-28 pb-12 min-h-[55vh] bg-[#B22222] text-white text-center flex flex-col justify-between items-center relative overflow-hidden">
+        {/* Title & Tagline Container */}
+        <div className="max-w-4xl mx-auto space-y-3 px-6 z-10 pt-4">
+          <h1 className="text-5xl sm:text-6xl md:text-7xl font-serif tracking-tight font-normal text-white">
+            NTUmmy
+          </h1>
+          <div className="space-y-1 max-w-2xl mx-auto text-amber-50/90 text-sm sm:text-base md:text-lg leading-relaxed font-light">
+            <p className="font-medium tracking-wide">At NTUmmy, we don't gatekeep.</p>
+            <p>Share your go-to food places in NTU or try out a new stall today!</p>
+          </div>
+        </div>
 
-        <div className="relative z-10 max-w-7xl mx-auto px-6 py-28">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-semibold mb-7 tracking-wide">
+        {/* 3 Mascot Heads Positioned Below the Tagline */}
+        <div className="w-full max-w-6xl mx-auto px-6 pt-10 pb-2 flex items-center justify-between z-10">
+          <img
+            src="/ntummy_mascot_head.svg"
+            alt="NTUmmy Mascot Head Left"
+            className="w-20 sm:w-28 md:w-36 h-auto object-contain drop-shadow-xl transform -rotate-6 hover:scale-105 transition-transform duration-300"
+          />
+          <img
+            src="/ntummy_mascot_head.svg"
+            alt="NTUmmy Mascot Head Center"
+            className="w-20 sm:w-28 md:w-36 h-auto object-contain drop-shadow-xl transform rotate-0 hover:scale-105 transition-transform duration-300"
+          />
+          <img
+            src="/ntummy_mascot_head.svg"
+            alt="NTUmmy Mascot Head Right"
+            className="w-20 sm:w-28 md:w-36 h-auto object-contain drop-shadow-xl transform rotate-6 hover:scale-105 transition-transform duration-300"
+          />
+        </div>
+      </section>
+
+      {/* ── HERO SECTION ── */}
+      <section className="relative min-h-[85vh] flex items-center py-16 bg-[#FAF6F0] overflow-hidden border-b border-amber-900/10">
+        {/* Soft background ambient glow highlights */}
+        <div className="absolute top-10 left-[-5%] w-96 h-96 bg-rose-200/40 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-[-10%] right-[-5%] w-[450px] h-[450px] bg-rose-300/30 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 max-w-7xl mx-auto px-6 py-12 w-full flex flex-col md:flex-row items-center justify-between gap-12">
+          {/* Main Hero Card Container with Rose-Dominant Warm Pastel Gradient */}
+          <div className="max-w-2xl bg-gradient-to-br from-rose-200/90 via-pink-100/80 to-amber-100/80 backdrop-blur-md p-8 md:p-12 rounded-[2.5rem] border border-rose-300/40 shadow-xl shadow-rose-900/10">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-rose-500/25 bg-rose-500/10 text-rose-800 text-xs font-semibold mb-6 tracking-wide shadow-sm">
               BUILT BY STUDENTS, FOR STUDENTS{" "}
-              <TrendingUp className="w-3.5 h-3.5" />
             </div>
 
-            <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.05] mb-6 font-display">
+            <h2 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-[1.1] mb-6 font-display tracking-tight text-[#4A3328]">
               Find Your Next
-              <span className="block text-primary italic">Favourite Stall</span>
-            </h1>
+              <span className="block text-rose-700 italic font-normal mt-1">
+                Favourite Stall
+              </span>
+            </h2>
 
-            <p className="text-lg text-muted-foreground mb-12 leading-relaxed">
-              Discover hidden gems across 13 canteens, a variety of cafes, fast
-              food outlets and restaurants — rated, reviewed, and recommended by
+            <p className="text-base md:text-lg text-[#6E5548] mb-10 leading-relaxed font-normal">
+              Discover hidden gems across 13 canteens, cozy cafes, fast food
+              outlets and restaurants — rated, reviewed, and recommended by
               your fellow NTU foodies.
             </p>
 
             {/* Stats */}
-            <div className="flex gap-10">
+            <div className="grid grid-cols-3 gap-6 pt-6 border-t border-rose-900/15">
               {[
                 ["50+", "Food Stalls"],
                 ["2,400+", "Reviews"],
                 ["13", "Canteens"],
               ].map(([num, label]) => (
-                <div key={label}>
-                  <div className="text-3xl font-bold text-foreground font-display">
+                <div key={label} className="space-y-0.5">
+                  <div className="text-2xl md:text-3xl font-extrabold text-[#4A3328] font-display tracking-tight">
                     {num}
                   </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
+                  <div className="text-xs font-medium text-[#7D6355] uppercase tracking-wider">
                     {label}
                   </div>
                 </div>
               ))}
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* ── CAMPUS MAP TEASER ────────────────────────── */}
-      <section className="py-24 bg-card border-t border-border">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <p className="text-[#1B2D4F] text-xs font-bold uppercase tracking-widest mb-2">
-              Navigate Campus
-            </p>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4 font-display">
-              All Food Places in 1 Map
-            </h2>
-            <p className="text-muted-foreground max-w-sm mx-auto text-sm leading-relaxed">
-              Check what's available and plan your route in seconds.
-            </p>
+          {/* Transparent Mascot on Right Side */}
+          <div className="flex justify-center items-center max-w-full md:max-w-[420px] shrink-0">
+            <img
+              src="/ntummy_mascot.svg"
+              alt="NTUmmy Mascot"
+              className="w-64 md:w-[350px] lg:w-[380px] h-auto object-contain pointer-events-none drop-shadow-[0_20px_40px_rgba(74,51,40,0.12)] transform hover:scale-105 transition-transform duration-500 ease-out"
+            />
           </div>
-
-          <VendorMap />
         </div>
       </section>
 
-      {/* ── TRENDING STALLS ───────────────────────────── */}
-      <section className="py-24">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="flex items-end justify-between mb-12">
-            <div>
-              <p className="text-primary text-xs font-bold uppercase tracking-widest mb-2">
-                This Week's Picks
+      {/* ── CAMPUS MAP TEASER ── */}
+      <section className="relative py-20 bg-[#F5EFE6] overflow-hidden border-b border-amber-900/10">
+        <div className="relative z-10 max-w-7xl mx-auto px-6">
+          <div className="bg-white/90 backdrop-blur-md rounded-[2.5rem] border border-amber-900/10 p-8 md:p-12 shadow-2xl shadow-amber-900/5 transition-all duration-300">
+            <div className="text-center max-w-xl mx-auto mb-10">
+              <span className="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-widest mb-3">
+                Navigate Campus
+              </span>
+              <h2 className="text-3xl md:text-4xl font-extrabold mb-3 font-display tracking-tight text-[#4A3328]">
+                All Food Places in 1 Map
+              </h2>
+              <p className="text-[#6E5548] text-sm md:text-base leading-relaxed">
+                Check what's available nearby and plan your campus food route in seconds.
               </p>
-              <h2 className="text-3xl md:text-4xl font-bold font-display">
+            </div>
+
+            <div className="rounded-2xl overflow-hidden border border-border shadow-inner bg-muted/30">
+              <VendorMap />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── TRENDING STALLS (Dark Red Background #B22222) ──── */}
+      <section className="relative py-20 bg-[#B22222] text-white border-b border-amber-900/10 overflow-hidden">
+        <div className="relative z-10 max-w-7xl mx-auto px-6">
+          <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
+            <div>
+              <span className="inline-block px-3.5 py-1 rounded-full bg-amber-500/20 text-amber-200 text-xs font-bold uppercase tracking-widest mb-3 border border-amber-400/20">
+                This Week's Picks
+              </span>
+              <h2 className="text-3xl md:text-4xl font-extrabold font-display tracking-tight text-white">
                 Trending on Campus
               </h2>
             </div>
             <Link
               to="/food"
-              className="hidden md:flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-200 hover:text-white transition-colors group"
             >
-              View all stalls <ChevronRight className="w-4 h-4" />
+              View all stalls{" "}
+              <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </Link>
           </div>
 
           {trendingLoading ? (
-            <p className="text-sm text-muted-foreground">
-              Loading trending stalls...
-            </p>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[0, 1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="h-80 rounded-[2rem] bg-white/10 border border-white/20 animate-pulse shadow-sm"
+                />
+              ))}
+            </div>
           ) : trendingVendors.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <div className="text-center py-16 bg-white/10 rounded-[2rem] border border-white/20 text-amber-100/80 shadow-sm">
               No stalls to show yet.
-            </p>
+            </div>
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {trendingVendors.map((vendor) => {
                 const rating =
                   vendor.average_rating ?? vendor.average_google_rating;
@@ -285,58 +328,65 @@ function HomePage() {
                   <Link
                     key={vendor.id}
                     to={`/vendors/${vendor.id}`}
-                    className="group rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/25 transition-all duration-300 cursor-pointer flex flex-col"
+                    className="group rounded-[2rem] border border-amber-900/10 bg-white overflow-hidden hover:border-amber-300 hover:-translate-y-1.5 transition-all duration-300 shadow-xl flex flex-col cursor-pointer"
                   >
-                    <div className="relative h-44 overflow-hidden bg-muted">
+                    <div className="relative h-48 overflow-hidden bg-muted">
                       {vendor.image_url ? (
                         <img
                           src={apiUrl(vendor.image_url)}
                           alt={`${vendor.name} dish`}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
-                          No image
+                        <div className="w-full h-full flex items-center justify-center text-xs text-[#7D6355] font-medium">
+                          No image available
                         </div>
                       )}
                       <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
                         {vendor.category && (
                           <span
                             key={vendor.category}
-                            className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm"
+                            className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/90 text-[#5C4033] border border-amber-900/10 backdrop-blur-md shadow-sm"
                           >
                             {vendor.category}
                           </span>
                         )}
                       </div>
-                      <div className="absolute top-3 right-3 px-2 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-bold">
+                      <div className="absolute top-3 right-3 px-2.5 py-1 rounded-xl bg-[#B22222] text-white text-xs font-bold shadow-md">
                         {rating != null ? `${rating.toFixed(1)}★` : "—"}
                       </div>
                     </div>
 
-                    <div className="p-4 flex flex-col flex-1">
-                      <h3 className="font-semibold text-sm leading-snug mb-1">
-                        {vendor.name}
-                      </h3>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
-                        <MapPin className="w-3 h-3 flex-shrink-0" />
-                        {vendor.location ?? "NTU"}
+                    <div className="p-5 flex flex-col flex-1 justify-between bg-white">
+                      <div>
+                        <h3 className="font-bold text-base leading-snug mb-1.5 text-[#4A3328] group-hover:text-rose-700 transition-colors">
+                          {vendor.name}
+                        </h3>
+                        <div className="flex items-center gap-1.5 text-xs text-[#7D6355] mb-3">
+                          <MapPin className="w-3.5 h-3.5 flex-shrink-0 text-amber-800" />
+                          <span className="truncate">
+                            {vendor.location ?? "NTU"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-[#7D6355] mb-4">
+                          <StarRow rating={rating ?? 0} />
+                          <span className="font-medium">
+                            {vendor.review_count} reviews
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-                        <StarRow rating={rating ?? 0} />
-                        <span>{vendor.review_count} reviews</span>
-                      </div>
-                      <div className="mt-auto border-t border-border pt-3">
+
+                      <div className="border-t border-amber-900/10 pt-3.5 mt-auto">
                         {vendor.topReview && (
-                          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 mb-3">
+                          <p className="text-xs text-[#7D6355] italic leading-relaxed line-clamp-2 mb-3 bg-[#FAF6F0] p-2 rounded-xl">
                             &ldquo;{vendor.topReview}&rdquo;
                           </p>
                         )}
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-foreground">
-                            {vendor.price_range ?? "Price unavailable"}
+                          <span className="text-xs font-bold text-[#4A3328]">
+                            {vendor.price_range ?? "Price unlisted"}
                           </span>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-xs font-medium text-[#7D6355] bg-amber-100/50 px-2 py-0.5 rounded-md">
                             {vendor.category ?? "Food"}
                           </span>
                         </div>
@@ -350,15 +400,15 @@ function HomePage() {
         </div>
       </section>
 
-      {/* ── REVIEWS ──────────────────────────────────── */}
-      <section className="py-24 bg-card border-y border-border">
-        <div className="max-w-7xl mx-auto px-6">
+      {/* ── REVIEWS ──────────────────── */}
+      <section className="relative py-20 bg-[#F5EFE6] overflow-hidden border-b border-amber-900/10">
+        <div className="relative z-10 max-w-7xl mx-auto px-6">
           <div className="flex items-end justify-between mb-12">
             <div>
-              <p className="text-[#1B2D4F] text-xs font-bold uppercase tracking-widest mb-2">
+              <span className="inline-block px-3.5 py-1 rounded-full bg-orange-500/15 text-orange-900 text-xs font-bold uppercase tracking-widest mb-3">
                 From the Community
-              </p>
-              <h2 className="text-3xl md:text-4xl font-bold font-display">
+              </span>
+              <h2 className="text-3xl md:text-4xl font-extrabold font-display tracking-tight text-[#4A3328]">
                 What students are saying
               </h2>
             </div>
@@ -369,16 +419,12 @@ function HomePage() {
               {[0, 1, 2].map((item) => (
                 <div
                   key={item}
-                  className="p-6 rounded-2xl border border-border bg-background animate-pulse"
-                >
-                  <div className="h-10 w-40 bg-muted rounded mb-5" />
-                  <div className="h-4 w-32 bg-muted rounded mb-3" />
-                  <div className="h-20 bg-muted rounded" />
-                </div>
+                  className="p-6 rounded-[2rem] border border-amber-900/10 bg-white animate-pulse h-64 shadow-sm"
+                />
               ))}
             </div>
           ) : reviews.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
+            <div className="text-center py-16 text-[#7D6355] bg-white rounded-[2rem] border border-amber-900/10 shadow-sm">
               No reviews available yet.
             </div>
           ) : (
@@ -394,45 +440,45 @@ function HomePage() {
                     <Link
                       key={review.id}
                       to={`/vendors/${review.vendor.id}`}
-                      className="p-6 rounded-2xl border border-border bg-background flex flex-col hover:border-primary/40 transition-colors"
+                      className="p-6 md:p-8 rounded-[2rem] border border-amber-900/10 bg-white flex flex-col hover:border-rose-400 hover:shadow-2xl hover:shadow-amber-900/10 transition-all duration-300 group cursor-pointer shadow-md"
                     >
-                      <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center justify-between mb-5">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-bold flex-shrink-0">
+                          <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary text-sm font-extrabold flex-shrink-0 shadow-sm">
                             {review.user.display_name.charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
-                            <div className="text-sm font-semibold truncate">
+                            <div className="text-sm font-bold truncate text-[#4A3328] group-hover:text-primary transition-colors">
                               {review.user.display_name}
                             </div>
-                            <div className="text-xs text-muted-foreground truncate">
+                            <div className="text-xs text-[#7D6355] truncate font-medium">
                               {review.user.affiliation || "NTU"}
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-                          <Clock className="w-3 h-3" />
+                        <div className="flex items-center gap-1 text-[11px] font-medium text-[#7D6355] flex-shrink-0 bg-muted/60 px-2 py-1 rounded-full">
+                          <Clock className="w-3 h-3 text-[#7D6355]" />
                           {new Date(review.created_at).toLocaleDateString()}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center gap-2 mb-4 bg-amber-50/70 p-2.5 rounded-xl border border-amber-900/5">
                         <StarRow rating={review.rating} />
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-[#7D6355] font-medium">
                           at
                         </span>
-                        <span className="text-xs font-semibold text-primary truncate">
+                        <span className="text-xs font-bold text-primary truncate">
                           {review.vendor.name}
                         </span>
                       </div>
 
-                      <p className="text-sm text-muted-foreground leading-relaxed flex-1 mb-4">
+                      <p className="text-sm text-[#6E5548] leading-relaxed flex-1 mb-6 font-normal">
                         &ldquo;{review.comment || ""}&rdquo;
                       </p>
 
-                      <div className="flex items-center text-xs text-muted-foreground border-t border-border pt-3">
-                        <div className="flex items-center gap-1.5">
-                          <MapPin className="w-3 h-3" />
+                      <div className="flex items-center justify-between text-xs text-[#7D6355] border-t border-amber-900/10 pt-4">
+                        <div className="flex items-center gap-1.5 font-medium">
+                          <MapPin className="w-3.5 h-3.5 text-primary/70" />
                           {review.vendor.location || "NTU"}
                         </div>
                       </div>
@@ -440,23 +486,73 @@ function HomePage() {
                   ))}
               </div>
 
-              <div className="flex justify-center gap-2 mt-8">
+              <div className="flex justify-center gap-2 mt-10">
                 {Array.from({ length: reviewSlideCount }).map((_, index) => (
                   <button
                     key={index}
                     type="button"
                     onClick={() => setReviewSlide(index)}
                     aria-label={`Go to review slide ${index + 1}`}
-                    className={`w-2.5 h-2.5 rounded-full transition-colors ${
+                    className={`h-2.5 rounded-full transition-all duration-300 ${
                       reviewSlide === index
-                        ? "bg-primary"
-                        : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
+                        ? "w-8 bg-primary"
+                        : "w-2.5 bg-amber-900/20 hover:bg-amber-900/40"
                     }`}
                   />
                 ))}
               </div>
             </>
           )}
+        </div>
+      </section>
+
+      {/* ── STILL UNSURE OF WHAT TO EAT? (Dark Red Section Background #B22222) ── */}
+      <section className="relative bg-[#B22222] overflow-hidden text-white border-b border-amber-900/10">
+        <div className="grid md:grid-cols-12 items-stretch min-h-[420px]">
+          
+          {/* Left Side: White Text & Button Container */}
+          <div className="md:col-span-6 p-8 sm:p-12 lg:p-16 flex flex-col justify-center relative z-10 bg-[#B22222]">
+            
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-serif text-white font-normal leading-tight mb-4">
+              Still Unsure of <br />
+              What to Eat?
+            </h2>
+            
+            <p className="text-base sm:text-lg text-amber-100/90 font-light mb-8 max-w-md">
+              Explore more food options in NTU.
+            </p>
+
+            <div>
+              <Link
+                to="/food"
+                className="inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-full bg-white text-[#B22222] hover:bg-amber-100 text-sm font-semibold tracking-wide transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              >
+                Discover <ChevronRight className="w-4 h-4" />
+              </Link>
+            </div>
+          </div>
+
+          {/* Center Floating NTUmmy Logo Badge */}
+          <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none">
+            <div className="w-24 h-24 lg:w-28 lg:h-28 rounded-full bg-white p-3 shadow-2xl border border-white/20 flex items-center justify-center transform hover:scale-105 transition-transform">
+              <img
+                src="/ntummy_logo.svg"
+                alt="NTUmmy Logo"
+                className="w-full h-full object-contain"
+              />
+            </div>
+          </div>
+
+          {/* Right Side: NTU Vendor Photo Showcase */}
+          <div className="md:col-span-6 relative min-h-[300px] md:min-h-full bg-[#3D291F] overflow-hidden">
+            <img
+              src="/data/vendor_photos/downloads/V002_3.jpg"
+              alt="NTU Food Vendor Showcase"
+              className="w-full h-full object-cover hover:scale-105 transition-transform duration-700 ease-out"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
+          </div>
+
         </div>
       </section>
 
@@ -551,20 +647,20 @@ function App() {
       </Routes>
 
       {preferenceLoadError && (
-        <div className="fixed bottom-6 right-6 z-[110] w-[min(92vw,380px)] rounded-xl border border-border bg-card p-4 shadow-xl">
-          <p className="text-sm font-semibold text-foreground">
+        <div className="fixed bottom-6 right-6 z-[110] w-[min(92vw,380px)] rounded-2xl border border-border bg-card p-5 shadow-2xl backdrop-blur-md">
+          <p className="text-sm font-bold text-[#4A3328]">
             Unable to load food preferences
           </p>
 
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-xs text-[#7D6355]">
             You can retry loading your preferences or close this message.
           </p>
 
-          <div className="mt-3 flex justify-end gap-2">
+          <div className="mt-4 flex justify-end gap-2">
             <button
               type="button"
               onClick={() => setPreferenceLoadError(false)}
-              className="rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+              className="rounded-xl px-3 py-2 text-xs font-semibold text-[#7D6355] hover:text-[#4A3328] transition-colors"
             >
               Close
             </button>
@@ -575,7 +671,7 @@ function App() {
                 setPreferenceLoadError(false);
                 setPreferenceRetry((current) => current + 1);
               }}
-              className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
+              className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:opacity-95 shadow-md transition-opacity"
             >
               Retry
             </button>

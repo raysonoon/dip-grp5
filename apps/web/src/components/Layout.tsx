@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Outlet } from "react-router-dom";
-import { Bot, RotateCcw, Send, Square, X } from "lucide-react";
+import { RotateCcw, Send, Square, X } from "lucide-react";
 import ChatMessageContent from "./ChatMessageContent";
 import { useChatSession } from "../hooks/useChatSession";
 import Footer from "./Footer";
@@ -25,15 +25,20 @@ export function FoodieChat() {
     <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end gap-3">
       {chatOpen && (
         <div data-chat-window className="w-[calc(100vw-2rem)] sm:w-[360px] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
-          {/* Chat Header (Retains "Foodie" name) */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card">
+          {/* Chat Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-[#B22222] text-white">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                <Bot className="w-4 h-4 text-primary-foreground" />
+              {/* White Circular Background Behind Mascot in Header */}
+              <div className="w-9 h-9 rounded-full bg-white p-1 flex items-center justify-center shadow-md flex-shrink-0">
+                <img
+                  src="/ntummy_mascot_head.svg"
+                  alt="NTUmmy Mascot"
+                  className="w-full h-full object-contain"
+                />
               </div>
               <div>
-                <div className="text-sm font-semibold text-foreground">Foodie</div>
-                <div className="text-xs text-[#4CAF50] flex items-center gap-1">
+                <div className="text-sm font-bold text-white leading-tight">Foodie</div>
+                <div className="text-xs text-amber-100/90 flex items-center gap-1 font-medium">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#4CAF50] inline-block" />
                   Online
                 </div>
@@ -43,7 +48,7 @@ export function FoodieChat() {
               <button
                 type="button"
                 onClick={startNewChat}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                className="text-amber-100/80 hover:text-white transition-colors p-1"
                 aria-label="Start a new chat session"
                 title="New chat"
               >
@@ -52,7 +57,7 @@ export function FoodieChat() {
               <button
                 type="button"
                 onClick={() => setChatOpen(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                className="text-amber-100/80 hover:text-white transition-colors p-1"
                 aria-label="Close chat"
               >
                 <X className="w-4 h-4" />
@@ -126,9 +131,9 @@ export function FoodieChat() {
                   onClick={() => sendMessage(chatInput)}
                   disabled={!chatInput.trim()}
                   aria-label="Send message"
-                  className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center hover:opacity-90 disabled:opacity-50 transition-opacity flex-shrink-0"
+                  className="w-10 h-10 rounded-xl bg-[#B22222] text-white flex items-center justify-center hover:opacity-90 disabled:opacity-50 transition-opacity flex-shrink-0"
                 >
-                  <Send className="w-4 h-4 text-primary-foreground" />
+                  <Send className="w-4 h-4 text-white" />
                 </button>
               )}
             </div>
@@ -136,15 +141,27 @@ export function FoodieChat() {
         </div>
       )}
 
-      {/* Chat Toggle Button */}
+      {/* Chat Toggle Button with White Circle Behind Mascot */}
       <button
         type="button"
         onClick={() => setChatOpen((o) => !o)}
-        className="flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-primary text-primary-foreground font-semibold text-sm shadow-lg cursor-pointer hover:opacity-90 transition-opacity"
         aria-label="Open Foodie chatbot"
+        className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#B22222] text-white font-semibold text-sm shadow-2xl border-2 border-white/20 cursor-pointer hover:scale-105 active:scale-95 transition-all duration-300 group"
       >
-        {chatOpen ? <X className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-        {!chatOpen && "Ask Foodie"}
+        {chatOpen ? (
+          <X className="w-5 h-5 text-white" />
+        ) : (
+          <>
+            <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center p-0.5 shadow-sm group-hover:rotate-6 transition-transform duration-300">
+              <img
+                src="/ntummy_mascot_head.svg"
+                alt="NTUmmy Mascot"
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <span>Ask Foodie</span>
+          </>
+        )}
       </button>
     </div>
   );
