@@ -127,6 +127,16 @@ def _resolve_vendor_image(
     )
 
 
+def _user_point(lat: float, lng: float):
+    """PostGIS geography point for a user location. WKT is (lng lat)."""
+    return func.ST_GeogFromText(f"POINT({lng:.7f} {lat:.7f})")
+
+
+def _distance_from(lat: float, lng: float):
+    """Metres from each vendor's map_coordinates to the user point (NULL if no coords)."""
+    return func.ST_Distance(Vendor.map_coordinates, _user_point(lat, lng))
+
+
 @router.get("", response_model=VendorListRead)
 def list_vendors(
     session: DbSession,
@@ -139,11 +149,19 @@ def list_vendors(
         Literal["recommended", "reviews", "rating"],
         Query(),
     ] = "recommended",
+    lat: Annotated[float | None, Query(ge=-90, le=90)] = None,
+    lng: Annotated[float | None, Query(ge=-180, le=180)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
     lat: Annotated[float | None, Query(ge=-90, le=90)] = None,
     lng: Annotated[float | None, Query(ge=-180, le=180)] = None,
 ) -> VendorListRead:
+    if (lat is None) != (lng is None):
+        raise HTTPException(
+            status_code=422,
+            detail="lat and lng must be provided together.",
+        )
+
     search_plan = build_vendor_search_plan(session, q)
     filters = list(search_plan.filters)
 
@@ -186,7 +204,6 @@ def list_vendors(
                 UserFoodPreferences.user_id == current_user.id
             )
         )
-
         if (
             preferences is not None
             and preferences.onboarding_status == "completed"
@@ -271,6 +288,7 @@ def list_vendors(
             func.lower(Vendor.name).asc(),
             Vendor.id.asc(),
         )
+        statement = statement.order_by(*order_by)
 
     rows = session.execute(
         statement
@@ -351,7 +369,7 @@ def list_nearby_vendors(
     Distance is computed by PostGIS on each vendor's geography column, so it
     is in metres and accounts for the curvature of the earth.
     """
-    user_point = func.ST_GeogFromText(f"POINT({lng:.7f} {lat:.7f})")
+    user_point = _user_point(lat, lng)
     distance = func.ST_Distance(Vendor.map_coordinates, user_point)
     rating = func.coalesce(Vendor.average_rating, Vendor.average_google_rating)
 
