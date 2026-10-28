@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, Leaf, LocateFixed, MapPin, SlidersHorizontal, Sparkles, Star, Store, Utensils } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Leaf, MapPin, SlidersHorizontal, Sparkles, Star, Store, Utensils } from "lucide-react";
 import { apiUrl } from "../api/client";
 import { fetchVendors, type parseVendor } from "../api/vendors";
 import { guestDiscoveryOptions, recommendGuestVendors } from "../lib/guestDiscovery.js";
@@ -92,16 +92,15 @@ export default function GuestDiscoverPage() {
 
   const options = guestDiscoveryOptions(vendors);
   const recommendations: Recommendation[] = recommendGuestVendors(vendors, { categories, locations, halal, vegetarian, userLocation });
-  const selected = [...categories, ...locations, userLocation ? "Your current location" : "", halal ? "Halal" : "", vegetarian ? "Vegetarian" : ""].filter(Boolean);
+  const selected = [...categories, ...locations, userLocation ? "Near me" : "", halal ? "Halal" : "", vegetarian ? "Vegetarian" : ""].filter(Boolean);
   const hasDistancePreference = userLocation != null || locations.length > 0;
   const hasRankingPreferences = categories.length > 0 || hasDistancePreference;
   const distanceReferences = [...(userLocation ? ["you"] : []), ...locations].join(" or ");
-  const locationFallback = locations.length ? `Using ${locations.join(" or ")} instead.` : "Choose a named area above to find nearby places.";
-  const locationStatus = geoStatus === "requesting" ? "Finding your current location…"
-    : geoStatus === "granted" ? locations.length ? "Your current location is included. Each distance shows its closest starting point: you or a selected area." : "Distances are measured from your current location."
-    : geoStatus === "denied" ? `Location access was denied. ${locationFallback}`
-    : geoStatus === "unavailable" ? `We couldn't find your current location. ${locationFallback}`
-    : "Optional. Include places near you, or choose named areas above.";
+  const locationStatus = geoStatus === "granted"
+    ? locations.length ? "Distances use the closest of you or a selected area." : "Distances are measured from you."
+    : geoStatus === "denied" ? "Location access denied — pick a named area instead."
+    : geoStatus === "unavailable" ? "Couldn't find your location — pick a named area instead."
+    : "";
 
   return (
     <div className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-6 sm:py-14">
@@ -134,18 +133,12 @@ export default function GuestDiscoverPage() {
         <form onSubmit={(event) => { event.preventDefault(); setVisibleCount(PAGE_SIZE); setShowResults(true); }} className="mx-auto max-w-2xl rounded-3xl border border-border bg-card p-6 shadow-sm sm:p-8">
           <div className="grid gap-6 sm:grid-cols-2">
             <DiscoverMultiSelect id="discover-categories" label="Food types" placeholder="I'm open to anything" icon={<Utensils size={17} className="text-primary" aria-hidden="true" />} options={options.categories} selected={categories} onChange={setCategories} />
-            <DiscoverMultiSelect id="discover-locations" label="Locations" placeholder="Anywhere on campus" icon={<MapPin size={17} className="text-primary" aria-hidden="true" />} options={options.locations} selected={locations} onChange={setLocations} />
+            <div className="min-w-0">
+              <DiscoverMultiSelect id="discover-locations" label="Locations" placeholder="Anywhere on campus" icon={<MapPin size={17} className="text-primary" aria-hidden="true" />} options={options.locations} selected={locations} onChange={setLocations} nearMe={{ selected: userLocation != null, busy: geoStatus === "requesting", onToggle: () => { if (userLocation) clearLocation(); else requestLocation(); } }} />
+            </div>
           </div>
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Pick as many as you like, or leave everything open. Your food types and nearby places come first; other spots stay on the list.</p>
-
-          <fieldset className="mt-6 rounded-2xl border border-border p-4">
-            <legend className="px-1 text-sm font-semibold">Near you (optional)</legend>
-            <div className="flex flex-wrap items-center gap-3">
-              <button type="button" disabled={geoStatus === "requesting"} onClick={requestLocation} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-semibold hover:bg-muted disabled:cursor-wait disabled:opacity-60"><LocateFixed size={16} className="text-primary" aria-hidden="true" />{geoStatus === "requesting" ? "Finding your location…" : "Use my current location"}</button>
-              {(userLocation || geoStatus === "requesting") && <button type="button" onClick={clearLocation} className="cursor-pointer rounded-xl px-3 py-2 text-xs font-semibold text-muted-foreground underline-offset-4 hover:underline">{geoStatus === "requesting" ? "Cancel location request" : "Clear current location"}</button>}
-            </div>
-            <p role="status" className="mt-3 text-xs leading-relaxed text-muted-foreground">{locationStatus}</p>
-          </fieldset>
+          {locationStatus && <p role="status" className="mt-2 text-xs leading-relaxed text-muted-foreground">{locationStatus}</p>}
 
           <fieldset className="mt-7 border-t border-border pt-6">
             <legend className="float-left mb-3 flex w-full items-center gap-2 text-sm font-semibold"><Leaf size={17} className="text-primary" aria-hidden="true" /> Any dietary preferences?</legend>
