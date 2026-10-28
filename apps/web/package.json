@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/api/chat.test.js src/api/reviews.test.js src/api/vendors.test.js src/components/citationMarkers.test.js src/lib/vendorRanking.test.js src/hooks/chatSessionState.test.js src/api/favourites.test.js src/lib/guestDiscovery.test.js",
+    "test": "node --test src/api/chat.test.js src/api/reviews.test.js src/api/vendors.test.js src/components/citationMarkers.test.js src/lib/vendorRanking.test.js src/hooks/chatSessionState.test.js src/api/favourites.test.js src/lib/guestDiscovery.test.js src/lib/vendorWheel.test.js",
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
