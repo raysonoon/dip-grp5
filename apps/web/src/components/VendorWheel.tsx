@@ -9,13 +9,14 @@ import "./vendorWheel.css";
 const COLORS = ["#f9d9a7", "#edb5af", "#abd2c7", "#b8cce6", "#e1c7e6", "#e8dca0"];
 const point = (angle: number, radius: number) => ({ x: 180 + radius * Math.sin(angle * Math.PI / 180), y: 180 - radius * Math.cos(angle * Math.PI / 180) });
 
-function WheelFace({ vendors, rotation, duration, inspectedId, disabled, onInspect }: {
+function WheelFace({ vendors, rotation, duration, inspectedId, disabled, onInspect, onSpin }: {
   vendors: WheelVendor[];
   rotation: number;
   duration: number;
   inspectedId: number | null;
   disabled: boolean;
   onInspect: (vendorId: number) => void;
+  onSpin: () => void;
 }) {
   const size = 360 / vendors.length;
   return <div className="vendor-wheel-disc">
@@ -36,7 +37,7 @@ function WheelFace({ vendors, rotation, duration, inspectedId, disabled, onInspe
         </g>;
       })}
     </svg>
-    <div className="vendor-wheel-hub" aria-hidden="true"><Utensils size={23} /><span>FOODIE</span></div>
+    <button type="button" className="vendor-wheel-hub" onClick={onSpin} disabled={disabled || vendors.length < 2} aria-label="Spin the wheel"><RotateCw size={23} aria-hidden="true" /><span>{disabled ? "SPINNING" : "SPIN"}</span></button>
   </div>;
 }
 
@@ -91,7 +92,7 @@ export default function VendorWheel({ vendors, onRemove, onClose }: Props) {
   }, [stage]);
 
   function spin(candidates = vendors) {
-    if (spinningRef.current || candidates.length === 0 || loading) return;
+    if (spinningRef.current || candidates.length < 2 || loading) return;
     spinningRef.current = true;
     const next = chooseWheelSpin(candidates, rotationRef.current);
     const spinDuration = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 3600;
@@ -110,14 +111,14 @@ export default function VendorWheel({ vendors, onRemove, onClose }: Props) {
   }
 
   function removeAndSpin() {
-    if (!winner || vendors.length < 2 || spinningRef.current || loading) return;
+    if (!winner || vendors.length < 3 || spinningRef.current || loading) return;
     const remaining = vendors.filter((vendor) => vendor.id !== winner.id);
     onRemove(winner.id);
     spin(remaining);
   }
 
   function removeVendor(vendorId: number) {
-    if (spinningRef.current || vendors.length < 2 || !vendors.some((vendor) => vendor.id === vendorId)) return;
+    if (spinningRef.current || vendors.length < 3 || !vendors.some((vendor) => vendor.id === vendorId)) return;
     onRemove(vendorId);
     setInspectedId(null);
     setWinner(null);
@@ -132,7 +133,7 @@ export default function VendorWheel({ vendors, onRemove, onClose }: Props) {
   const selected = winner ? completeWheelVendor(winner, catalog) : null;
   const displayVendors = (stage === "ready" ? vendors : spinVendors).map((vendor) => completeWheelVendor(vendor, catalog));
   const inspected = displayVendors.find((vendor) => vendor.id === inspectedId);
-  const cannotRemove = stage === "spinning" || vendors.length < 2;
+  const cannotRemove = stage === "spinning" || vendors.length < 3;
 
   return createPortal(<dialog ref={dialogRef} className="vendor-wheel-dialog" aria-labelledby="vendor-wheel-title" onCancel={onClose}>
     <div className="vendor-wheel-content">
@@ -142,13 +143,13 @@ export default function VendorWheel({ vendors, onRemove, onClose }: Props) {
       </header>
       <div className="vendor-wheel-body">
         <div className="vendor-wheel-visual">
-          <WheelFace vendors={displayVendors} rotation={rotation} duration={duration} inspectedId={inspectedId} disabled={stage === "spinning"} onInspect={setInspectedId} />
+          <WheelFace vendors={displayVendors} rotation={rotation} duration={duration} inspectedId={inspectedId} disabled={stage === "spinning"} onInspect={setInspectedId} onSpin={() => spin()} />
           <p className="vendor-wheel-count">{vendors.length} {vendors.length === 1 ? "place" : "places"} from this chat · Equal chance for every place</p>
           <p className="vendor-wheel-hint">Hover, focus or tap a place to see its details.</p>
           <details className="vendor-wheel-places"><summary>Places on this wheel</summary><ul>{displayVendors.map((vendor) => <li key={vendor.id}>
             <button type="button" className="vendor-wheel-place-name" onMouseEnter={() => setInspectedId(vendor.id)} onFocus={() => setInspectedId(vendor.id)} onClick={() => setInspectedId(vendor.id)} aria-pressed={inspectedId === vendor.id}>{vendor.name}</button>
             <button type="button" className="vendor-wheel-place-remove" onClick={() => removeVendor(vendor.id)} disabled={cannotRemove} aria-label={`Remove ${vendor.name} from wheel`}>Remove</button>
-          </li>)}</ul>{vendors.length < 2 && <p className="vendor-wheel-last-place">One place left. Get more recommendations before removing it.</p>}</details>
+          </li>)}</ul>{vendors.length < 3 && <p className="vendor-wheel-last-place">Find at least three places before removing again</p>}</details>
         </div>
         <div className="vendor-wheel-side">
           {inspected && <section className="vendor-wheel-inspect" aria-label="Vendor details">
@@ -167,18 +168,18 @@ export default function VendorWheel({ vendors, onRemove, onClose }: Props) {
             <p><Star size={16} aria-hidden="true" />{selected.rating != null ? `${selected.rating.toFixed(1)} / 5` : "Rating unavailable"}</p>
             <div className="vendor-wheel-actions">
               <Link to={`/vendors/${selected.id}`} className="vendor-wheel-primary" onClick={onClose}>View More <ArrowRight size={16} aria-hidden="true" /></Link>
-              <button type="button" className="vendor-wheel-secondary" onClick={() => spin()} disabled={loading}><RotateCw size={16} aria-hidden="true" /> Spin again</button>
-              <button type="button" className="vendor-wheel-remove" onClick={removeAndSpin} disabled={vendors.length < 2 || loading}>Remove and spin again</button>
-              {vendors.length < 2 && <small>One place left. Get more recommendations before removing it.</small>}
+              <button type="button" className="vendor-wheel-secondary" onClick={() => spin()} disabled={loading || vendors.length < 2}><RotateCw size={16} aria-hidden="true" /> Spin again</button>
+              <button type="button" className="vendor-wheel-remove" onClick={removeAndSpin} disabled={vendors.length < 3 || loading}>Remove and spin again</button>
+              {vendors.length < 3 && <small>Find at least three places before removing again</small>}
             </div>
           </section> : <div className="vendor-wheel-ready">
             <div className="vendor-wheel-ready-icon"><Utensils size={27} aria-hidden="true" /></div>
             <h3>{stage === "spinning" ? "Finding your next bite…" : "Too many good choices?"}</h3>
             <p>Let the wheel choose from the places Foodie has shared in this chat.</p>
-            <button type="button" className="vendor-wheel-primary" disabled={stage === "spinning" || loading || vendors.length === 0} onClick={() => spin()}><RotateCw size={17} aria-hidden="true" />{loading ? "Loading places…" : stage === "spinning" ? "Spinning…" : "Spin the wheel"}</button>
+            <button type="button" className="vendor-wheel-primary" disabled={stage === "spinning" || loading || vendors.length < 2} onClick={() => spin()}><RotateCw size={17} aria-hidden="true" />{loading ? "Loading places…" : stage === "spinning" ? "Spinning…" : "Spin the wheel"}</button>
           </div>}
           {error && <div role="status" className="vendor-wheel-load-error">Some details couldn't be loaded. Your chat's places are still on the wheel. <button type="button" disabled={stage === "spinning" || loading} onClick={() => setAttempt((value) => value + 1)}>Try again</button></div>}
-          <p className="vendor-wheel-status" role="status">{stage === "spinning" ? "Spinning the wheel…" : selected ? `Selected ${selected.name}.` : loading ? "Loading vendor details…" : "Ready when you are."}</p>
+          <p className="vendor-wheel-status" role="status">{stage === "spinning" ? "Spinning the wheel…" : selected ? `Selected ${selected.name}` : loading ? "Loading vendor details…" : "Ready when you are"}</p>
         </div>
       </div>
     </div>

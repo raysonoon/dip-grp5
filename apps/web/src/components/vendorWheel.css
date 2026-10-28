@@ -14,7 +14,10 @@
 .vendor-wheel-option[aria-pressed="true"] > :is(path, circle), .vendor-wheel-option:focus-visible > :is(path, circle) { stroke: var(--primary); stroke-width: 3; }
 .vendor-wheel-option text { pointer-events: none; }
 .vendor-wheel-pointer { position: absolute; z-index: 1; top: -10px; left: calc(50% - 12px); width: 24px; height: 30px; background: var(--primary); clip-path: polygon(0 0, 100% 0, 50% 100%); filter: drop-shadow(0 2px 2px #0003); }
-.vendor-wheel-hub { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); display: grid; place-items: center; align-content: center; gap: 3px; width: 74px; height: 74px; border: 5px solid white; border-radius: 50%; background: var(--primary); color: var(--primary-foreground); box-shadow: 0 2px 12px #0002; }
+.vendor-wheel-hub { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); display: grid; place-items: center; align-content: center; gap: 3px; width: 74px; height: 74px; border: 5px solid white; border-radius: 50%; background: var(--primary); color: var(--primary-foreground); box-shadow: 0 2px 12px #0002; padding: 0; font: inherit; cursor: pointer; transition: transform .15s ease, opacity .15s ease; }
+.vendor-wheel-hub:hover:not(:disabled) { transform: translate(-50%, -50%) scale(1.06); }
+.vendor-wheel-hub:focus-visible { outline: 2px solid var(--primary-foreground); outline-offset: 3px; }
+.vendor-wheel-hub:disabled { cursor: default; opacity: .85; }
 .vendor-wheel-hub span { font-size: 8px; font-weight: 800; letter-spacing: 1px; }
 .vendor-wheel-count { margin-top: 18px; text-align: center; font-size: 11px; color: var(--muted-foreground); line-height: 1.5; }
 .vendor-wheel-hint { margin-top: 6px; text-align: center; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; }
