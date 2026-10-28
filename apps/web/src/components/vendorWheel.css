@@ -9,16 +9,33 @@
 .vendor-wheel-disc { position: relative; width: min(100%, 360px); margin: auto; aspect-ratio: 1; }
 .vendor-wheel-disc svg { width: 100%; height: 100%; transition-property: transform; transition-timing-function: cubic-bezier(.12,.8,.18,1); border: 5px solid white; border-radius: 50%; box-shadow: 0 5px 22px #44301824; }
 .vendor-wheel-disc .vendor-wheel-hub svg { width: 23px; height: 23px; border: none; box-shadow: none; border-radius: 0; }
+.vendor-wheel-option { cursor: pointer; outline: none; }
+.vendor-wheel-option[aria-disabled="true"] { cursor: default; }
+.vendor-wheel-option[aria-pressed="true"] > :is(path, circle), .vendor-wheel-option:focus-visible > :is(path, circle) { stroke: var(--primary); stroke-width: 3; }
+.vendor-wheel-option text { pointer-events: none; }
 .vendor-wheel-pointer { position: absolute; z-index: 1; top: -10px; left: calc(50% - 12px); width: 24px; height: 30px; background: var(--primary); clip-path: polygon(0 0, 100% 0, 50% 100%); filter: drop-shadow(0 2px 2px #0003); }
 .vendor-wheel-hub { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); display: grid; place-items: center; align-content: center; gap: 3px; width: 74px; height: 74px; border: 5px solid white; border-radius: 50%; background: var(--primary); color: var(--primary-foreground); box-shadow: 0 2px 12px #0002; }
 .vendor-wheel-hub span { font-size: 8px; font-weight: 800; letter-spacing: 1px; }
 .vendor-wheel-count { margin-top: 18px; text-align: center; font-size: 11px; color: var(--muted-foreground); line-height: 1.5; }
+.vendor-wheel-hint { margin-top: 6px; text-align: center; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; }
 .vendor-wheel-places { margin-top: 12px; color: var(--muted-foreground); font-size: 12px; }
 .vendor-wheel-places summary { width: fit-content; margin: auto; cursor: pointer; }
-.vendor-wheel-places ol { display: grid; gap: 7px; max-height: 130px; margin-top: 12px; padding: 12px; overflow: auto; border-radius: 12px; background: var(--muted); }
-.vendor-wheel-places li { display: flex; gap: 8px; overflow-wrap: anywhere; }
-.vendor-wheel-places li span { font-weight: 700; color: var(--primary); }
+.vendor-wheel-places ul { display: grid; gap: 7px; max-height: 180px; margin-top: 12px; padding: 12px; overflow: auto; border-radius: 12px; background: var(--muted); list-style: none; }
+.vendor-wheel-places li { display: flex; align-items: center; gap: 8px; }
+.vendor-wheel-place-name { flex: 1; min-width: 0; min-height: 40px; padding: 4px; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.vendor-wheel-place-name[aria-pressed="true"] { color: var(--primary); font-weight: 700; }
+.vendor-wheel-place-remove { flex-shrink: 0; min-height: 40px; padding: 5px 8px; border-radius: 8px; color: var(--primary); font-size: 11px; font-weight: 700; cursor: pointer; }
+.vendor-wheel-last-place { margin: 8px 0; font-size: 11px; line-height: 1.5; text-align: center; }
 .vendor-wheel-side { min-width: 0; }
+.vendor-wheel-inspect { margin-bottom: 22px; padding: 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--muted); }
+.vendor-wheel-inspect-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.vendor-wheel-inspect-heading .vendor-wheel-eyebrow { margin-bottom: 0; }
+.vendor-wheel-inspect-heading button { display: grid; place-items: center; min-width: 32px; min-height: 32px; border-radius: 50%; cursor: pointer; }
+.vendor-wheel-inspect h3 { margin: 6px 0 12px; font-size: 17px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.vendor-wheel-inspect > p { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
+.vendor-wheel-inspect > p svg { flex-shrink: 0; color: var(--primary); }
+.vendor-wheel-inspect-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; color: var(--primary); font-size: 12px; font-weight: 700; }
+.vendor-wheel-inspect-actions :is(a, button) { display: flex; align-items: center; gap: 4px; min-height: 40px; padding: 5px 0; cursor: pointer; }
 .vendor-wheel-ready { text-align: center; }
 .vendor-wheel-ready-icon { display: grid; place-items: center; width: 60px; height: 60px; margin: 0 auto 18px; border-radius: 18px; background: var(--muted); color: var(--primary); }
 .vendor-wheel-ready h3, .vendor-wheel-result h3 { font-family: var(--font-display); font-size: 25px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; outline: none; }

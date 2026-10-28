@@ -3,29 +3,40 @@ import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { ArrowRight, MapPin, RotateCw, Sparkles, Star, Utensils, X } from "lucide-react";
 import { fetchVendors, type parseVendor } from "../api/vendors";
-import { chooseWheelSpin, completeWheelVendor, type WheelVendor } from "../lib/vendorWheel.js";
+import { chooseWheelSpin, completeWheelVendor, wheelVendorLabel, type WheelVendor } from "../lib/vendorWheel.js";
 import "./vendorWheel.css";
 
 const COLORS = ["#f9d9a7", "#edb5af", "#abd2c7", "#b8cce6", "#e1c7e6", "#e8dca0"];
 const point = (angle: number, radius: number) => ({ x: 180 + radius * Math.sin(angle * Math.PI / 180), y: 180 - radius * Math.cos(angle * Math.PI / 180) });
 
-function WheelFace({ vendors, rotation, duration }: { vendors: WheelVendor[]; rotation: number; duration: number }) {
+function WheelFace({ vendors, rotation, duration, inspectedId, disabled, onInspect }: {
+  vendors: WheelVendor[];
+  rotation: number;
+  duration: number;
+  inspectedId: number | null;
+  disabled: boolean;
+  onInspect: (vendorId: number) => void;
+}) {
   const size = 360 / vendors.length;
-  return <div className="vendor-wheel-disc" aria-hidden="true">
-    <div className="vendor-wheel-pointer" />
-    <svg viewBox="0 0 360 360" style={{ transform: `rotate(${rotation}deg)`, transitionDuration: `${duration}ms` }}>
+  return <div className="vendor-wheel-disc">
+    <div className="vendor-wheel-pointer" aria-hidden="true" />
+    <svg viewBox="0 0 360 360" role="group" aria-label="Places on the wheel" style={{ transform: `rotate(${rotation}deg)`, transitionDuration: `${duration}ms` }}>
       {vendors.map((vendor, index) => {
         const start = point(index * size, 169);
         const end = point((index + 1) * size, 169);
-        const label = point((index + 0.5) * size, vendors.length <= 8 ? 112 : 139);
-        const shortName = vendor.name.length > 17 ? `${vendor.name.slice(0, 16)}…` : vendor.name;
-        return <g key={vendor.id}>
+        const label = point((index + 0.5) * size, 108);
+        const inspect = () => { if (!disabled) onInspect(vendor.id); };
+        return <g key={vendor.id} className="vendor-wheel-option" role="button" tabIndex={disabled ? -1 : 0}
+          aria-label={`Show details for ${vendor.name}`} aria-pressed={inspectedId === vendor.id} aria-disabled={disabled}
+          onMouseEnter={inspect} onFocus={inspect} onClick={inspect}
+          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspect(); } }}>
+          <title>{vendor.name}</title>
           {vendors.length === 1 ? <circle cx="180" cy="180" r="169" fill={COLORS[0]} stroke="white" strokeWidth="2" /> : <path d={`M180 180 L${start.x} ${start.y} A169 169 0 ${size > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`} fill={COLORS[index % COLORS.length]} stroke="white" strokeWidth="2" />}
-          <text x={label.x} y={label.y} textAnchor="middle" dominantBaseline="middle" transform={vendors.length <= 8 ? `rotate(${(index + 0.5) * size - 90} ${label.x} ${label.y})` : undefined} fontSize={vendors.length > 30 ? 9 : 12} fontWeight="700" fill="#283438">{vendors.length <= 8 ? shortName : index + 1}</text>
+          <text x={label.x} y={label.y} textAnchor="middle" dominantBaseline="middle" transform={`rotate(${(index + 0.5) * size - 90} ${label.x} ${label.y})`} fontSize={vendors.length > 30 ? 9 : 12} fontWeight="700" fill="#283438" aria-hidden="true">{wheelVendorLabel(vendor.name, vendors.length)}</text>
         </g>;
       })}
     </svg>
-    <div className="vendor-wheel-hub"><Utensils size={23} /><span>FOODIE</span></div>
+    <div className="vendor-wheel-hub" aria-hidden="true"><Utensils size={23} /><span>FOODIE</span></div>
   </div>;
 }
 
@@ -49,6 +60,7 @@ export default function VendorWheel({ vendors, onRemove, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [inspectedId, setInspectedId] = useState<number | null>(null);
   const resultRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -84,6 +96,7 @@ export default function VendorWheel({ vendors, onRemove, onClose }: Props) {
     const next = chooseWheelSpin(candidates, rotationRef.current);
     const spinDuration = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 3600;
     setSpinVendors(candidates);
+    setInspectedId(null);
     setWinner(null);
     setStage("spinning");
     setDuration(spinDuration);
@@ -103,8 +116,23 @@ export default function VendorWheel({ vendors, onRemove, onClose }: Props) {
     spin(remaining);
   }
 
+  function removeVendor(vendorId: number) {
+    if (spinningRef.current || vendors.length < 2 || !vendors.some((vendor) => vendor.id === vendorId)) return;
+    onRemove(vendorId);
+    setInspectedId(null);
+    setWinner(null);
+    setStage("ready");
+    // A changed sector count needs a fresh starting position, not the old
+    // winner's rotation, which would point at a different vendor.
+    rotationRef.current = 0;
+    setDuration(0);
+    setRotation(0);
+  }
+
   const selected = winner ? completeWheelVendor(winner, catalog) : null;
   const displayVendors = (stage === "ready" ? vendors : spinVendors).map((vendor) => completeWheelVendor(vendor, catalog));
+  const inspected = displayVendors.find((vendor) => vendor.id === inspectedId);
+  const cannotRemove = stage === "spinning" || vendors.length < 2;
 
   return createPortal(<dialog ref={dialogRef} className="vendor-wheel-dialog" aria-labelledby="vendor-wheel-title" onCancel={onClose}>
     <div className="vendor-wheel-content">
@@ -114,11 +142,23 @@ export default function VendorWheel({ vendors, onRemove, onClose }: Props) {
       </header>
       <div className="vendor-wheel-body">
         <div className="vendor-wheel-visual">
-          <WheelFace vendors={displayVendors} rotation={rotation} duration={duration} />
+          <WheelFace vendors={displayVendors} rotation={rotation} duration={duration} inspectedId={inspectedId} disabled={stage === "spinning"} onInspect={setInspectedId} />
           <p className="vendor-wheel-count">{vendors.length} {vendors.length === 1 ? "place" : "places"} from this chat · Equal chance for every place</p>
-          <details className="vendor-wheel-places"><summary>Places on this wheel</summary><ol>{displayVendors.map((vendor, index) => <li key={vendor.id}><span>{index + 1}.</span> {vendor.name}</li>)}</ol></details>
+          <p className="vendor-wheel-hint">Hover, focus or tap a place to see its details.</p>
+          <details className="vendor-wheel-places"><summary>Places on this wheel</summary><ul>{displayVendors.map((vendor) => <li key={vendor.id}>
+            <button type="button" className="vendor-wheel-place-name" onMouseEnter={() => setInspectedId(vendor.id)} onFocus={() => setInspectedId(vendor.id)} onClick={() => setInspectedId(vendor.id)} aria-pressed={inspectedId === vendor.id}>{vendor.name}</button>
+            <button type="button" className="vendor-wheel-place-remove" onClick={() => removeVendor(vendor.id)} disabled={cannotRemove} aria-label={`Remove ${vendor.name} from wheel`}>Remove</button>
+          </li>)}</ul>{vendors.length < 2 && <p className="vendor-wheel-last-place">One place left. Get more recommendations before removing it.</p>}</details>
         </div>
         <div className="vendor-wheel-side">
+          {inspected && <section className="vendor-wheel-inspect" aria-label="Vendor details">
+            <div className="vendor-wheel-inspect-heading"><p className="vendor-wheel-eyebrow">PLACE DETAILS</p><button type="button" onClick={() => setInspectedId(null)} aria-label="Hide vendor details"><X size={16} /></button></div>
+            <h3>{inspected.name}</h3>
+            <p><MapPin size={15} aria-hidden="true" />{inspected.location ?? "Location unavailable"}</p>
+            <p><Utensils size={15} aria-hidden="true" />{inspected.category ?? "Category unavailable"}</p>
+            <p><Star size={15} aria-hidden="true" />{inspected.rating != null ? `${inspected.rating.toFixed(1)} / 5` : "Rating unavailable"}</p>
+            <div className="vendor-wheel-inspect-actions"><Link to={`/vendors/${inspected.id}`} onClick={onClose}>View More <ArrowRight size={14} aria-hidden="true" /></Link><button type="button" onClick={() => removeVendor(inspected.id)} disabled={cannotRemove}>Remove from wheel</button></div>
+          </section>}
           {selected ? <section aria-label="Selected vendor" className="vendor-wheel-result">
             <p className="vendor-wheel-eyebrow">YOUR NEXT MAKAN STOP</p>
             <h3 ref={resultRef} tabIndex={-1}>{selected.name}</h3>

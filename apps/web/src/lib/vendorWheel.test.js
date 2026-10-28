@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chooseWheelSpin, completeWheelVendor, createWheelSession, wheelSessionReducer } from "./vendorWheel.js";
+import { chooseWheelSpin, completeWheelVendor, createWheelSession, wheelSessionReducer, wheelVendorLabel } from "./vendorWheel.js";
 
 const source = (id, type = "vendor", fields = {}) => ({ source_type: type, vendor_id: id, vendor_name: `Place ${id}`, ...fields });
 const merge = (state, ...sources) => wheelSessionReducer(state, { type: "sources", sources });
@@ -46,6 +46,31 @@ test("the last two vendors can reduce to one, then removal is disabled", () => {
   const last = wheelSessionReducer(state, { type: "remove", vendorId: 1 });
   assert.deepEqual(ids(last), [2]);
   assert.equal(wheelSessionReducer(last, { type: "remove", vendorId: 2 }), last);
+});
+
+test("a place removed before any spin is excluded from every subsequent spin and source update", () => {
+  let state = merge(createWheelSession(), source(1), source(2), source(3));
+  state = wheelSessionReducer(state, { type: "remove", vendorId: 2 });
+  state = merge(state, source(2, "google_review"));
+  let rotation = 0;
+  for (const random of [0, 0.25, 0.5, 0.75, 1 - Number.EPSILON]) {
+    const spin = chooseWheelSpin(state.vendors, rotation, random);
+    assert.notEqual(spin.vendor.id, 2);
+    const pointedIndex = Math.floor(((360 - spin.rotation % 360) % 360) / (360 / state.vendors.length));
+    assert.equal(state.vendors[pointedIndex].id, spin.vendor.id);
+    rotation = spin.rotation;
+  }
+});
+
+test("sparse and dense wheel labels retain names, truncating long names without splitting Unicode characters", () => {
+  for (const count of [1, 8, 9, 30, 60]) {
+    assert.equal(wheelVendorLabel("Gelare", count), "Gelare");
+    const longLabel = wheelVendorLabel("A very long campus vendor name", count);
+    assert.ok(longLabel.startsWith("A very"));
+    assert.ok(longLabel.endsWith("..."));
+    assert.ok(Array.from(longLabel).length <= 17);
+  }
+  assert.equal(wheelVendorLabel("🍜🍜🍜🍜🍜🍜🍜🍜🍜🍜🍜🍜🍜", 60), "🍜🍜🍜🍜🍜🍜🍜🍜🍜...");
 });
 
 test("a new session clears both the accumulated pool and all exclusions", () => {
