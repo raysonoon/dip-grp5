@@ -7,6 +7,7 @@ from starlette.concurrency import run_in_threadpool
 from app.api.dependencies import warm_intent_embeddings
 from app.api.routes.auth import router as auth_router
 from app.api.routes.chat import router as chat_router
+from app.api.routes.favourites import router as favourites_router
 from app.api.routes.preferences import router as preferences_router
 from app.api.routes.reviews import router as reviews_router
 from app.api.routes.vendors import router as vendors_router
@@ -27,6 +28,7 @@ app = FastAPI(
 )
 app.include_router(chat_router)
 app.include_router(auth_router)
+app.include_router(favourites_router)
 app.include_router(preferences_router)
 app.include_router(reviews_router)
 app.include_router(vendors_router)

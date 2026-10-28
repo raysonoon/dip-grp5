@@ -124,17 +124,46 @@ export async function fetchReviews(limit = 15, offset = 0, signal) {
 }
 
 // One page of a single vendor's reviews.
-export async function fetchVendorReviews(vendorId, { limit = 10, offset = 0, signal } = {}) {
+/**
+ * @param {number} vendorId
+ * @param {{
+ *   limit?: number,
+ *   offset?: number,
+ *   sort?: "newest" | "oldest" | "best" | "controversial",
+ *   rating?: number | string | null,
+ *   media?: "all" | "with_photos" | "without_photos",
+ *   signal?: AbortSignal,
+ * }} [options={}]
+ */
+export async function fetchVendorReviews(vendorId, options = {}) {
+  const {
+  limit = 10,
+  offset = 0,
+  sort,
+  rating,
+  media,
+  signal,
+} = options;
   const params = new URLSearchParams({
     vendor_id: String(vendorId),
     limit: String(limit),
     offset: String(offset),
   });
+  if (sort) params.set("sort", sort);
+  if (rating !== undefined && rating !== null && rating !== "") {
+    params.set("rating", String(rating));
+  }
+  if (media) params.set("media", media);
   const payload = await apiClient.get(
     `/reviews?${params.toString()}`,
-    { auth: false, signal },
+    { auth: "optional", signal },
   );
   return parseReviewList(payload);
+}
+
+export async function fetchReview(reviewId, { signal } = {}) {
+  const payload = await apiClient.get(`/reviews/${reviewId}`, { auth: "optional", signal });
+  return parseReviewDetail(payload);
 }
 
 export function createReview(review) {

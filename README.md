@@ -253,7 +253,7 @@ npm run build     # Production build (vite build; does not typecheck)
 
 ### Create a review
 
-`POST /reviews` accepts a food-stall ID, a required rating from 1.0 to 5.0 in
+`POST /reviews` accepts a food-stall ID, a required rating from 0.5 to 5.0 in
 0.5-star steps, and an optional comment. Use the IDs printed by the seed script:
 
 ```powershell
@@ -274,6 +274,10 @@ Invoke-RestMethod `
 The API takes `user_id` from the authenticated Supabase token; it does not accept
 `user_id` in the request body. An omitted or whitespace-only comment is stored
 as `NULL`, so rating-only reviews are supported.
+
+Each user can review a food stall only once (a `UNIQUE(user_id, vendor_id)`
+constraint on `reviews`). A second `POST /reviews` for the same stall returns
+`409 Conflict`; edit or delete the existing review instead.
 
 ### Read reviews
 
@@ -306,10 +310,12 @@ includes `total`, `limit`, and `offset` so the frontend can build pagination.
 ### Read your own reviews
 
 `GET /auth/me/reviews` requires a Supabase bearer token and returns the signed-in
-user's reviews, newest first. It is used by the Account page.
+user's reviews, newest first. It is used by the Account page, and by the
+vendor page to find the user's existing review of that stall.
 
 | Query parameter | Default | Purpose |
 | --- | ---: | --- |
+| `vendor_id` | none | Return only your review of one food stall |
 | `limit` | `10` | Number of reviews to return; maximum `100` |
 | `offset` | `0` | Number of reviews to skip for pagination |
 
@@ -442,6 +448,25 @@ type, creates the database metadata, and saves the file under the matching
 the multipart `file`, change the form field `display_order`, or do both.
 `DELETE /reviews/{review_id}/images/{image_id}` removes the database record and
 its local file; the review author or an administrator may delete it.
+
+### Favourites
+
+Signed-in users can save vendors from their detail page and find them in
+Account → Favourite places (five per page, newest first). Guests see a
+sign-in/sign-up prompt. Apply the new `d103f25a0001` migration with
+`python -m alembic upgrade head` from `apps/api` before using this feature.
+
+All endpoints use the authenticated user's identity:
+
+```text
+GET    /auth/me/favourites?limit=5&offset=0
+GET    /auth/me/favourites/{vendor_id}
+PUT    /auth/me/favourites/{vendor_id}
+DELETE /auth/me/favourites/{vendor_id}
+```
+
+`PUT` creates or refreshes a favourite, moving it to the top without duplicate
+rows. `DELETE` is safe to repeat and removes only the caller's favourite.
 
 ### Chatbot
 

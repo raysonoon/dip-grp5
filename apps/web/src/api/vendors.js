@@ -120,6 +120,10 @@ export function parseVendorList(value) {
   };
 }
 
+/**
+ * @param {{ q?: string, location?: string, category?: string, sort?: string,
+ *   limit?: number, offset?: number, signal?: AbortSignal }} options
+ */
 export async function fetchVendorPage({
   q = "",
   location = "",
