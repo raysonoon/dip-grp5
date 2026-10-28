@@ -130,8 +130,6 @@ export async function fetchVendorPage({
   location = "",
   category = "",
   sort = "recommended",
-  lat,
-  lng,
   limit = 100,
   offset = 0,
   lat = null,
@@ -157,18 +155,9 @@ export async function fetchVendorPage({
 
   if (sort) {
     params.set("sort", sort);
-      // Location only matters for the recommended sort (nearest-first tier).
-  if (
-    sort === "recommended" &&
-    Number.isFinite(lat) &&
-    Number.isFinite(lng)
-  ) {
-    params.set("lat", String(lat));
-    params.set("lng", String(lng));
-  }
   }
 
-  // The API orders nearby vendors first when both coordinates are present.
+  // The API uses the position as a nearest-first tiebreak for every sort.
   if (lat != null && lng != null) {
     params.set("lat", String(lat));
     params.set("lng", String(lng));
