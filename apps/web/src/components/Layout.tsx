@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { RotateCcw, Send, Square, X } from "lucide-react";
 import ChatMessageContent from "./ChatMessageContent";
@@ -20,6 +20,12 @@ export function FoodieChat() {
     stopResponse,
   } = useChatSession();
   const [chatOpen, setChatOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpenChat = () => setChatOpen(true);
+    window.addEventListener("open-foodie-chat", handleOpenChat);
+    return () => window.removeEventListener("open-foodie-chat", handleOpenChat);
+  }, []);
 
   return (
     <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end gap-3">

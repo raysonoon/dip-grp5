@@ -173,91 +173,115 @@ function HomePage() {
       {/* ── NAV ──────────────────────────────────────── */}
       <Header fixed />
 
-      {/* ── EDITORIAL DARK RED BANNER SECTION ── */}
-      <section className="pt-28 pb-12 min-h-[55vh] bg-[#B22222] text-white text-center flex flex-col justify-between items-center relative overflow-hidden">
-        {/* Title & Tagline Container */}
-        <div className="max-w-4xl mx-auto space-y-3 px-6 z-10 pt-4">
-          <h1 className="text-5xl sm:text-6xl md:text-7xl font-serif tracking-tight font-normal text-white">
-            NTUmmy
-          </h1>
-          <div className="space-y-1 max-w-2xl mx-auto text-amber-50/90 text-sm sm:text-base md:text-lg leading-relaxed font-light">
-            <p className="font-medium tracking-wide">At NTUmmy, we don't gatekeep.</p>
-            <p>Share your go-to food places in NTU or try out a new stall today!</p>
-          </div>
-        </div>
-
-        {/* 3 Mascot Heads Positioned Below the Tagline */}
-        <div className="w-full max-w-6xl mx-auto px-6 pt-10 pb-2 flex items-center justify-between z-10">
-          <img
-            src="/ntummy_mascot_head.svg"
-            alt="NTUmmy Mascot Head Left"
-            className="w-20 sm:w-28 md:w-36 h-auto object-contain drop-shadow-xl transform -rotate-6 hover:scale-105 transition-transform duration-300"
-          />
-          <img
-            src="/ntummy_mascot_head.svg"
-            alt="NTUmmy Mascot Head Center"
-            className="w-20 sm:w-28 md:w-36 h-auto object-contain drop-shadow-xl transform rotate-0 hover:scale-105 transition-transform duration-300"
-          />
-          <img
-            src="/ntummy_mascot_head.svg"
-            alt="NTUmmy Mascot Head Right"
-            className="w-20 sm:w-28 md:w-36 h-auto object-contain drop-shadow-xl transform rotate-6 hover:scale-105 transition-transform duration-300"
-          />
-        </div>
-      </section>
-
-      {/* ── HERO SECTION ── */}
+      {/* ── HERO SECTION WITH ROSE GRADIENT CARD, EDITORIAL FRAMES & MASCOT ── */}
       <section className="relative min-h-[85vh] flex items-center py-16 bg-[#FAF6F0] overflow-hidden border-b border-amber-900/10">
         {/* Soft background ambient glow highlights */}
         <div className="absolute top-10 left-[-5%] w-96 h-96 bg-rose-200/40 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-[-10%] right-[-5%] w-[450px] h-[450px] bg-rose-300/30 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 max-w-7xl mx-auto px-6 py-12 w-full flex flex-col md:flex-row items-center justify-between gap-12">
-          {/* Main Hero Card Container with Rose-Dominant Warm Pastel Gradient */}
-          <div className="max-w-2xl bg-gradient-to-br from-rose-200/90 via-pink-100/80 to-amber-100/80 backdrop-blur-md p-8 md:p-12 rounded-[2.5rem] border border-rose-300/40 shadow-xl shadow-rose-900/10">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-rose-500/25 bg-rose-500/10 text-rose-800 text-xs font-semibold mb-6 tracking-wide shadow-sm">
-              BUILT BY STUDENTS, FOR STUDENTS{" "}
+        <div className="relative z-10 max-w-[1400px] mx-auto px-6 py-8 w-full">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            
+            {/* Left Column (5 Cols): Main Hero Card Container with Rose-Dominant Warm Pastel Gradient */}
+            <div className="lg:col-span-5 bg-gradient-to-br from-rose-200/90 via-pink-100/80 to-amber-100/80 backdrop-blur-md p-8 sm:p-10 rounded-[2.5rem] border border-rose-300/40 shadow-xl shadow-rose-900/10">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-rose-500/25 bg-rose-500/10 text-rose-800 text-xs font-semibold mb-6 tracking-wide shadow-sm">
+                BUILT BY STUDENTS, FOR STUDENTS
+              </div>
+
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold font-display leading-[1.1] mb-6 tracking-tight text-[#4A3328]">
+                Find Your Next
+                <span className="block text-rose-700 italic font-normal mt-1">
+                  Favourite Stall
+                </span>
+              </h1>
+
+              <p className="text-sm sm:text-base text-[#6E5548] mb-8 leading-relaxed font-normal">
+                Discover hidden gems across 13 canteens, cozy cafes, fast food
+                outlets and restaurants — rated, reviewed, and recommended by your
+                fellow NTU foodies.
+              </p>
+
+              {/* Stats Section */}
+              <div className="grid grid-cols-3 gap-4 sm:gap-6 pt-6 border-t border-rose-900/15">
+                {[
+                  ["50+", "Food Stalls"],
+                  ["2,400+", "Reviews"],
+                  ["13", "Canteens"],
+                ].map(([num, label]) => (
+                  <div key={label} className="space-y-0.5">
+                    <div className="text-2xl sm:text-3xl font-extrabold text-[#4A3328] font-display tracking-tight">
+                      {num}
+                    </div>
+                    <div className="text-[11px] font-medium text-[#7D6355] uppercase tracking-wider">
+                      {label}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <h2 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-[1.1] mb-6 font-display tracking-tight text-[#4A3328]">
-              Find Your Next
-              <span className="block text-rose-700 italic font-normal mt-1">
-                Favourite Stall
-              </span>
-            </h2>
-
-            <p className="text-base md:text-lg text-[#6E5548] mb-10 leading-relaxed font-normal">
-              Discover hidden gems across 13 canteens, cozy cafes, fast food
-              outlets and restaurants — rated, reviewed, and recommended by
-              your fellow NTU foodies.
-            </p>
-
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-6 pt-6 border-t border-rose-900/15">
-              {[
-                ["50+", "Food Stalls"],
-                ["2,400+", "Reviews"],
-                ["13", "Canteens"],
-              ].map(([num, label]) => (
-                <div key={label} className="space-y-0.5">
-                  <div className="text-2xl md:text-3xl font-extrabold text-[#4A3328] font-display tracking-tight">
-                    {num}
+            {/* Center Column (4 Cols): Two Offset Editorial Frames */}
+            <div className="lg:col-span-4 flex items-center justify-center gap-4 sm:gap-5 py-4">
+              
+              {/* Frame 1: Pasta Express (Slightly Higher) */}
+              <div className="w-1/2 sm:w-60 bg-[#FFFDF9] rounded-3xl p-3 border border-[#E8DCD0] shadow-[6px_6px_0px_0px_rgba(203,137,126,0.35)] -translate-y-4 transform hover:-translate-y-6 hover:shadow-[8px_8px_0px_0px_rgba(203,137,126,0.45)] transition-all duration-300">
+                <div className="relative h-56 sm:h-64 rounded-2xl overflow-hidden mb-3 bg-amber-100">
+                  <img
+                    src="/data/vendor_photos/downloads/V002_1.jpg"
+                    alt="Pasta Express"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.src = "https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&w=800&q=80";
+                    }}
+                  />
+                </div>
+                <div className="px-2 pb-1">
+                  <div className="flex items-center justify-between text-xs font-bold text-[#4A3328] mb-1">
+                    <span>Pasta Express</span>
+                    <span className="text-[#B22222]">›</span>
                   </div>
-                  <div className="text-xs font-medium text-[#7D6355] uppercase tracking-wider">
-                    {label}
+                  <div className="flex items-center gap-1 text-[11px] text-[#7D6355]">
+                    <MapPin className="w-3 h-3 text-amber-800 flex-shrink-0" />
+                    <span className="truncate">North Spine</span>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
 
-          {/* Transparent Mascot on Right Side */}
-          <div className="flex justify-center items-center max-w-full md:max-w-[420px] shrink-0">
-            <img
-              src="/ntummy_mascot.svg"
-              alt="NTUmmy Mascot"
-              className="w-64 md:w-[350px] lg:w-[380px] h-auto object-contain pointer-events-none drop-shadow-[0_20px_40px_rgba(74,51,40,0.12)] transform hover:scale-105 transition-transform duration-500 ease-out"
-            />
+              {/* Frame 2: The Crowded Bowl (Slightly Lower) */}
+              <div className="w-1/2 sm:w-50 bg-[#FFFDF9] rounded-3xl p-2.5 border border-[#E8DCD0] shadow-[6px_6px_0px_0px_rgba(203,137,126,0.35)] translate-y-4 transform hover:translate-y-2 hover:shadow-[8px_8px_0px_0px_rgba(203,137,126,0.45)] transition-all duration-300">
+                <div className="relative h-44 sm:h-52 rounded-2xl overflow-hidden mb-3 bg-amber-100">
+                  <img
+                    src="/data/vendor_photos/downloads/V002_2.jpg"
+                    alt="The Crowded Bowl"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80";
+                    }}
+                  />
+                </div>
+                <div className="px-2 pb-1">
+                  <div className="flex items-center justify-between text-xs font-bold text-[#4A3328] mb-1">
+                    <span className="truncate">The Crowded Bowl</span>
+                    <span className="text-[#B22222]">›</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[11px] text-[#7D6355]">
+                    <MapPin className="w-3 h-3 text-amber-800 flex-shrink-0" />
+                    <span className="truncate">North Spine</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Right Column (3 Cols): NTUmmy Mascot Right of Editorial Frames */}
+            <div className="lg:col-span-3 flex justify-center lg:justify-end items-center">
+              <img
+                src="/ntummy_mascot.svg"
+                alt="NTUmmy Mascot"
+                className="w-56 sm:w-64 lg:w-72 h-auto object-contain pointer-events-none drop-shadow-[0_20px_30px_rgba(74,51,40,0.12)] transform hover:scale-105 transition-transform duration-500 ease-out"
+              />
+            </div>
+
           </div>
         </div>
       </section>
@@ -285,8 +309,8 @@ function HomePage() {
         </div>
       </section>
 
-      {/* ── TRENDING STALLS (Dark Red Background #B22222) ──── */}
-      <section className="relative py-20 bg-[#B22222] text-white border-b border-amber-900/10 overflow-hidden">
+      {/* ── TRENDING STALLS (Dark Red Background #f0404b) ──── */}
+      <section className="relative py-20 bg-[#f0404b] text-white border-b border-amber-900/10 overflow-hidden">
         <div className="relative z-10 max-w-7xl mx-auto px-6">
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
             <div>
@@ -506,31 +530,41 @@ function HomePage() {
         </div>
       </section>
 
-      {/* ── STILL UNSURE OF WHAT TO EAT? (Dark Red Section Background #B22222) ── */}
-      <section className="relative bg-[#B22222] overflow-hidden text-white border-b border-amber-900/10">
+      {/* ── STILL UNSURE OF WHAT TO EAT? (Dark Red Section Background #f0404b) ── */}
+      <section className="relative bg-[#f0404b] overflow-hidden text-white border-b border-amber-900/10">
         <div className="grid md:grid-cols-12 items-stretch min-h-[420px]">
           
           {/* Left Side: White Text & Button Container */}
-          <div className="md:col-span-6 p-8 sm:p-12 lg:p-16 flex flex-col justify-center relative z-10 bg-[#B22222]">
+          <div className="md:col-span-6 p-8 sm:p-12 lg:p-16 flex flex-col justify-center relative z-10 bg-[#f0404b]">
             
             <h2 className="text-4xl sm:text-5xl lg:text-6xl font-serif text-white font-normal leading-tight mb-4">
               Still Unsure of <br />
               What to Eat?
             </h2>
             
-            <p className="text-base sm:text-lg text-amber-100/90 font-light mb-8 max-w-md">
-              Explore more food options in NTU.
+            <p className="text-xs sm:text-sm lg:text-base text-amber-100/90 font-light mb-8 whitespace-nowrap overflow-hidden text-ellipsis">
+              Chat with Foodie for personalised food recommendations in NTU.
             </p>
 
             <div>
-              <Link
-                to="/food"
-                className="inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-full bg-white text-[#B22222] hover:bg-amber-100 text-sm font-semibold tracking-wide transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent("open-foodie-chat"));
+                }}
+                className="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-full bg-white text-[#B22222] font-semibold text-sm shadow-lg hover:bg-amber-50 hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer"
               >
-                Discover <ChevronRight className="w-4 h-4" />
-              </Link>
+                <div className="w-6 h-6 rounded-full bg-[#B22222]/10 flex items-center justify-center p-0.5 flex-shrink-0">
+                  <img
+                    src="/ntummy_mascot_head.svg"
+                    alt="NTUmmy Mascot"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <span>Foodie</span>
+              </button>
+             </div>
             </div>
-          </div>
 
           {/* Center Floating NTUmmy Logo Badge */}
           <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none">
@@ -543,15 +577,31 @@ function HomePage() {
             </div>
           </div>
 
-          {/* Right Side: NTU Vendor Photo Showcase */}
-          <div className="md:col-span-6 relative min-h-[300px] md:min-h-full bg-[#3D291F] overflow-hidden">
-            <img
-              src="/data/vendor_photos/downloads/V002_3.jpg"
-              alt="NTU Food Vendor Showcase"
-              className="w-full h-full object-cover hover:scale-105 transition-transform duration-700 ease-out"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
-          </div>
+          {/* Right Side: NTUmmy mascot */}
+          <div className="md:col-span-6 relative min-h-[380px] md:min-h-full bg-gradient-to-br from-[#fff8f2] via-[#fde8e2] to-[#faf6f0] flex items-center justify-end pr-6 sm:pr-12 md:pr-16 p-8 overflow-hidden border-l border-amber-900/10">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+    <div className="w-72 h-72 bg-rose-300/60 rounded-full blur-3xl" />
+  </div>
+
+  {/* Centered Container */}
+  <div className="relative max-w-sm w-full flex flex-col items-center justify-center pt-6">
+    
+    {/* Speech Bubble: Positioned above-left of mascot head with downward pointing tail */}
+    <div className="absolute top-2 -left-12 sm:-left-20 lg:-left-40 z-25 bg-white text-[#4A3328] px-4 py-5 rounded-2xl shadow-xl border border-amber-900/10 max-w-[220px] sm:max-w-[250px] text-xs sm:text-sm font-medium leading-snug">
+      <p>Hi! I'm Foodie, your campus food guide! Ask me anything about campus food.</p>
+      
+      {/* Speech bubble tail pointing downwards towards Foodie's head */}
+      <div className="absolute -bottom-2 right-6 w-4 h-4 bg-white border-r border-b border-amber-900/10 transform rotate-45" />
+    </div>
+
+    {/* Mascot Image: Centered */}
+    <img
+      src="/ntummy_mascot.svg"
+      alt="Foodie Mascot"
+      className="w-52 sm:w-64 h-auto object-contain drop-shadow-xl z-10 mt-6"
+    />
+  </div>
+ </div>
 
         </div>
       </section>
