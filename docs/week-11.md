@@ -1,0 +1,13 @@
+# 28/10/26
+- [x] ADM prep
+  - [x] Cfm next adm meet
+  - [x] Survey results
+- [x] Discuss review sorting
+- [x] Discuss poster
+  - [x] Layout
+- [x] Discuss video
+  - highlight problem
+  - 3 actors discussing about lunch
+    - 2 confused actors, 1 actor promoting NTUmmy
+      - where to eat, don't know walk around
+    - screen record

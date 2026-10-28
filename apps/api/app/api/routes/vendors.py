@@ -153,8 +153,6 @@ def list_vendors(
     lng: Annotated[float | None, Query(ge=-180, le=180)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
-    lat: Annotated[float | None, Query(ge=-90, le=90)] = None,
-    lng: Annotated[float | None, Query(ge=-180, le=180)] = None,
 ) -> VendorListRead:
     if (lat is None) != (lng is None):
         raise HTTPException(
