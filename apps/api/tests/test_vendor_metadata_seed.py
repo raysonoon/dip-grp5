@@ -354,11 +354,13 @@ def test_seed_google_vendor_metadata_fills_safe_fields_and_skips_mojibake(
     assert result[3] == 1
     assert result[4] == 0
 
-    # Existing vendor gets updated Google metadata, but the directory name wins.
+    # Existing vendor keeps its directory category; Google no longer
+    # overwrites the canonical establishment category.
     assert existing_vendor.name == "Directory Vendor"
     assert existing_vendor.location is None
     assert existing_vendor.unit_code == "NS3-01-01"
-    assert existing_vendor.category == "Restaurant"
+    assert existing_vendor.category == "Directory Category"
+    assert existing_vendor.cuisine == "Others"
     assert existing_vendor.opening_hours == "Daily: 9am to 6pm"
     assert existing_vendor.price_range == "$1-10"
     assert existing_vendor.halal is False
@@ -485,8 +487,10 @@ def test_vendor_category_normalization_and_overrides(
         "id,name,location,unit_number,category,opening_hours,price_range,"
         "halal,vegetarian\n"
         "V001,Coffee Vendor,North Spine,NS1,Coffee,Daily,$1-10,TRUE,FALSE\n"
-        "V002,Food Court Vendor,South Spine,SS1,Cafeteria,Daily,$1-10,TRUE,FALSE\n"
-        "V005,ANDES by ASTONS,Hall 13,H13,Cafe,Daily,$1-10,TRUE,FALSE\n",
+        "V002,Food Court Vendor,South Spine,SS1,Canteen,Daily,$1-10,TRUE,FALSE\n"
+        "V005,ANDES by ASTONS,Hall 13,H13,Café/Restaurant,Daily,$1-10,TRUE,FALSE\n"
+        "V012,Co-op @ NTU Cafe,North Spine,NS1,Café/Restaurant,Daily,$1-10,TRUE,FALSE\n"
+        "V028,June's Breathe Cafe,EMB,EMB,Café/Restaurant,Daily,$1-10,TRUE,FALSE\n",
         encoding="utf-8",
     )
 
@@ -503,6 +507,12 @@ def test_vendor_category_normalization_and_overrides(
     andes = session.scalar(
         select(Vendor).where(Vendor.directory_id == "V005")
     )
+    coop = session.scalar(
+        select(Vendor).where(Vendor.directory_id == "V012")
+    )
+    june = session.scalar(
+        select(Vendor).where(Vendor.directory_id == "V028")
+    )
 
     assert coffee_vendor is not None
     assert coffee_vendor.category == "Drinks"
@@ -512,6 +522,12 @@ def test_vendor_category_normalization_and_overrides(
 
     assert andes is not None
     assert andes.category == "Restaurant"
+
+    assert coop is not None
+    assert coop.category == "Cafe"
+
+    assert june is not None
+    assert june.category == "Cafe"
 
 
 def test_google_metadata_keeps_canonical_category_and_backfills_existing_row(
@@ -543,6 +559,7 @@ def test_google_metadata_keeps_canonical_category_and_backfills_existing_row(
         directory_id="V053",
         name="Venture Drive Coffee",
         category="Drinks",
+        cuisine="Fried chicken",
     )
     stale_vendor = Vendor(
         directory_id="V018",
@@ -556,10 +573,142 @@ def test_google_metadata_keeps_canonical_category_and_backfills_existing_row(
     seed.seed_vendor_google_metadata(session)
 
     assert drinks_vendor.category == "Drinks"
-    assert stale_vendor.category == "Canteen"
+    assert drinks_vendor.cuisine == "Others"
+    assert stale_vendor.category == "Coffee shop"
+    assert stale_vendor.cuisine == "Others"
 
     second_result = seed.seed_vendor_google_metadata(session)
 
     assert second_result[2] == 0
     assert drinks_vendor.category == "Drinks"
-    assert stale_vendor.category == "Canteen"
+    assert drinks_vendor.cuisine == "Others"
+    assert stale_vendor.category == "Coffee shop"
+    assert stale_vendor.cuisine == "Others"
+
+
+def test_normalize_vendor_category_maps_directory_values() -> None:
+    assert seed._normalize_vendor_category("Canteen") == "Canteen"
+    assert seed._normalize_vendor_category("Fast Food/Takeout") == "Fast food"
+    assert seed._normalize_vendor_category("Coffee") == "Drinks"
+    assert seed._normalize_vendor_category("Bubble Tea") == "Drinks"
+    assert seed._normalize_vendor_category("Juice") == "Drinks"
+    assert seed._normalize_vendor_category("Dessert") == "Dessert"
+    assert seed._normalize_vendor_category("Bakery") == "Bakery"
+    assert seed._normalize_vendor_category("Vending Machine") == "Others"
+    assert seed._normalize_vendor_category(None) is None
+
+    # Café/Restaurant defaults to Restaurant, with cafe-style overrides.
+    assert seed._normalize_vendor_category("Café/Restaurant", "V002") == "Restaurant"
+    assert seed._normalize_vendor_category("Café/Restaurant", "V027") == "Restaurant"
+    assert seed._normalize_vendor_category("Café/Restaurant", "V012") == "Cafe"
+    assert seed._normalize_vendor_category("Café/Restaurant", "V026") == "Cafe"
+    assert seed._normalize_vendor_category("Café/Restaurant", "V028") == "Cafe"
+    assert seed._normalize_vendor_category("Café/Restaurant", "V046") == "Cafe"
+
+
+def test_normalize_vendor_cuisine_prefers_type_then_categories() -> None:
+    assert seed._normalize_vendor_cuisine("Hotpot") is None
+    assert seed._normalize_vendor_cuisine("Western casual dining") == "Western"
+    assert seed._normalize_vendor_cuisine("Chinese-style casual dining") == "Chinese"
+    assert seed._normalize_vendor_cuisine("Italian / pasta") == "Italian"
+    assert seed._normalize_vendor_cuisine("Soups / Western casual dining") == "Western"
+    assert seed._normalize_vendor_cuisine("Biryani / Indian-Muslim") == "Indian"
+    assert seed._normalize_vendor_cuisine("Kopi / local breakfast") == "Local"
+    assert seed._normalize_vendor_cuisine("Japanese desserts") == "Japanese"
+    assert seed._normalize_vendor_cuisine("Taiwanese tea") == "Taiwanese"
+    assert seed._normalize_vendor_cuisine("Açaí bowls / desserts") is None
+    assert seed._normalize_vendor_cuisine("Soy-based snacks / beverages") is None
+    assert seed._normalize_vendor_cuisine("Fried chicken / fast food") is None
+    assert seed._normalize_vendor_cuisine("Vegetarian / plant-based bowls") is None
+    assert seed._normalize_vendor_cuisine("Café") is None
+    assert seed._normalize_vendor_cuisine("Food court / multiple cuisines") is None
+    assert seed._normalize_vendor_cuisine("Vending food & beverages") is None
+
+    # Dish/drink types are not cuisines.
+    assert seed._normalize_vendor_cuisine("Bubble tea / beverages") is None
+    assert seed._normalize_vendor_cuisine("Coffee / café") is None
+    assert seed._normalize_vendor_cuisine("Juices / smoothies") is None
+    assert seed._normalize_vendor_cuisine("Pizza") is None
+    assert seed._normalize_vendor_cuisine("Sandwiches") is None
+    assert seed._normalize_vendor_cuisine(None, "Coffee shop") is None
+    assert seed._normalize_vendor_cuisine(None, "Pasta shop") is None
+    assert seed._normalize_vendor_cuisine(None, "Salad shop") is None
+    assert seed._normalize_vendor_cuisine(None, "Soup restaurant") is None
+    assert seed._normalize_vendor_cuisine(None, "Hamburger restaurant") is None
+    assert seed._normalize_vendor_cuisine(None, "Pizza restaurant") is None
+
+    # Fallback to cuisine-bearing Google categories.
+    assert seed._normalize_vendor_cuisine(None, "Chinese restaurant") == "Chinese"
+    assert (
+        seed._normalize_vendor_cuisine(None, "North Indian restaurant")
+        == "North Indian"
+    )
+    assert seed._normalize_vendor_cuisine(None, "Pizza restaurant") is None
+    assert seed._normalize_vendor_cuisine(None, "Bakery") is None
+    assert seed._normalize_vendor_cuisine(None, "Halal restaurant") is None
+    assert (
+        seed._normalize_vendor_cuisine(
+            None,
+            "Restaurant",
+            '["Fusion restaurant", "Korean restaurant"]',
+        )
+        == "Korean"
+    )
+    assert (
+        seed._normalize_vendor_cuisine("Café / casual dining", "Thai restaurant")
+        == "Thai"
+    )
+
+
+def test_derive_vendor_dishes_extracts_dish_and_drink_types() -> None:
+    assert seed._derive_vendor_dishes("Bubble tea / beverages") == ["Bubble Tea"]
+    assert seed._derive_vendor_dishes("Coffee / café") == ["Coffee"]
+    assert seed._derive_vendor_dishes("Juices / smoothies") == ["Juice"]
+    assert seed._derive_vendor_dishes("Italian / pasta") == ["Pasta"]
+    assert seed._derive_vendor_dishes("Soups / Western casual dining") == ["Soup"]
+    assert seed._derive_vendor_dishes("Pizza") == ["Pizza"]
+    assert seed._derive_vendor_dishes("Sandwiches") == ["Sandwiches"]
+    assert seed._derive_vendor_dishes(None, "Coffee shop") == ["Coffee"]
+    assert seed._derive_vendor_dishes(None, "Bubble tea store") == ["Bubble Tea"]
+    assert seed._derive_vendor_dishes(None, "Juice shop") == ["Juice"]
+    assert seed._derive_vendor_dishes(None, "Pasta shop") == ["Pasta"]
+    assert seed._derive_vendor_dishes(None, "Salad shop") == ["Salad"]
+    assert seed._derive_vendor_dishes(None, "Soup restaurant") == ["Soup"]
+    assert seed._derive_vendor_dishes(None, "Hamburger restaurant") == ["Burger"]
+    assert seed._derive_vendor_dishes(None, "Pizza restaurant") == ["Pizza"]
+    assert (
+        seed._derive_vendor_dishes(
+            "Café",
+            "Restaurant",
+            '["Fusion restaurant", "Korean restaurant"]',
+        )
+        == []
+    )
+
+
+def test_seed_vendor_dishes_merges_dish_terms_from_google_categories(
+    session: Session,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    reviews_csv = tmp_path / "reviews.csv"
+    reviews_csv.write_text(
+        "ID,vendor_name,category,review_text,experience_details\n"
+        "V999,Coffee Corner,Cafe,,{}\n",
+        encoding="utf-8",
+    )
+    places_csv = tmp_path / "places.csv"
+    _write_google_vendor_csv(
+        places_csv,
+        [{"ID": "V999", "main_category": "Coffee shop"}],
+    )
+    monkeypatch.setattr(seed, "GOOGLE_REVIEWS_CSV", reviews_csv)
+    monkeypatch.setattr(seed, "GOOGLE_RATINGS_CSV", places_csv)
+
+    vendor = Vendor(directory_id="V999", name="Coffee Corner")
+    session.add(vendor)
+    session.commit()
+
+    seed.seed_vendor_dishes(session)
+
+    assert vendor.dishes == "Coffee"

@@ -165,7 +165,10 @@ def _structured_filters(parsed: ParsedVendorSearch) -> list[object]:
         filters.append(
             or_(
                 *(
-                    Vendor.category.ilike(f"%{term}%")
+                    or_(
+                        Vendor.category.ilike(f"%{term}%"),
+                        Vendor.cuisine.ilike(f"%{term}%"),
+                    )
                     for term in parsed.category_terms
                 )
             )
@@ -205,6 +208,7 @@ def _portable_search_plan(
             or_(
                 Vendor.name.ilike(pattern_exact),
                 Vendor.category.ilike(pattern_exact),
+                Vendor.cuisine.ilike(pattern_exact),
                 Vendor.location.ilike(pattern_exact),
                 Vendor.unit_code.ilike(pattern_exact),
                 # For comma-separated dishes, ensure we match the dish keyword cleanly
@@ -282,6 +286,10 @@ def build_vendor_search_plan(
         config,
         func.coalesce(Vendor.category, ""),
     )
+    cuisine_vector = func.to_tsvector(
+        config,
+        func.coalesce(Vendor.cuisine, ""),
+    )
     location_vector = func.to_tsvector(
         config,
         func.coalesce(Vendor.location, ""),
@@ -296,6 +304,7 @@ def build_vendor_search_plan(
                 " ",
                 func.coalesce(Vendor.name, ""),
                 func.coalesce(Vendor.category, ""),
+                func.coalesce(Vendor.cuisine, ""),
                 func.coalesce(Vendor.dishes, ""),
             )
         )
@@ -354,6 +363,7 @@ def build_vendor_search_plan(
         + func.ts_rank_cd(dishes_vector, ts_query) * 10000.0
         + prefix_name * 1000.0
         + func.ts_rank_cd(category_vector, ts_query) * 100.0
+        + func.ts_rank_cd(cuisine_vector, ts_query) * 100.0
         + func.ts_rank_cd(location_vector, ts_query) * 10.0
         + fuzzy_score * 1.0
     )
