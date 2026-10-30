@@ -191,7 +191,7 @@ function HomePage() {
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold font-display leading-[1.1] mb-6 tracking-tight text-[#4A3328]">
                 Find Your Next
                 <span className="block text-rose-700 italic font-normal mt-1">
-                  Favourite Stall
+                  Favourite Food
                 </span>
               </h1>
 
@@ -248,7 +248,7 @@ function HomePage() {
               </div>
 
               {/* Frame 2: The Crowded Bowl (Slightly Lower) */}
-              <div className="w-1/2 sm:w-50 bg-[#FFFDF9] rounded-3xl p-2.5 border border-[#E8DCD0] shadow-[6px_6px_0px_0px_rgba(203,137,126,0.35)] translate-y-4 transform hover:translate-y-2 hover:shadow-[8px_8px_0px_0px_rgba(203,137,126,0.45)] transition-all duration-300">
+              <div className="w-1/2 sm:w-50x bg-[#FFFDF9] rounded-3xl p-2.5 border border-[#E8DCD0] shadow-[6px_6px_0px_0px_rgba(203,137,126,0.35)] translate-y-4 transform hover:translate-y-2 hover:shadow-[8px_8px_0px_0px_rgba(203,137,126,0.45)] transition-all duration-300">
                 <div className="relative h-44 sm:h-52 rounded-2xl overflow-hidden mb-3 bg-amber-100">
                   <img
                     src="/data/vendor_photos/downloads/V002_2.jpg"
