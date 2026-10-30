@@ -25,6 +25,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { rankTrendingVendors } from "./lib/trendingVendors";
+import { useDocumentTitle } from "./hooks/useDocumentTitle";
 
 const BODY_FONT = "'Plus Jakarta Sans', sans-serif";
 
@@ -84,6 +85,7 @@ function StarRow({
 }
 
 function HomePage() {
+  useDocumentTitle("Home");
   const [reviewsPaused, setReviewsPaused] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);

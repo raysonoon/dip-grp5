@@ -2,10 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Mail, Lock, AlertCircle, ArrowLeft } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 type AuthMode = "signin" | "signup";
 
 export default function SignInPage() {
+  useDocumentTitle("Sign In");
   const navigate = useNavigate();
   const location = useLocation();
   const [mode, setMode] = useState<AuthMode>("signin");

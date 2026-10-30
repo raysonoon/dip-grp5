@@ -11,6 +11,7 @@ import { apiUrl } from "../api/client";
 import { fetchVendorFilters, fetchVendorPage } from "../api/vendors";
 
 import { formatDistance } from "../lib/vendorRanking.js";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 
 
@@ -273,6 +274,7 @@ function FilterSelect({ label, placeholder, value, options, onChange }) {
 
 
 export default function FoodPage() {
+  useDocumentTitle("All Food Spots");
 
   const PAGE_LIMIT = 12;
 
