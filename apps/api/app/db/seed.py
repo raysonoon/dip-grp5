@@ -1336,8 +1336,9 @@ def seed_vendor_dishes(session: Session) -> tuple[int, int]:
 
     # Emit CSV for missing dishes if any exist
     if missing_vendors:
-        os.makedirs("data/vendor_dishes", exist_ok=True)
         missing_csv_path = Path(__file__).resolve().parents[4] / "data" / "vendor_dishes" / "vendors_missing_dishes.csv"
+        # Create the folder next to the file, not relative to the working directory.
+        os.makedirs(missing_csv_path.parent, exist_ok=True)
         with open(missing_csv_path, mode="w", newline="", encoding="utf-8") as mf:
             writer = csv.DictWriter(mf, fieldnames=["vendor_name", "category", "review_text"])
             writer.writeheader()
