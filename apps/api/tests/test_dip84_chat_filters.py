@@ -61,13 +61,14 @@ class CapturingMatchChatService(ChatService):
         super().__init__(*args, **kwargs)
         self.sql_match: IntentMatch | None = None
 
-    def _prepare_sql(self, question, match, history, retrieval_question):
+    def _prepare_sql(self, question, match, history, retrieval_question, **kwargs):
         self.sql_match = match
         return super()._prepare_sql(
             question,
             match,
             history,
             retrieval_question,
+            **kwargs,
         )
 
 
@@ -187,8 +188,14 @@ def _add_vendor(
     name: str,
     location: str,
     category: str = "Fast Food/Takeout",
+    opening_hours: str | None = None,
 ) -> Vendor:
-    vendor = Vendor(name=name, location=location, category=category)
+    vendor = Vendor(
+        name=name,
+        location=location,
+        category=category,
+        opening_hours=opening_hours,
+    )
     session.add(vendor)
     session.flush()
     return vendor
@@ -846,6 +853,167 @@ def test_vector_unknown_vendor_clarifies_before_any_retrieval(
     assert vector_store.search_calls == 0
 
 
+def test_schedule_typo_suggests_official_vendor_without_generation(
+    session,
+) -> None:
+    _add_vendor(
+        session,
+        name="Paik's Bibim",
+        location="North Spine",
+        opening_hours="Mon to Fri: 10am to 9pm; Sat: 10am to 8pm; Sun & PH: Closed",
+    )
+    session.commit()
+
+    vector_store = NeverKnowledgeStore()
+    service = ChatService(
+        NeverEmbedder(),
+        vector_store,
+        generate=_never_generate,
+        router=StaticRouter("SQL"),
+        sql_store=PgSqlStore(session),
+        session=session,
+    )
+
+    response = service.answer("what time does piak bibim's close on sunday?")
+
+    assert response.search_type == "SQL"
+    assert "Do you mean Paik's Bibim?" in response.answer
+    assert "piak bibim" not in response.answer.casefold()
+    assert response.sources == []
+    assert vector_store.search_calls == 0
+
+
+def test_confirming_schedule_typo_answers_from_official_vendor(session) -> None:
+    _add_vendor(
+        session,
+        name="Paik's Bibim",
+        location="North Spine",
+        opening_hours="Mon to Fri: 10am to 9pm; Sat: 10am to 8pm; Sun & PH: Closed",
+    )
+    session.commit()
+    captured: dict[str, str] = {}
+
+    def generate(prompt: str) -> str:
+        captured["prompt"] = prompt
+        return "Paik's Bibim is closed on Sunday."
+
+    service = ChatService(
+        NeverEmbedder(),
+        NeverKnowledgeStore(),
+        generate=generate,
+        router=StaticRouter("SQL"),
+        sql_store=PgSqlStore(session),
+        session=session,
+    )
+
+    original = "what time does piak bibim's close on sunday?"
+    clarification = service.answer(original)
+    response = service.answer(
+        "yes",
+        history=[
+            ChatHistoryMessage(role="user", content=original),
+            ChatHistoryMessage(role="assistant", content=clarification.answer),
+        ],
+    )
+
+    assert response.answer == "Paik's Bibim is closed on Sunday."
+    assert response.search_type == "SQL"
+    assert "Paik's Bibim" in captured["prompt"]
+    assert "Sun & PH: Closed" in captured["prompt"]
+    assert (
+        "Question: what time does Paik's Bibim close on sunday?"
+        in captured["prompt"]
+    )
+
+
+def test_named_vendor_schedule_overrides_vector_route(session) -> None:
+    _add_vendor(
+        session,
+        name="Paik's Bibim",
+        location="North Spine",
+        opening_hours="Mon to Fri: 10am to 9pm; Sat: 10am to 8pm; Sun & PH: Closed",
+    )
+    session.commit()
+
+    service = ChatService(
+        NeverEmbedder(),
+        NeverKnowledgeStore(),
+        generate=_generated_answer,
+        router=StaticRouter("Vector"),
+        sql_store=PgSqlStore(session),
+        session=session,
+    )
+
+    response = service.answer("what time does Paik's Bibim close on sunday?")
+
+    assert response.search_type == "SQL"
+    assert response.sources[0].vendor_name == "Paik's Bibim"
+
+
+def test_vendor_schedule_question_keeps_closed_vendor(session) -> None:
+    paik = _add_vendor(
+        session,
+        name="Paik's Bibim",
+        location="North Spine",
+        opening_hours="Mon to Fri: 10am to 9pm; Sat: 10am to 8pm; Sun & PH: Closed",
+    )
+    _add_vendor(
+        session,
+        name="Sunday Brunch",
+        location="North Spine",
+        opening_hours="Daily: 8am to 8pm",
+    )
+    session.commit()
+
+    service = ChatService(
+        NeverEmbedder(),
+        NeverKnowledgeStore(),
+        generate=_generated_answer,
+        router=StaticRouter("SQL"),
+        sql_store=PgSqlStore(session),
+        session=session,
+    )
+
+    vendor_filters = service._resolve_filters(
+        "what time does Paik's Bibim close on sunday?"
+    )
+    assert vendor_filters.vendor_ids == [paik.id]
+    assert vendor_filters.open_hours is None
+
+    list_filters = service._resolve_filters(
+        "which places are open on sunday?"
+    )
+    assert list_filters.vendor_ids is None
+    assert list_filters.open_hours == "sunday"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "is there anywhere open late?",
+        "what time does the library close?",
+    ],
+)
+def test_non_vendor_schedule_phrases_do_not_become_clarifications(
+    session,
+    question: str,
+) -> None:
+    service = ChatService(
+        NeverEmbedder(),
+        NeverKnowledgeStore(),
+        generate=_generated_answer,
+        router=StaticRouter("SQL"),
+        sql_store=PgSqlStore(session),
+        session=session,
+    )
+
+    assert service._suspected_unresolved_vendor_names(
+        question,
+        service._vendor_rows(),
+        service._match_vendor_names(question),
+    ) == []
+
+
 @pytest.mark.parametrize("search_type", ["SQL", "SQL + Vector", "Vector"])
 @pytest.mark.parametrize(
     ("question", "expected_name"),
@@ -922,6 +1090,15 @@ def test_explicit_unknown_vendor_queries_never_broad_retrieve(
         "recommend places nearby",
         "recommend some good options",
         "recommend a new restaurant near campus",
+        "recommend something for me to eat",
+        "recommend me something to eat",
+        "recommend a place for me to eat",
+        "recommend a good place for a date",
+        "recommend a quick lunch",
+        "recommend something that is not spicy",
+        "recommend a place to study at",
+        "recommend a place I can study at",
+        "recommend another one that's cheaper",
     ],
 )
 def test_general_food_evidence_query_is_not_treated_as_unknown_vendor(

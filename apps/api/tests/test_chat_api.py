@@ -37,9 +37,11 @@ class FakeChatService:
         question: str,
         *,
         history: list[ChatHistoryMessage] | None = None,
+        current_user=None,
     ) -> ChatResponse:
         self.question = question
         self.history = history
+        self.current_user = current_user
         return self._response
 
     def stream_answer(
@@ -47,9 +49,11 @@ class FakeChatService:
         question: str,
         *,
         history: list[ChatHistoryMessage] | None = None,
+        current_user=None,
     ):
         self.question = question
         self.history = history
+        self.current_user = current_user
         midpoint = len(self._response.answer) // 2
         yield "delta", self._response.answer[:midpoint]
         yield "delta", self._response.answer[midpoint:]

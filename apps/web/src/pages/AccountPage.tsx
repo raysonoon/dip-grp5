@@ -22,6 +22,7 @@ import {
   toggleValue,
 } from "../components/FoodPreferencesOnboarding";
 import { useAuth } from "../contexts/AuthContext";
+import FavouritePlaces from "../components/FavouritePlaces";
 
 type PreferenceKey =
   | "dietary_restrictions"
@@ -237,188 +238,184 @@ export default function AccountPage() {
         <p className="mt-1 text-sm text-muted-foreground">{user?.email}</p>
       </div>
 
-      {loading ? (
-        <p className="text-muted-foreground">Loading your account...</p>
-      ) : loadError ? (
-        <p className="text-sm text-destructive">{loadError}</p>
-      ) : (
-        <>
-          <Section
-            icon={<Utensils className="h-5 w-5 text-primary" />}
-            title="Food preferences"
-            action={
-              !editing && (
-                <button
-                  type="button"
-                  onClick={startEditing}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-                >
-                  <Pencil className="h-4 w-4" />
-                  Edit
-                </button>
-              )
-            }
-          >
-            {editing ? (
-              <div className="space-y-5">
-                {PREFERENCE_FIELDS.map(({ key, label, options }) => {
-                  // Keep any saved values that are no longer in the option list.
-                  const choices = [
-                    ...options,
-                    ...draft[key].filter((value) => !options.includes(value)),
-                  ];
-                  return (
-                    <div key={key}>
-                      <h3 className="mb-2 text-sm font-semibold text-foreground">{label}</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {choices.map((option) => (
-                          <Chip
-                            key={option}
-                            label={option}
-                            selected={draft[key].includes(option)}
-                            onClick={() => toggleDraft(key, option)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
+      <Section
+        icon={<Utensils className="h-5 w-5 text-primary" />}
+        title="Food preferences"
+        action={
+          !loading && !loadError && !editing && (
+            <button
+              type="button"
+              onClick={startEditing}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              <Pencil className="h-4 w-4" />
+              Edit
+            </button>
+          )
+        }
+      >
+        {loading ? (
+          <p className="text-muted-foreground">Loading your account...</p>
+        ) : loadError ? (
+          <p className="text-sm text-destructive">{loadError}</p>
+        ) : editing ? (
+          <div className="space-y-5">
+            {PREFERENCE_FIELDS.map(({ key, label, options }) => {
+              // Keep any saved values that are no longer in the option list.
+              const choices = [
+                ...options,
+                ...draft[key].filter((value) => !options.includes(value)),
+              ];
+              return (
+                <div key={key}>
+                  <h3 className="mb-2 text-sm font-semibold text-foreground">{label}</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {choices.map((option) => (
+                      <Chip
+                        key={option}
+                        label={option}
+                        selected={draft[key].includes(option)}
+                        onClick={() => toggleDraft(key, option)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
 
-                {saveError && <p className="text-sm text-destructive">{saveError}</p>}
+            {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
-                <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <div className="flex justify-end gap-2 border-t border-border pt-4">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setEditing(false)}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void savePreferences()}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "Save preferences"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {!preferences && (
+              <p className="mb-4 text-sm text-muted-foreground">
+                You haven't set your food preferences yet.
+              </p>
+            )}
+            <dl className="grid gap-4 sm:grid-cols-2">
+              {PREFERENCE_FIELDS.map(({ key, label }) => (
+                <div key={key}>
+                  <dt className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {label}
+                  </dt>
+                  <dd className="flex flex-wrap gap-1.5">
+                    {savedPreferences[key].length ? (
+                      savedPreferences[key].map((value) => (
+                        <span
+                          key={value}
+                          className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+                        >
+                          {value}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground">None</span>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </>
+        )}
+      </Section>
+
+      <Section icon={<Heart className="h-5 w-5 text-primary" />} title="Favourite places">
+        <FavouritePlaces key={userId} />
+      </Section>
+
+      <Section
+        icon={<MessageSquare className="h-5 w-5 text-primary" />}
+        title="Recently reviewed places"
+      >
+        {reviewsError ? (
+          <p className="text-sm text-destructive">{reviewsError}</p>
+        ) : reviewsLoading && !reviewsPage.items.length ? (
+          <p className="text-sm text-muted-foreground">Loading your reviews...</p>
+        ) : reviewsPage.items.length ? (
+          <>
+            <ul className="divide-y divide-border">
+              {reviewsPage.items.map((review) => (
+                <li key={review.id} className="py-3 first:pt-0 last:pb-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <Link
+                      to={`/vendors/${review.vendor.id}`}
+                      className="font-semibold text-foreground hover:text-primary"
+                    >
+                      {review.vendor.name}
+                    </Link>
+                    <span className="flex shrink-0 items-center gap-1 text-sm font-semibold text-foreground">
+                      <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                      {review.rating.toFixed(1)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {review.comment || <span className="italic">No comment</span>}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {formatDate(review.created_at)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+
+            {reviewsPage.total > REVIEWS_PAGE_SIZE && (
+              <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
+                <p className="text-xs text-muted-foreground">
+                  Showing {reviewOffset + 1}–{reviewOffset + reviewsPage.items.length} of{" "}
+                  {reviewsPage.total}
+                </p>
+                <div className="flex gap-2">
                   <button
                     type="button"
-                    disabled={saving}
-                    onClick={() => setEditing(false)}
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    disabled={reviewsLoading || reviewOffset === 0}
+                    onClick={() =>
+                      setReviewOffset((current) => Math.max(0, current - REVIEWS_PAGE_SIZE))
+                    }
+                    className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Cancel
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
                   </button>
                   <button
                     type="button"
-                    disabled={saving}
-                    onClick={() => void savePreferences()}
-                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                    disabled={
+                      reviewsLoading || reviewOffset + REVIEWS_PAGE_SIZE >= reviewsPage.total
+                    }
+                    onClick={() => setReviewOffset((current) => current + REVIEWS_PAGE_SIZE)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {saving ? "Saving..." : "Save preferences"}
+                    Next
+                    <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
               </div>
-            ) : (
-              <>
-                {!preferences && (
-                  <p className="mb-4 text-sm text-muted-foreground">
-                    You haven't set your food preferences yet.
-                  </p>
-                )}
-                <dl className="grid gap-4 sm:grid-cols-2">
-                  {PREFERENCE_FIELDS.map(({ key, label }) => (
-                    <div key={key}>
-                      <dt className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {label}
-                      </dt>
-                      <dd className="flex flex-wrap gap-1.5">
-                        {savedPreferences[key].length ? (
-                          savedPreferences[key].map((value) => (
-                            <span
-                              key={value}
-                              className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
-                            >
-                              {value}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-sm text-muted-foreground">None</span>
-                        )}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </>
             )}
-          </Section>
-
-          <Section icon={<Heart className="h-5 w-5 text-primary" />} title="Favourite places">
-            <p className="text-sm text-muted-foreground">No favourites found</p>
-          </Section>
-
-          <Section
-            icon={<MessageSquare className="h-5 w-5 text-primary" />}
-            title="Recently reviewed places"
-          >
-            {reviewsError ? (
-              <p className="text-sm text-destructive">{reviewsError}</p>
-            ) : reviewsLoading && !reviewsPage.items.length ? (
-              <p className="text-sm text-muted-foreground">Loading your reviews...</p>
-            ) : reviewsPage.items.length ? (
-              <>
-                <ul className="divide-y divide-border">
-                  {reviewsPage.items.map((review) => (
-                    <li key={review.id} className="py-3 first:pt-0 last:pb-0">
-                      <div className="flex items-center justify-between gap-3">
-                        <Link
-                          to={`/vendors/${review.vendor.id}`}
-                          className="font-semibold text-foreground hover:text-primary"
-                        >
-                          {review.vendor.name}
-                        </Link>
-                        <span className="flex shrink-0 items-center gap-1 text-sm font-semibold text-foreground">
-                          <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                          {review.rating.toFixed(1)}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {review.comment || <span className="italic">No comment</span>}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {formatDate(review.created_at)}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-
-                {reviewsPage.total > REVIEWS_PAGE_SIZE && (
-                  <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
-                    <p className="text-xs text-muted-foreground">
-                      Showing {reviewOffset + 1}–{reviewOffset + reviewsPage.items.length} of{" "}
-                      {reviewsPage.total}
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        disabled={reviewsLoading || reviewOffset === 0}
-                        onClick={() =>
-                          setReviewOffset((current) => Math.max(0, current - REVIEWS_PAGE_SIZE))
-                        }
-                        className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                        Previous
-                      </button>
-                      <button
-                        type="button"
-                        disabled={
-                          reviewsLoading || reviewOffset + REVIEWS_PAGE_SIZE >= reviewsPage.total
-                        }
-                        onClick={() => setReviewOffset((current) => current + REVIEWS_PAGE_SIZE)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Next
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                You haven't reviewed any places yet.
-              </p>
-            )}
-          </Section>
-        </>
-      )}
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            You haven't reviewed any places yet.
+          </p>
+        )}
+      </Section>
     </div>
   );
 }

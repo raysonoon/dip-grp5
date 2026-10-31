@@ -13,13 +13,15 @@ function missingConfiguration() {
   );
 }
 
-export const supabase = supabaseUrl && supabasePublishableKey
-  ? createClient(supabaseUrl, supabasePublishableKey)
-  : {
-      auth: new Proxy({}, {
-        get(target, property) {
-          if (property in target) return target[property];
-          return missingConfiguration();
-        },
-      }),
-    };
+export const supabase = /** @type {import("@supabase/supabase-js").SupabaseClient} */ (
+  supabaseUrl && supabasePublishableKey
+    ? createClient(supabaseUrl, supabasePublishableKey)
+    : {
+        auth: new Proxy({}, {
+          get(target, property) {
+            if (property in target) return target[property];
+            return missingConfiguration();
+          },
+        }),
+      }
+);

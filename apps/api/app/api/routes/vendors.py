@@ -15,7 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from geoalchemy2.shape import to_shape
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -82,6 +82,7 @@ def _vendor_list_item(vendor: Vendor, review_count: int) -> VendorListItem:
         unit_code=vendor.unit_code,
         image_url=(vendor.images[0].image_url if vendor.images else None),
         category=vendor.category,
+        cuisine=vendor.cuisine,
         opening_hours=vendor.opening_hours,
         price_range=vendor.price_range,
         halal=vendor.halal,
@@ -127,40 +128,107 @@ def _resolve_vendor_image(
     )
 
 
+def _user_point(lat: float, lng: float):
+    """PostGIS geography point for a user location. WKT is (lng lat)."""
+    return func.ST_GeogFromText(f"POINT({lng:.7f} {lat:.7f})")
+
+
+def _distance_from(lat: float, lng: float):
+    """Metres from each vendor's map_coordinates to the user point (NULL if no coords)."""
+    return func.ST_Distance(Vendor.map_coordinates, _user_point(lat, lng))
+
+
 @router.get("", response_model=VendorListRead)
 def list_vendors(
     session: DbSession,
     current_user: OptionalCurrentUser,
     embedder: EmbedderDep,
     q: Annotated[str | None, Query(max_length=100)] = None,
-    location: Annotated[str | None, Query(max_length=255)] = None,
-    category: Annotated[str | None, Query(max_length=255)] = None,
+    location: Annotated[list[str] | None, Query()] = None,
+    category: Annotated[list[str] | None, Query()] = None,
+    cuisine: Annotated[list[str] | None, Query()] = None,
+    price_range: Annotated[list[str] | None, Query()] = None,
+    halal: Annotated[bool | None, Query()] = None,
+    vegetarian: Annotated[bool | None, Query()] = None,
     sort: Annotated[
         Literal["recommended", "reviews", "rating"],
         Query(),
     ] = "recommended",
+    lat: Annotated[float | None, Query(ge=-90, le=90)] = None,
+    lng: Annotated[float | None, Query(ge=-180, le=180)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> VendorListRead:
+    if (lat is None) != (lng is None):
+        raise HTTPException(
+            status_code=422,
+            detail="lat and lng must be provided together.",
+        )
+
     search_plan = build_vendor_search_plan(session, q)
     filters = list(search_plan.filters)
 
-    if location is not None and (location_text := location.strip()):
-        if location_text.lower().startswith("hall "):
-            filters.append(
-                func.lower(Vendor.location) == location_text.lower()
-            )
-        else:
-            filters.append(
-                Vendor.location.ilike(f"%{location_text}%")
-            )
+    if location:
+        location_conditions = []
+        for location_value in location:
+            location_text = location_value.strip()
+            if not location_text:
+                continue
+            if location_text.lower().startswith("hall "):
+                location_conditions.append(
+                    func.lower(Vendor.location) == location_text.lower()
+                )
+            else:
+                location_conditions.append(
+                    Vendor.location.ilike(f"%{location_text}%")
+                )
+        if location_conditions:
+            filters.append(or_(*location_conditions))
 
-    if category is not None and (category_text := category.strip()):
-        filters.append(Vendor.category == category_text)
+    category_values = [
+        value.strip() for value in (category or []) if value.strip()
+    ]
+    if category_values:
+        filters.append(Vendor.category.in_(category_values))
+
+    cuisine_values = [
+        value.strip() for value in (cuisine or []) if value.strip()
+    ]
+    if cuisine_values:
+        filters.append(Vendor.cuisine.in_(cuisine_values))
+
+    price_range_values = [
+        value.strip() for value in (price_range or []) if value.strip()
+    ]
+    if price_range_values:
+        filters.append(Vendor.price_range.in_(price_range_values))
+
+    # Dietary filters match only vendors explicitly marked true; unknown (NULL)
+    # vendors are excluded. Selecting both requires both conditions.
+    if halal is True:
+        filters.append(Vendor.halal.is_(True))
+
+    if vegetarian is True:
+        filters.append(Vendor.vegetarian.is_(True))
 
     total = session.scalar(
         select(func.count(Vendor.id)).where(*filters)
     )
+
+    # Distance ordering, used as a tiebreak after the primary sort so callers
+    # that share their position see nearby vendors first. PostGIS computes it;
+    # SQLite test runs fall back to the alphabetical order below.
+    nearby_order: tuple[object, ...] = ()
+    distance_expr = None
+
+    if (
+        lat is not None
+        and lng is not None
+        and session.get_bind().dialect.name == "postgresql"
+    ):
+        user_point = func.ST_GeogFromText(f"POINT({lng:.7f} {lat:.7f})")
+        distance_expr = func.ST_Distance(Vendor.map_coordinates, user_point)
+        nearby_order = (distance_expr.asc().nullslast(),)
 
     recommended_ids: list[int] = []
 
@@ -170,7 +238,6 @@ def list_vendors(
                 UserFoodPreferences.user_id == current_user.id
             )
         )
-
         if (
             preferences is not None
             and preferences.onboarding_status == "completed"
@@ -192,11 +259,17 @@ def list_vendors(
                 recommended_ids = []
 
     review_count = func.count(Review.id).label("review_count")
+    distance_column = (
+        distance_expr.label("distance_m")
+        if distance_expr is not None
+        else literal(None).label("distance_m")
+    )
 
     statement = (
         select(
             Vendor,
             review_count,
+            distance_column,
         )
         .options(
             selectinload(Vendor.images),
@@ -210,6 +283,7 @@ def list_vendors(
         statement = statement.order_by(
             *search_plan.order_by,
             review_count.desc(),
+            *nearby_order,
             Vendor.created_at.desc(),
             Vendor.id.desc(),
         )
@@ -222,6 +296,7 @@ def list_vendors(
         statement = statement.order_by(
             *search_plan.order_by,
             rating.desc().nullslast(),
+            *nearby_order,
             Vendor.created_at.desc(),
             Vendor.id.desc(),
         )
@@ -239,14 +314,17 @@ def list_vendors(
         statement = statement.order_by(
             *search_plan.order_by,
             recommendation_order.asc(),
-            Vendor.created_at.desc(),
-            Vendor.id.desc(),
+            *nearby_order,
+            func.lower(Vendor.name).asc(),
+            Vendor.id.asc(),
         )
 
     else:
-        # Fallback when no stalls are recommended: alphabetical, A-Z.
+        # Fallback when no stalls are recommended: nearby first (when the caller
+        # shares a position), otherwise alphabetical, A-Z.
         statement = statement.order_by(
             *search_plan.order_by,
+            *nearby_order,
             func.lower(Vendor.name).asc(),
             Vendor.id.asc(),
         )
@@ -261,7 +339,7 @@ def list_vendors(
 
     recommended_id_set = set(recommended_ids)
 
-    for vendor, review_count_value in rows:
+    for vendor, review_count_value, distance_value in rows:
         items.append(
             VendorListItem(
                 id=vendor.id,
@@ -274,6 +352,7 @@ def list_vendors(
                     else None
                 ),
                 category=vendor.category,
+                cuisine=vendor.cuisine,
                 opening_hours=vendor.opening_hours,
                 price_range=vendor.price_range,
                 halal=vendor.halal,
@@ -306,6 +385,9 @@ def list_vendors(
                 ],
                 map_coordinates=_vendor_coordinates(vendor),
                 recommended=vendor.id in recommended_id_set,
+                distance_m=(
+                    None if distance_value is None else float(distance_value)
+                ),
             )
         )
 
@@ -330,7 +412,7 @@ def list_nearby_vendors(
     Distance is computed by PostGIS on each vendor's geography column, so it
     is in metres and accounts for the curvature of the earth.
     """
-    user_point = func.ST_GeogFromText(f"POINT({lng:.7f} {lat:.7f})")
+    user_point = _user_point(lat, lng)
     distance = func.ST_Distance(Vendor.map_coordinates, user_point)
     rating = func.coalesce(Vendor.average_rating, Vendor.average_google_rating)
 
@@ -355,13 +437,11 @@ def list_nearby_vendors(
         .limit(limit)
     ).all()
 
-    items = [
-        VendorNearbyItem(
-            **_vendor_list_item(vendor, review_count).model_dump(),
-            distance_m=float(distance_m),
-        )
-        for vendor, review_count, distance_m in rows
-    ]
+    items: list[VendorNearbyItem] = []
+    for vendor, review_count, distance_m in rows:
+        item = _vendor_list_item(vendor, review_count).model_dump()
+        item.pop("distance_m", None)
+        items.append(VendorNearbyItem(**item, distance_m=float(distance_m)))
     return VendorNearbyRead(items=items, total=len(items))
 
 
@@ -383,9 +463,17 @@ def get_vendor_filters(
         .order_by(Vendor.category.asc())
     ).all()
 
+    cuisines = session.scalars(
+        select(Vendor.cuisine)
+        .where(Vendor.cuisine.is_not(None))
+        .distinct()
+        .order_by(Vendor.cuisine.asc())
+    ).all()
+
     return {
         "locations": locations,
         "categories": categories,
+        "cuisines": cuisines,
     }
 
 

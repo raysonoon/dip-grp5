@@ -6,6 +6,7 @@ from app.models.review_vote import ReviewVote
 from app.models.user import User
 from app.models.vendor import Vendor, VendorImage
 from app.models.user_food_preferences import UserFoodPreferences
+from app.models.user_favourite import UserFavourite
 
 __all__ = [
     "ChatbotPrompt",
@@ -18,5 +19,6 @@ __all__ = [
     "VendorImage",
     "RedditComment",
     "UserFoodPreferences",
+    "UserFavourite",
 ]
 
