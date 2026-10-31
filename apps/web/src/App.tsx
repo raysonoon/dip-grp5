@@ -8,10 +8,12 @@ import { fetchReviews, fetchVendorReviews } from "./api/reviews.js";
 import { fetchVendors } from "./api/vendors";
 import SignInPage from "./pages/SignInPage";
 import FoodPage from "./pages/FoodPage";
+import GuestDiscoverPage from "./pages/GuestDiscoverPage";
 import VendorsPage from "./pages/VendorsPage";
 import FoodPreferencesOnboarding from "./components/FoodPreferencesOnboarding";
 import { fetchMyPreferences } from "./api/preferences.js";
 import { useAuth } from "./contexts/AuthContext";
+import { useChat } from "./contexts/ChatContext";
 import VendorMap from "./pages/VendorMap";
 import MapPage from "./pages/MapPage";
 import NotFoundPage from "./pages/NotFoundPage";
@@ -48,8 +50,11 @@ type TrendingVendor = {
   name: string;
   location: string | null;
   category: string | null;
+  cuisine: string | null;
   price_range: string | null;
   image_url: string | null;
+  halal: boolean | null;
+  vegetarian: boolean | null;
   average_rating: number | null;
   average_google_rating: number | null;
   review_count: number;
@@ -64,23 +69,31 @@ function StarRow({
   rating: number;
   size?: "sm" | "md";
 }) {
+  const starClass = size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4";
+
   return (
     <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <Star
-          key={i}
-          className={`${size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4"} ${
-            i <= Math.round(rating)
-              ? "fill-amber-500 text-amber-500"
-              : "fill-transparent text-amber-200/50"
-          }`}
-        />
-      ))}
+      {[1, 2, 3, 4, 5].map((i) => {
+        const fill = Math.max(0, Math.min(1, rating - (i - 1)));
+        return (
+          <span key={i} className="relative inline-block">
+            <Star className={`${starClass} fill-transparent text-muted`} />
+            <span
+              className="absolute inset-0 overflow-hidden"
+              style={{ width: `${fill * 100}%` }}
+              aria-hidden="true"
+            >
+              <Star className={`${starClass} fill-primary text-primary`} />
+            </span>
+          </span>
+        );
+      })}
     </div>
   );
 }
 
 function HomePage() {
+  const { openChat } = useChat();
   const [reviewsPaused, setReviewsPaused] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
@@ -248,7 +261,7 @@ function HomePage() {
               </div>
 
               {/* Frame 2: The Crowded Bowl (Slightly Lower) */}
-              <div className="w-1/2 sm:w-50x bg-[#FFFDF9] rounded-3xl p-2.5 border border-[#E8DCD0] shadow-[6px_6px_0px_0px_rgba(203,137,126,0.35)] translate-y-4 transform hover:translate-y-2 hover:shadow-[8px_8px_0px_0px_rgba(203,137,126,0.45)] transition-all duration-300">
+              <div className="w-1/2 sm:w-52 bg-[#FFFDF9] rounded-3xl p-2.5 border border-[#E8DCD0] shadow-[6px_6px_0px_0px_rgba(203,137,126,0.35)] translate-y-4 transform hover:translate-y-2 hover:shadow-[8px_8px_0px_0px_rgba(203,137,126,0.45)] transition-all duration-300">
                 <div className="relative h-44 sm:h-52 rounded-2xl overflow-hidden mb-3 bg-amber-100">
                   <img
                     src="/data/vendor_photos/downloads/V002_2.jpg"
@@ -367,18 +380,29 @@ function HomePage() {
                         </div>
                       )}
                       <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
-                        {vendor.category && (
-                          <span
-                            key={vendor.category}
-                            className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/90 text-[#5C4033] border border-amber-900/10 backdrop-blur-md shadow-sm"
-                          >
-                            {vendor.category}
+                        {vendor.cuisine && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm">
+                            {vendor.cuisine}
                           </span>
                         )}
                       </div>
                       <div className="absolute top-3 right-3 px-2.5 py-1 rounded-xl bg-[#B22222] text-white text-xs font-bold shadow-md">
                         {rating != null ? `${rating.toFixed(1)}★` : "—"}
                       </div>
+                      {(vendor.halal === true || vendor.vegetarian === true) && (
+                        <div className="absolute bottom-3 right-3 flex gap-1.5 flex-wrap justify-end">
+                          {vendor.halal === true && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm">
+                              Halal
+                            </span>
+                          )}
+                          {vendor.vegetarian === true && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm">
+                              Vegetarian
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="p-5 flex flex-col flex-1 justify-between bg-white">
@@ -410,8 +434,8 @@ function HomePage() {
                           <span className="text-xs font-bold text-[#4A3328]">
                             {vendor.price_range ?? "Price unlisted"}
                           </span>
-                          <span className="text-xs font-medium text-[#7D6355] bg-amber-100/50 px-2 py-0.5 rounded-md">
-                            {vendor.category ?? "Food"}
+                          <span className="text-xs text-muted-foreground">
+                            {vendor.category}
                           </span>
                         </div>
                       </div>
@@ -421,6 +445,15 @@ function HomePage() {
               })}
             </div>
           )}
+
+          <div className="mt-8 flex justify-center">
+            <Link
+              to="/food"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+            >
+              View more <ChevronRight className="mt-0.5 h-4 w-4" aria-hidden="true" />
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -542,16 +575,14 @@ function HomePage() {
               What to Eat?
             </h2>
             
-            <p className="text-xs sm:text-sm lg:text-base text-amber-100/90 font-light mb-8 whitespace-nowrap overflow-hidden text-ellipsis">
+            <p className="text-xs sm:text-sm lg:text-base text-amber-100/90 font-light mb-8">
               Chat with Foodie for personalised food recommendations in NTU.
             </p>
 
             <div>
               <button
                 type="button"
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent("open-foodie-chat"));
-                }}
+                onClick={openChat}
                 className="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-full bg-white text-[#B22222] font-semibold text-sm shadow-lg hover:bg-amber-50 hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer"
               >
                 <div className="w-6 h-6 rounded-full bg-[#B22222]/10 flex items-center justify-center p-0.5 flex-shrink-0">
@@ -563,8 +594,8 @@ function HomePage() {
                 </div>
                 <span>Foodie</span>
               </button>
-             </div>
             </div>
+          </div>
 
           {/* Center Floating NTUmmy Logo Badge */}
           <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none">
@@ -579,35 +610,30 @@ function HomePage() {
 
           {/* Right Side: NTUmmy mascot */}
           <div className="md:col-span-6 relative min-h-[380px] md:min-h-full bg-gradient-to-br from-[#fff8f2] via-[#fde8e2] to-[#faf6f0] flex items-center justify-end pr-6 sm:pr-12 md:pr-16 p-8 overflow-hidden border-l border-amber-900/10">
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-    <div className="w-72 h-72 bg-rose-300/60 rounded-full blur-3xl" />
-  </div>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-72 h-72 bg-rose-300/60 rounded-full blur-3xl" />
+            </div>
 
-  {/* Centered Container */}
-  <div className="relative max-w-sm w-full flex flex-col items-center justify-center pt-6">
-    
-    {/* Speech Bubble: Positioned above-left of mascot head with downward pointing tail */}
-    <div className="absolute top-2 -left-12 sm:-left-20 lg:-left-40 z-25 bg-white text-[#4A3328] px-4 py-5 rounded-2xl shadow-xl border border-amber-900/10 max-w-[220px] sm:max-w-[250px] text-xs sm:text-sm font-medium leading-snug">
-      <p>Hi! I'm Foodie, your campus food guide! Ask me anything about campus food.</p>
-      
-      {/* Speech bubble tail pointing downwards towards Foodie's head */}
-      <div className="absolute -bottom-2 right-6 w-4 h-4 bg-white border-r border-b border-amber-900/10 transform rotate-45" />
-    </div>
+            {/* Centered Container */}
+            <div className="relative max-w-sm w-full flex flex-col items-center justify-center pt-6">
+              {/* Speech Bubble: Positioned above-left of mascot head with downward pointing tail */}
+              <div className="absolute top-2 -left-12 sm:-left-20 lg:-left-40 z-25 bg-white text-[#4A3328] px-4 py-5 rounded-2xl shadow-xl border border-amber-900/10 max-w-[220px] sm:max-w-[250px] text-xs sm:text-sm font-medium leading-snug">
+                <p>Hi! I'm Foodie, your campus food guide! Ask me anything about campus food.</p>
 
-    {/* Mascot Image: Centered */}
-    <img
-      src="/ntummy_mascot.svg"
-      alt="Foodie Mascot"
-      className="w-52 sm:w-64 h-auto object-contain drop-shadow-xl z-10 mt-6"
-    />
-  </div>
- </div>
+                {/* Speech bubble tail pointing downwards towards Foodie's head */}
+                <div className="absolute -bottom-1.5 right-2 w-4 h-4 rotate-[30deg] border-r border-b border-amber-900/10 bg-white" />
+              </div>
 
+              {/* Mascot Image: Centered */}
+              <img
+                src="/ntummy_mascot.svg"
+                alt="Foodie Mascot"
+                className="w-52 sm:w-64 h-auto object-contain drop-shadow-xl z-10 mt-6"
+              />
+            </div>
+          </div>
         </div>
       </section>
-
-      {/* ── FLOATING CHATBOT WIDGET ───────────────────── */}
-      <FoodieChat />
 
       {/* ── FOOTER ───────────────────────────────────── */}
       <Footer />
@@ -688,6 +714,7 @@ function App() {
           }
         >
           <Route path="/food" element={<FoodPage />} />
+          <Route path="/discover" element={<GuestDiscoverPage />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/vendors/:vendorId" element={<VendorsPage />} />
           <Route path="/account" element={<AccountPage />} />
@@ -695,6 +722,8 @@ function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
+
+      <FoodieChat />
 
       {preferenceLoadError && (
         <div className="fixed bottom-6 right-6 z-[110] w-[min(92vw,380px)] rounded-2xl border border-border bg-card p-5 shadow-2xl backdrop-blur-md">

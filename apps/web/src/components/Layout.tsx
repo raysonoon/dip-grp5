@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Outlet } from "react-router-dom";
-import { RotateCcw, Send, Square, X } from "lucide-react";
+import { RotateCcw, RotateCw, Send, Square, X } from "lucide-react";
 import ChatMessageContent from "./ChatMessageContent";
+import { useChat as useChatUI } from "../contexts/ChatContext";
 import { useChatSession } from "../hooks/useChatSession";
 import Footer from "./Footer";
 import Header from "./Header";
+import VendorWheel from "./VendorWheel";
 
 // -------------------------------------------------------------
 // 1. Floating Foodie Chatbot Component
@@ -18,14 +20,11 @@ export function FoodieChat() {
     setInput: setChatInput,
     startNewSession: startNewChat,
     stopResponse,
+    wheelVendors,
+    removeWheelVendor,
   } = useChatSession();
-  const [chatOpen, setChatOpen] = useState(false);
-
-  useEffect(() => {
-    const handleOpenChat = () => setChatOpen(true);
-    window.addEventListener("open-foodie-chat", handleOpenChat);
-    return () => window.removeEventListener("open-foodie-chat", handleOpenChat);
-  }, []);
+  const { chatOpen, closeChat, toggleChat } = useChatUI();
+  const [wheelOpen, setWheelOpen] = useState(false);
 
   return (
     <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end gap-3">
@@ -53,7 +52,7 @@ export function FoodieChat() {
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={startNewChat}
+                onClick={() => { setWheelOpen(false); startNewChat(); }}
                 className="text-amber-100/80 hover:text-white transition-colors p-1"
                 aria-label="Start a new chat session"
                 title="New chat"
@@ -62,7 +61,7 @@ export function FoodieChat() {
               </button>
               <button
                 type="button"
-                onClick={() => setChatOpen(false)}
+                onClick={closeChat}
                 className="text-amber-100/80 hover:text-white transition-colors p-1"
                 aria-label="Close chat"
               >
@@ -110,6 +109,8 @@ export function FoodieChat() {
             )}
           </div>
 
+          {wheelVendors.length >= 2 && <button type="button" className="vendor-wheel-invite" disabled={isTyping} onClick={() => setWheelOpen(true)}><RotateCw size={15} aria-hidden="true" /> Spin the wheel <span>{wheelVendors.length} places</span></button>}
+
           {/* Chat Input */}
           <div className="px-4 py-4 border-t border-border bg-card">
             <div className="flex items-center gap-2">
@@ -147,10 +148,12 @@ export function FoodieChat() {
         </div>
       )}
 
+      {wheelOpen && <VendorWheel vendors={wheelVendors} onRemove={removeWheelVendor} onClose={() => setWheelOpen(false)} />}
+
       {/* Chat Toggle Button with White Circle Behind Mascot */}
       <button
         type="button"
-        onClick={() => setChatOpen((o) => !o)}
+        onClick={toggleChat}
         aria-label="Open Foodie chatbot"
         className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#B22222] text-white font-semibold text-sm shadow-2xl border-2 border-white/20 cursor-pointer hover:scale-105 active:scale-95 transition-all duration-300 group"
       >
@@ -199,8 +202,6 @@ export default function Layout({
       </main>
 
       <Footer />
-
-      <FoodieChat />
     </div>
   );
 }
