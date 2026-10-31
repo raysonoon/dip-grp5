@@ -86,6 +86,8 @@ export function parseVendor(value) {
     unit_code: nullableString(vendor.unit_code, "vendor unit_code"),
     image_url: nullableString(vendor.image_url, "vendor image_url"),
     category: nullableString(vendor.category, "vendor category"),
+    cuisine: nullableString(vendor.cuisine ?? null, "vendor cuisine"),
+    dishes: nullableString(vendor.dishes ?? null, "vendor dishes"),
     opening_hours: nullableString(vendor.opening_hours, "vendor opening_hours"),
     price_range: nullableString(vendor.price_range, "vendor price_range"),
     halal: nullableBoolean(vendor.halal, "vendor halal"),
@@ -121,14 +123,19 @@ export function parseVendorList(value) {
 }
 
 /**
- * @param {{ q?: string, location?: string, category?: string, sort?: string,
- *   limit?: number, offset?: number, lat?: number|null, lng?: number|null,
- *   signal?: AbortSignal }} options
+ * @param {{ q?: string, locations?: string[], categories?: string[],
+ *   cuisines?: string[], priceRanges?: string[], halal?: boolean,
+ *   vegetarian?: boolean, sort?: string, limit?: number, offset?: number,
+ *   lat?: number|null, lng?: number|null, signal?: AbortSignal }} options
  */
 export async function fetchVendorPage({
   q = "",
-  location = "",
-  category = "",
+  locations = [],
+  categories = [],
+  cuisines = [],
+  priceRanges = [],
+  halal = false,
+  vegetarian = false,
   sort = "recommended",
   limit = 100,
   offset = 0,
@@ -145,12 +152,30 @@ export async function fetchVendorPage({
     params.set("q", q.trim());
   }
 
-  if (location) {
-    params.set("location", location);
+  // Each filter accepts multiple values; repeat the key so the API can read
+  // them back as a list (e.g. ?location=North+Spine&location=South+Spine).
+  for (const value of locations) {
+    if (value) params.append("location", value);
   }
 
-  if (category) {
-    params.set("category", category);
+  for (const value of categories) {
+    if (value) params.append("category", value);
+  }
+
+  for (const value of cuisines) {
+    if (value) params.append("cuisine", value);
+  }
+
+  for (const value of priceRanges) {
+    if (value) params.append("price_range", value);
+  }
+
+  if (halal) {
+    params.set("halal", "true");
+  }
+
+  if (vegetarian) {
+    params.set("vegetarian", "true");
   }
 
   if (sort) {
@@ -180,6 +205,7 @@ export async function fetchVendorFilters(signal) {
   return {
     locations: Array.isArray(payload.locations) ? payload.locations : [],
     categories: Array.isArray(payload.categories) ? payload.categories : [],
+    cuisines: Array.isArray(payload.cuisines) ? payload.cuisines : [],
   };
 }
 

@@ -18,11 +18,6 @@ function hasCoordinates(vendor) {
   );
 }
 
-function ratingLine(vendor) {
-  const rating = vendor.average_rating ?? vendor.average_google_rating;
-  return rating != null ? [`⭐ ${rating}`] : [];
-}
-
 export default function VendorMap() {
   const [vendors, setVendors] = useState([]);
 
@@ -57,7 +52,7 @@ export default function VendorMap() {
           />
 
           <LocationBoundaries vendors={mappedVendors} />
-          <VendorClusterLayer vendors={mappedVendors} getExtraLines={ratingLine} />
+          <VendorClusterLayer vendors={mappedVendors} />
           <LocationLegend vendors={mappedVendors} />
         </MapContainer>
       </div>

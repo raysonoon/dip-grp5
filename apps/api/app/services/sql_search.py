@@ -49,6 +49,7 @@ class SqlResult:
     unit_code: str | None = None
     address: str | None = None
     category: str | None = None
+    cuisine: str | None = None
     price_range: str | None = None
     opening_hours: str | None = None
     halal: bool | None = None
@@ -120,6 +121,7 @@ class PgSqlStore:
             unit_code=vendor.unit_code,
             address=vendor.address,
             category=vendor.category,
+            cuisine=vendor.cuisine,
             price_range=vendor.price_range,
             opening_hours=vendor.opening_hours,
             halal=vendor.halal,
@@ -150,15 +152,18 @@ def _build_predicates(filters: StructuredFilter) -> list:
         pattern = f"%{filters.cuisine}%"
         predicates.append(
             or_(
+                Vendor.cuisine.ilike(pattern),
                 Vendor.category.ilike(pattern),
                 Vendor.dishes.ilike(pattern),
             )
         )
     if filters.exclude_cuisine:
+        pattern = f"%{filters.exclude_cuisine}%"
         predicates.append(
             not_(
-                func.coalesce(Vendor.category, "").ilike(
-                    f"%{filters.exclude_cuisine}%"
+                or_(
+                    func.coalesce(Vendor.cuisine, "").ilike(pattern),
+                    func.coalesce(Vendor.category, "").ilike(pattern),
                 )
             )
         )

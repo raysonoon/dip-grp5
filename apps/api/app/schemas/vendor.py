@@ -55,6 +55,7 @@ class VendorListItem(BaseModel):
     unit_code: str | None
     image_url: str | None
     category: str | None
+    cuisine: str | None
     opening_hours: str | None
     price_range: str | None
     halal: bool | None

@@ -15,7 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from geoalchemy2.shape import to_shape
-from sqlalchemy import case, func, literal, select
+from sqlalchemy import case, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -82,6 +82,7 @@ def _vendor_list_item(vendor: Vendor, review_count: int) -> VendorListItem:
         unit_code=vendor.unit_code,
         image_url=(vendor.images[0].image_url if vendor.images else None),
         category=vendor.category,
+        cuisine=vendor.cuisine,
         opening_hours=vendor.opening_hours,
         price_range=vendor.price_range,
         halal=vendor.halal,
@@ -143,8 +144,12 @@ def list_vendors(
     current_user: OptionalCurrentUser,
     embedder: EmbedderDep,
     q: Annotated[str | None, Query(max_length=100)] = None,
-    location: Annotated[str | None, Query(max_length=255)] = None,
-    category: Annotated[str | None, Query(max_length=255)] = None,
+    location: Annotated[list[str] | None, Query()] = None,
+    category: Annotated[list[str] | None, Query()] = None,
+    cuisine: Annotated[list[str] | None, Query()] = None,
+    price_range: Annotated[list[str] | None, Query()] = None,
+    halal: Annotated[bool | None, Query()] = None,
+    vegetarian: Annotated[bool | None, Query()] = None,
     sort: Annotated[
         Literal["recommended", "reviews", "rating"],
         Query(),
@@ -163,18 +168,48 @@ def list_vendors(
     search_plan = build_vendor_search_plan(session, q)
     filters = list(search_plan.filters)
 
-    if location is not None and (location_text := location.strip()):
-        if location_text.lower().startswith("hall "):
-            filters.append(
-                func.lower(Vendor.location) == location_text.lower()
-            )
-        else:
-            filters.append(
-                Vendor.location.ilike(f"%{location_text}%")
-            )
+    if location:
+        location_conditions = []
+        for location_value in location:
+            location_text = location_value.strip()
+            if not location_text:
+                continue
+            if location_text.lower().startswith("hall "):
+                location_conditions.append(
+                    func.lower(Vendor.location) == location_text.lower()
+                )
+            else:
+                location_conditions.append(
+                    Vendor.location.ilike(f"%{location_text}%")
+                )
+        if location_conditions:
+            filters.append(or_(*location_conditions))
 
-    if category is not None and (category_text := category.strip()):
-        filters.append(Vendor.category == category_text)
+    category_values = [
+        value.strip() for value in (category or []) if value.strip()
+    ]
+    if category_values:
+        filters.append(Vendor.category.in_(category_values))
+
+    cuisine_values = [
+        value.strip() for value in (cuisine or []) if value.strip()
+    ]
+    if cuisine_values:
+        filters.append(Vendor.cuisine.in_(cuisine_values))
+
+    price_range_values = [
+        value.strip() for value in (price_range or []) if value.strip()
+    ]
+    if price_range_values:
+        filters.append(Vendor.price_range.in_(price_range_values))
+
+    # Dietary filters match only vendors explicitly marked true; unknown (NULL)
+    # vendors are excluded. Selecting both requires both conditions.
+    if halal is True:
+        filters.append(Vendor.halal.is_(True))
+
+    if vegetarian is True:
+        filters.append(Vendor.vegetarian.is_(True))
 
     total = session.scalar(
         select(func.count(Vendor.id)).where(*filters)
@@ -317,6 +352,7 @@ def list_vendors(
                     else None
                 ),
                 category=vendor.category,
+                cuisine=vendor.cuisine,
                 opening_hours=vendor.opening_hours,
                 price_range=vendor.price_range,
                 halal=vendor.halal,
@@ -427,9 +463,17 @@ def get_vendor_filters(
         .order_by(Vendor.category.asc())
     ).all()
 
+    cuisines = session.scalars(
+        select(Vendor.cuisine)
+        .where(Vendor.cuisine.is_not(None))
+        .distinct()
+        .order_by(Vendor.cuisine.asc())
+    ).all()
+
     return {
         "locations": locations,
         "categories": categories,
+        "cuisines": cuisines,
     }
 
 

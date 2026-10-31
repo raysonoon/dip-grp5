@@ -577,7 +577,6 @@ function VendorDetails() {
   }
 
   const location = vendor.location;
-  const category = vendor.category;
   const displayedRating = vendor.average_rating ?? vendor.average_google_rating;
 
   const hasPrevReviewsPage = reviewOffset > 0;
@@ -821,7 +820,7 @@ function VendorDetails() {
           {vendor.name}
         </h1>
         <p className="text-muted-foreground mt-1">
-          {[location, category].filter(Boolean).join(" | ")}
+          {[location, vendor.category, vendor.cuisine].filter(Boolean).join(" | ")}
           {displayedRating != null ? ` | ⭐ ${displayedRating}` : ""}
         </p>
         <VendorFavouriteButton key={`${user?.id ?? "guest"}:${numericVendorId}`} vendorId={numericVendorId} />

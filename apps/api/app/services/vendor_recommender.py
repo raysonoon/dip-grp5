@@ -77,7 +77,8 @@ class VendorRecommender:
                 Vendor.vegetarian.is_(True)
             )
 
-        # Hard filter: selected cuisines -> vendor category.
+        # Hard filter: selected cuisines -> vendor cuisine (falling back to
+        # the establishment category for vendors without a cuisine).
         cuisines = [
             value.strip()
             for value in (preferences.cuisines or [])
@@ -88,7 +89,10 @@ class VendorRecommender:
             statement = statement.where(
                 or_(
                     *[
-                        Vendor.category.ilike(f"%{cuisine}%")
+                        or_(
+                            Vendor.cuisine.ilike(f"%{cuisine}%"),
+                            Vendor.category.ilike(f"%{cuisine}%"),
+                        )
                         for cuisine in cuisines
                     ]
                 )

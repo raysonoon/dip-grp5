@@ -11,6 +11,7 @@ import {
 import L from "leaflet";
 import { Link } from "react-router-dom";
 
+import SingleSelect from "../components/SingleSelect";
 import VendorClusterLayer from "../components/VendorClusterLayer";
 import { LocationBoundaries, LocationLegend } from "../components/LocationOverlays";
 import { fetchNearbyVendors, fetchVendors } from "../api/vendors";
@@ -39,6 +40,11 @@ const CAMPUS_LOCATIONS = [
   { label: "Pioneer Hall", lat: 1.347, lng: 103.691 },
 ];
 
+const CAMPUS_OPTIONS = CAMPUS_LOCATIONS.map((place) => ({
+  value: place.label,
+  label: place.label,
+}));
+
 const UserIcon = L.divIcon({
   className: "",
   html: '<div class="w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow"></div>',
@@ -60,12 +66,9 @@ function ratingText(vendor) {
   return rating == null ? "No rating yet" : `⭐ ${rating.toFixed(1)}`;
 }
 
-// Extra lines shown in each clustered marker's popup (below "category · location").
+// Extra lines shown in each clustered marker's popup (below "category · cuisine" and location).
 function popupExtraLines(vendor) {
-  const lines = [
-    ratingText(vendor),
-    vendor.opening_hours ?? "Opening hours not available",
-  ];
+  const lines = [vendor.opening_hours ?? "Opening hours not available"];
   if (vendor.distance_m != null) lines.push(`${formatDistance(vendor.distance_m)} away`);
   return lines;
 }
@@ -175,9 +178,12 @@ function RecommendationItem({ vendor, rank, isSelected, onSelect, itemRef }) {
             </span>
           )}
         </div>
-        <p className="text-sm text-muted-foreground mt-1">
-          {vendor.category ?? "Food"} · {ratingText(vendor)}
-        </p>
+        {(vendor.category || vendor.cuisine) && (
+          <p className="text-sm text-muted-foreground mt-1">
+            {[vendor.category, vendor.cuisine].filter(Boolean).join(" · ")}
+          </p>
+        )}
+        <p className="text-sm text-muted-foreground mt-1">{ratingText(vendor)}</p>
         <p className="text-sm text-muted-foreground mt-1">📍 {vendor.location ?? "NTU"}</p>
         <p className="text-sm text-muted-foreground mt-1">
           🕒 {vendor.opening_hours ?? "Opening hours not available"}
@@ -320,8 +326,8 @@ export default function MapPage() {
     itemRefs.current[selectedId]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [selectedId]);
 
-  const handleCampusChange = (event) => {
-    const chosen = CAMPUS_LOCATIONS.find((place) => place.label === event.target.value);
+  const handleCampusChange = (value) => {
+    const chosen = CAMPUS_LOCATIONS.find((place) => place.label === value);
     setPickMode(false);
     if (chosen) {
       setLocation({
@@ -370,22 +376,13 @@ export default function MapPage() {
             Use my location
           </button>
 
-          <label htmlFor="campus-location" className="sr-only">
-            Choose a campus location
-          </label>
-          <select
+          <SingleSelect
             id="campus-location"
+            label="Choose where you are…"
+            options={CAMPUS_OPTIONS}
             value={location?.source === "campus" ? location.label : ""}
             onChange={handleCampusChange}
-            className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground"
-          >
-            <option value="">Choose where you are…</option>
-            {CAMPUS_LOCATIONS.map((place) => (
-              <option key={place.label} value={place.label}>
-                {place.label}
-              </option>
-            ))}
-          </select>
+          />
 
           <button
             type="button"

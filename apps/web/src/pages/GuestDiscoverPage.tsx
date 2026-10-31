@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, Leaf, MapPin, SlidersHorizontal, Sparkles, Star, Store, Utensils } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, DollarSign, Leaf, MapPin, SlidersHorizontal, Sparkles, Star, Store, Utensils } from "lucide-react";
 import { apiUrl } from "../api/client";
 import { fetchVendors, type parseVendor } from "../api/vendors";
 import { guestDiscoveryOptions, recommendGuestVendors } from "../lib/guestDiscovery.js";
-import DiscoverMultiSelect from "../components/DiscoverMultiSelect";
+import { PRICE_BAND_OPTIONS, priceRangeValues } from "../lib/priceRange.js";
+import MultiSelect from "../components/MultiSelect";
 import { formatDistance } from "../lib/vendorRanking.js";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
@@ -12,6 +13,7 @@ type Vendor = ReturnType<typeof parseVendor>;
 type Recommendation = Vendor & {
   discovery_distance_m: number | null;
   discovery_distance_from: string | null;
+  discovery_cuisine_match: boolean;
   discovery_category_match: boolean;
   discovery_location_match: boolean;
 };
@@ -23,12 +25,14 @@ export default function GuestDiscoverPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const [cuisines, setCuisines] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [geoStatus, setGeoStatus] = useState<"idle" | "requesting" | "granted" | "denied" | "unavailable">("idle");
   const [halal, setHalal] = useState(false);
   const [vegetarian, setVegetarian] = useState(false);
+  const [priceBands, setPriceBands] = useState<string[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -93,10 +97,10 @@ export default function GuestDiscoverPage() {
   }, [showResults]);
 
   const options = guestDiscoveryOptions(vendors);
-  const recommendations: Recommendation[] = recommendGuestVendors(vendors, { categories, locations, halal, vegetarian, userLocation });
-  const selected = [...categories, ...locations, userLocation ? "Near me" : "", halal ? "Halal" : "", vegetarian ? "Vegetarian" : ""].filter(Boolean);
+  const recommendations: Recommendation[] = recommendGuestVendors(vendors, { cuisines, categories, locations, halal, vegetarian, priceRanges: priceRangeValues(priceBands), userLocation });
+  const selected = [...cuisines, ...categories, ...locations, ...priceBands, userLocation ? "Near me" : "", halal ? "Halal" : "", vegetarian ? "Vegetarian" : ""].filter(Boolean);
   const hasDistancePreference = userLocation != null || locations.length > 0;
-  const hasRankingPreferences = categories.length > 0 || hasDistancePreference;
+  const hasRankingPreferences = cuisines.length > 0 || categories.length > 0 || hasDistancePreference;
   const distanceReferences = [...(userLocation ? ["you"] : []), ...locations].join(" or ");
   const locationStatus = geoStatus === "granted"
     ? locations.length ? "Distances use the closest of you or a selected area." : "Distances are measured from you."
@@ -133,14 +137,19 @@ export default function GuestDiscoverPage() {
 
       {!loading && !error && !showResults && (
         <form onSubmit={(event) => { event.preventDefault(); setVisibleCount(PAGE_SIZE); setShowResults(true); }} className="mx-auto max-w-2xl rounded-3xl border border-border bg-card p-6 shadow-sm sm:p-8">
+          <p className="mb-4 text-sm leading-relaxed text-muted-foreground">Pick as many as you like or leave everything open.</p>
           <div className="grid gap-6 sm:grid-cols-2">
-            <DiscoverMultiSelect id="discover-categories" label="Food types" placeholder="I'm open to anything" icon={<Utensils size={17} className="text-primary" aria-hidden="true" />} options={options.categories} selected={categories} onChange={setCategories} />
-            <div className="min-w-0">
-              <DiscoverMultiSelect id="discover-locations" label="Locations" placeholder="Anywhere on campus" icon={<MapPin size={17} className="text-primary" aria-hidden="true" />} options={options.locations} selected={locations} onChange={setLocations} nearMe={{ selected: userLocation != null, busy: geoStatus === "requesting", onToggle: () => { if (userLocation) clearLocation(); else requestLocation(); } }} />
-            </div>
+            <MultiSelect id="discover-cuisines" label="Cuisine" placeholder="I'm open to anything" icon={<Utensils size={17} className="text-primary" aria-hidden="true" />} options={options.cuisines} selected={cuisines} onChange={setCuisines} />
+            <MultiSelect id="discover-categories" label="Category" placeholder="Any type of place" icon={<Store size={17} className="text-primary" aria-hidden="true" />} options={options.categories} selected={categories} onChange={setCategories} />
           </div>
-          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Pick as many as you like, or leave everything open. Your food types and nearby places come first; other spots stay on the list.</p>
-          {locationStatus && <p role="status" className="mt-2 text-xs leading-relaxed text-muted-foreground">{locationStatus}</p>}
+
+          <div className="mt-6 grid gap-6 sm:grid-cols-2">
+            <div className="min-w-0">
+              <MultiSelect id="discover-locations" label="Locations" placeholder="Anywhere on campus" icon={<MapPin size={17} className="text-primary" aria-hidden="true" />} options={options.locations} selected={locations} onChange={setLocations} nearMe={{ selected: userLocation != null, busy: geoStatus === "requesting", onToggle: () => { if (userLocation) clearLocation(); else requestLocation(); } }} />
+            </div>
+            <MultiSelect id="discover-price" label="Price range" placeholder="Any price" icon={<DollarSign size={17} className="text-primary" aria-hidden="true" />} options={PRICE_BAND_OPTIONS} selected={priceBands} onChange={setPriceBands} />
+          </div>
+          {locationStatus && <p role="status" className="mt-3 text-xs leading-relaxed text-muted-foreground">{locationStatus}</p>}
 
           <fieldset className="mt-7 border-t border-border pt-6">
             <legend className="float-left mb-3 flex w-full items-center gap-2 text-sm font-semibold"><Leaf size={17} className="text-primary" aria-hidden="true" /> Any dietary preferences?</legend>
@@ -154,7 +163,7 @@ export default function GuestDiscoverPage() {
                 </label>
               ))}
             </div>
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Choose either, both, or leave these open. Matches use the dietary information listed by each vendor.</p>
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Matches use the dietary information listed by each vendor.</p>
           </fieldset>
 
           <button type="submit" className="mt-8 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">
@@ -181,7 +190,7 @@ export default function GuestDiscoverPage() {
             <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
               <Utensils className="mx-auto mb-4 text-primary" size={28} aria-hidden="true" />
               <h2 className="font-display text-xl font-bold">No places to show this time.</h2>
-              <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">{halal || vegetarian ? "We don't have places listed with all your dietary requirements. You can review those choices or try again later." : "There aren't any campus food spots listed yet. Please check back later."}</p>
+              <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">{(halal || vegetarian || priceBands.length > 0) ? "No places match all your selected preferences. You can review those choices or try again later." : "There aren't any campus food spots listed yet. Please check back later."}</p>
               <button type="button" onClick={() => setShowResults(false)} className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground"><ArrowLeft size={16} aria-hidden="true" /> Change preferences</button>
             </div>
           ) : (
@@ -195,8 +204,9 @@ export default function GuestDiscoverPage() {
                       <div className="flex flex-1 flex-col p-5">
                         <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><MapPin size={13} className="shrink-0" aria-hidden="true" /> {vendor.location || "NTU"}</p>
                         <h2 className="mt-2 font-display text-lg font-bold leading-snug">{vendor.name}</h2>
-                        <p className="mt-1 text-xs text-muted-foreground">{vendor.category || "Food"}</p>
-                        {vendor.discovery_category_match && <p className="mt-3 text-xs font-semibold text-primary">One of your food types</p>}
+                        <p className="mt-1 text-xs text-muted-foreground">{vendor.cuisine || vendor.category || "Food"}</p>
+                        {vendor.discovery_cuisine_match && <p className="mt-3 text-xs font-semibold text-primary">One of your cuisines</p>}
+                        {vendor.discovery_category_match && <p className={`${vendor.discovery_cuisine_match ? "mt-1" : "mt-3"} text-xs font-semibold text-primary`}>One of your categories</p>}
                         {hasDistancePreference && <p className="mt-2 text-xs text-muted-foreground">{vendor.discovery_distance_m != null ? `~${formatDistance(vendor.discovery_distance_m)} from ${vendor.discovery_distance_from}` : vendor.discovery_location_match ? `In ${vendor.location}` : "Distance unavailable"}</p>}
                         {rating != null && <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold"><Star size={13} className="fill-primary text-primary" aria-hidden="true" /> {rating.toFixed(1)} <span className="font-normal text-muted-foreground">{vendor.average_rating != null ? "Community rating" : "Google rating"}</span></p>}
                         {(halal || vegetarian) && <p className="mt-3 flex items-center gap-1.5 text-xs text-primary"><Check size={13} aria-hidden="true" /> {[halal && "Halal", vegetarian && "Vegetarian"].filter(Boolean).join(" · ")}</p>}
