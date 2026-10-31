@@ -21,6 +21,7 @@ import {
   sortByRating,
   vendorRating,
 } from "../lib/vendorRanking";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 const NTU_CENTER = [1.3483, 103.6831];
 const MIN_DISTANCE_KM = 0.2;
@@ -201,6 +202,7 @@ function RecommendationItem({ vendor, rank, isSelected, onSelect, itemRef }) {
 }
 
 export default function MapPage() {
+  useDocumentTitle("Map");
   const [location, setLocation] = useState(null); // { lat, lng, source, label?, auto?, fitId }
   const [geoStatus, setGeoStatus] = useState("idle");
   const [pickMode, setPickMode] = useState(false);

@@ -23,6 +23,7 @@ import {
 } from "../components/FoodPreferencesOnboarding";
 import { useAuth } from "../contexts/AuthContext";
 import FavouritePlaces from "../components/FavouritePlaces";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 type PreferenceKey =
   | "dietary_restrictions"
@@ -114,6 +115,7 @@ function Section({
 }
 
 export default function AccountPage() {
+  useDocumentTitle("Account");
   const { loading: authLoading, session, user } = useAuth();
   const userId = session?.user.id ?? null;
 

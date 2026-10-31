@@ -23,6 +23,7 @@ import { PRICE_BAND_OPTIONS, priceRangeValues } from "../lib/priceRange.js";
 import MultiSelect from "../components/MultiSelect";
 import SingleSelect from "../components/SingleSelect";
 import { useChat } from "../contexts/ChatContext";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -204,6 +205,7 @@ function FilterDialog({ open, onClose, onReset, resultCount, isLoading, children
 }
 
 export default function FoodPage() {
+  useDocumentTitle("All Food Spots");
   const PAGE_LIMIT = 12;
 
   const { preferenceStatus, openPreferences } = useOutletContext();
