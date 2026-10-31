@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { guestDiscoveryOptions, recommendGuestVendors } from "./guestDiscovery.js";
+import { priceRangeValues } from "./priceRange.js";
 
 const vendor = (id, fields = {}) => ({
-  id, name: `Vendor ${id}`, category: "Chinese restaurant", location: "North Spine",
+  id, name: `Vendor ${id}`, category: "Restaurant", cuisine: "Chinese", location: "North Spine",
   halal: null, vegetarian: null, average_rating: null, average_google_rating: null,
   ...fields,
 });
@@ -14,10 +15,10 @@ test("food and location choices prioritise matching vendors without removing alt
     vendor(1, { halal: true, vegetarian: true }),
     vendor(2, { halal: true, vegetarian: false }),
     vendor(3, { halal: true, vegetarian: true, location: "South Spine" }),
-    vendor(4, { halal: true, vegetarian: true, category: "Cafe" }),
+    vendor(4, { halal: true, vegetarian: true, cuisine: "Cafe" }),
   ];
   const result = ids(recommendGuestVendors(catalog, {
-    categories: ["Chinese restaurant"], locations: ["North Spine"], halal: true, vegetarian: true,
+    cuisines: ["Chinese"], locations: ["North Spine"], halal: true, vegetarian: true,
   }));
   assert.equal(result[0], 1);
   assert.deepEqual([...result].sort(), [1, 3, 4]);
@@ -26,14 +27,14 @@ test("food and location choices prioritise matching vendors without removing alt
 test("multiple food types and locations prioritise any choice within each group, while dietary requirements still apply", () => {
   const catalog = [
     vendor(1, { halal: true, vegetarian: true }),
-    vendor(2, { category: "Cafe", location: "South Spine", halal: true, vegetarian: true }),
-    vendor(3, { category: "Pasta shop", halal: true, vegetarian: true }),
+    vendor(2, { cuisine: "Cafe", location: "South Spine", halal: true, vegetarian: true }),
+    vendor(3, { cuisine: "Pasta", halal: true, vegetarian: true }),
     vendor(4, { location: "Hall 1", halal: true, vegetarian: true }),
-    vendor(5, { category: "Cafe", halal: false, vegetarian: true }),
+    vendor(5, { cuisine: "Cafe", halal: false, vegetarian: true }),
     vendor(6, { location: "South Spine", halal: true, vegetarian: false }),
   ];
   assert.deepEqual(ids(recommendGuestVendors(catalog, {
-    categories: ["Chinese restaurant", "Cafe"], locations: ["North Spine", "South Spine"],
+    cuisines: ["Chinese", "Cafe"], locations: ["North Spine", "South Spine"],
     halal: true, vegetarian: true,
   })), [1, 2, 3, 4]);
 });
@@ -52,9 +53,33 @@ test("Hall 1 receives the selected-area boost while Hall 11 remains available", 
 });
 
 test("a food type with no exact match still leaves other campus vendors available", () => {
-  const result = recommendGuestVendors([vendor(1)], { categories: ["Pasta shop"] });
+  const result = recommendGuestVendors([vendor(1)], { cuisines: ["Pasta"] });
   assert.deepEqual(ids(result), [1]);
-  assert.equal(result[0].discovery_category_match, false);
+  assert.equal(result[0].discovery_cuisine_match, false);
+});
+
+test("a category choice soft-ranks matching vendors without removing alternatives", () => {
+  const catalog = [
+    vendor(1, { category: "Cafe" }),
+    vendor(2, { category: "Restaurant" }),
+    vendor(3, { category: "Cafe", average_google_rating: 4.9 }),
+  ];
+  const result = recommendGuestVendors(catalog, { categories: ["Cafe"] });
+  assert.deepEqual([...ids(result)].sort(), [1, 2, 3]);
+  assert.equal(result.find((item) => item.id === 1).discovery_category_match, true);
+  assert.equal(result.find((item) => item.id === 2).discovery_category_match, false);
+  assert.equal(result[result.length - 1].id, 2);
+});
+
+test("cuisine and category both count as a food preference match", () => {
+  const catalog = [
+    vendor(1, { cuisine: "Cafe", category: "Restaurant" }),
+    vendor(2, { cuisine: "Western", category: "Cafe" }),
+    vendor(3, { cuisine: "Chinese", category: "Restaurant" }),
+  ];
+  const result = ids(recommendGuestVendors(catalog, { cuisines: ["Cafe"], categories: ["Cafe"] }));
+  // Vendor 1 matches by cuisine only, vendor 2 by category only; both outrank vendor 3.
+  assert.deepEqual(result, [1, 2, 3]);
 });
 
 test("open preferences show all real vendors, with rated results first and no input mutation", () => {
@@ -91,12 +116,12 @@ test("distance uses the closest selected area rather than the average of differe
 
 test("cuisine and proximity both matter, without hiding a far-away food match or a nearby alternative", () => {
   const catalog = [
-    vendor(1, { category: "Drinks", location: "Area A", map_coordinates: { lat: 1.35, lng: 103.68 } }),
-    vendor(2, { category: "Pasta shop", location: "Next door", map_coordinates: { lat: 1.3501, lng: 103.68 } }),
-    vendor(3, { category: "Pasta shop", location: "Far away", map_coordinates: { lat: 1.38, lng: 103.68 } }),
-    vendor(4, { category: "Cafe", location: "Nearby", map_coordinates: { lat: 1.3505, lng: 103.68 } }),
+    vendor(1, { cuisine: "Drinks", location: "Area A", map_coordinates: { lat: 1.35, lng: 103.68 } }),
+    vendor(2, { cuisine: "Pasta", location: "Next door", map_coordinates: { lat: 1.3501, lng: 103.68 } }),
+    vendor(3, { cuisine: "Pasta", location: "Far away", map_coordinates: { lat: 1.38, lng: 103.68 } }),
+    vendor(4, { cuisine: "Cafe", location: "Nearby", map_coordinates: { lat: 1.3505, lng: 103.68 } }),
   ];
-  const result = ids(recommendGuestVendors(catalog, { categories: ["Pasta shop"], locations: ["Area A"] }));
+  const result = ids(recommendGuestVendors(catalog, { cuisines: ["Pasta"], locations: ["Area A"] }));
   assert.equal(result[0], 2);
   assert.ok(result.indexOf(4) < result.indexOf(3));
   assert.deepEqual([...result].sort(), [1, 2, 3, 4]);
@@ -130,10 +155,19 @@ test("dietary choices never move an area's centre by removing its other vendors"
 
 test("preference options come from the real catalog and exclude duplicate, missing and demo values", () => {
   assert.deepEqual(guestDiscoveryOptions([
-    vendor(1), vendor(2), vendor(3, { category: "Cafe", location: "South Spine" }),
-    vendor(4, { category: null, location: null }),
+    vendor(1), vendor(2), vendor(3, { cuisine: "Cafe", location: "South Spine" }),
+    vendor(4, { category: null, cuisine: null, location: null }),
     vendor(5, { category: "Demo", location: "Demo Canteen" }),
-  ]), { categories: ["Cafe", "Chinese restaurant"], locations: ["North Spine", "South Spine"] });
+  ]), { cuisines: ["Cafe", "Chinese"], categories: ["Restaurant"], locations: ["North Spine", "South Spine"] });
+});
+
+test("the Others bucket is listed after named options", () => {
+  const options = guestDiscoveryOptions([
+    vendor(1, { cuisine: "Others", category: "Others" }),
+    vendor(2, { cuisine: "Cafe", category: "Canteen" }),
+  ]);
+  assert.deepEqual(options.cuisines, ["Cafe", "Others"]);
+  assert.deepEqual(options.categories, ["Canteen", "Others"]);
 });
 
 test("GPS alone ranks by user-to-vendor distance without requiring a named area", () => {
@@ -204,15 +238,36 @@ test("zero-valued GPS coordinates are valid and an exact GPS tie is labelled fro
 
 test("GPS proximity preserves food preferences and strict dietary filtering", () => {
   const catalog = [
-    vendor(1, { halal: true, vegetarian: true, category: "Cafe", map_coordinates: { lat: 1.35, lng: 103.68 } }),
+    vendor(1, { halal: true, vegetarian: true, cuisine: "Cafe", map_coordinates: { lat: 1.35, lng: 103.68 } }),
     vendor(2, { halal: true, vegetarian: true, map_coordinates: { lat: 1.3501, lng: 103.68 } }),
     vendor(3, { halal: false, vegetarian: true, map_coordinates: { lat: 1.35, lng: 103.68 } }),
     vendor(4, { halal: true, vegetarian: false, map_coordinates: { lat: 1.35, lng: 103.68 } }),
   ];
   const result = recommendGuestVendors(catalog, {
-    userLocation: { lat: 1.35, lng: 103.68 }, categories: ["Chinese restaurant"], halal: true, vegetarian: true,
+    userLocation: { lat: 1.35, lng: 103.68 }, cuisines: ["Chinese"], halal: true, vegetarian: true,
   });
   assert.deepEqual(ids(result), [2, 1]);
   assert.ok(result.every((item) => item.discovery_distance_from === "you"));
   assert.deepEqual(ids(catalog), [1, 2, 3, 4]);
+});
+
+test("price band filter only keeps vendors in the selected bands", () => {
+  const catalog = [
+    vendor(1, { price_range: "$1-10" }),
+    vendor(2, { price_range: "$10-20" }),
+    vendor(3, { price_range: "$20-30" }),
+    vendor(4, { price_range: null }),
+  ];
+  assert.deepEqual(
+    ids(recommendGuestVendors(catalog, { priceRanges: priceRangeValues(["Under $10", "Over $20"]) })),
+    [1, 3],
+  );
+  assert.deepEqual(ids(recommendGuestVendors(catalog, { priceRanges: [] })), [1, 2, 3, 4]);
+});
+
+test("price bands expand to the raw price_range values the API stores", () => {
+  assert.deepEqual(priceRangeValues(["Under $10"]), ["$", "$1-10"]);
+  assert.deepEqual(priceRangeValues(["$10–20"]), ["$$", "$10-20"]);
+  assert.deepEqual(priceRangeValues(["Over $20"]), ["$$$", "$$$$", "$20-30"]);
+  assert.deepEqual(priceRangeValues([]), []);
 });

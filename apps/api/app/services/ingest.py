@@ -479,6 +479,9 @@ def iter_vendor_embedding_content(
         if vendor.category:
             parts.append(f"Category: {vendor.category}")
 
+        if vendor.cuisine:
+            parts.append(f"Cuisine: {vendor.cuisine}")
+
         if vendor.location:
             parts.append(f"Location: {vendor.location}")
 

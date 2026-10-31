@@ -1,5 +1,6 @@
 import { vendorRating } from "./vendorRanking.js";
 import { vendorLatLng } from "./locationBoundaries.js";
+import { sortFilterOptions } from "./filterOptions.js";
 
 function isDiscoverable(vendor) {
   return !/^(demo|test)$/i.test(vendor.category?.trim() ?? "");
@@ -7,9 +8,14 @@ function isDiscoverable(vendor) {
 
 export function guestDiscoveryOptions(vendors) {
   const catalog = vendors.filter(isDiscoverable);
-  const values = (field) => [...new Set(catalog.map((vendor) => vendor[field]).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b));
-  return { categories: values("category"), locations: values("location") };
+  const values = (field) => sortFilterOptions([
+    ...new Set(catalog.map((vendor) => vendor[field]).filter(Boolean)),
+  ]);
+  return {
+    cuisines: values("cuisine"),
+    categories: values("category"),
+    locations: values("location"),
+  };
 }
 
 function coordinates(vendor) {
@@ -48,8 +54,8 @@ function distanceMetres(from, to) {
 
 export function recommendGuestVendors(
   vendors,
-  /** @type {{ categories?: string[], locations?: string[], halal?: boolean, vegetarian?: boolean, userLocation?: { lat: number, lng: number } | null }} */
-  { categories = [], locations = [], halal = false, vegetarian = false, userLocation = null } = {},
+  /** @type {{ cuisines?: string[], categories?: string[], locations?: string[], halal?: boolean, vegetarian?: boolean, priceRanges?: string[], userLocation?: { lat: number, lng: number } | null }} */
+  { cuisines = [], categories = [], locations = [], halal = false, vegetarian = false, priceRanges = [], userLocation = null } = {},
 ) {
   const catalog = vendors.filter(isDiscoverable);
   const centres = areaCentres(catalog, locations);
@@ -58,24 +64,30 @@ export function recommendGuestVendors(
   // so the UI never labels an area-centre distance as a distance from the user.
   if (hasGps && userLocation) centres.unshift({ ...userLocation, label: "you", source: "gps" });
   return catalog
-    .filter((vendor) => (!halal || vendor.halal === true) && (!vegetarian || vendor.vegetarian === true))
+    .filter((vendor) => (!halal || vendor.halal === true)
+      && (!vegetarian || vendor.vegetarian === true)
+      && (priceRanges.length === 0 || priceRanges.includes(vendor.price_range)))
     .map((vendor) => {
       const point = coordinates(vendor);
       const distances = point ? centres.map((centre) => distanceMetres(point, centre)) : [];
       const distance = distances.length ? Math.min(...distances) : null;
       const origin = distance == null ? null : centres[distances.indexOf(distance)];
+      const cuisineMatch = cuisines.includes(vendor.cuisine);
       const categoryMatch = categories.includes(vendor.category);
       const locationMatch = locations.includes(vendor.location);
       const proximity = distance == null ? (centres.length === 0 ? Number(locationMatch) : 0) : 1 / (1 + distance / 500);
-      // Nearby alternatives can outrank a far-away cuisine match. Nothing is
-      // removed for its cuisine or distance; rating breaks relevance ties.
-      const relevance = (categories.length ? 0.4 * Number(categoryMatch) : 0)
+      // Cuisine and category are one "food preference" signal. Nearby
+      // alternatives can outrank a far-away food match. Nothing is removed for
+      // its food choice or distance; rating breaks relevance ties.
+      const foodMatch = Number(cuisineMatch || categoryMatch);
+      const relevance = (cuisines.length || categories.length ? 0.4 * foodMatch : 0)
         + (locations.length || hasGps ? 0.6 * proximity : 0);
       return {
         ...vendor,
         discovery_distance_m: distance,
         discovery_distance_from: origin?.label ?? null,
         discovery_distance_source: origin?.source ?? null,
+        discovery_cuisine_match: cuisineMatch,
         discovery_category_match: categoryMatch,
         discovery_location_match: locationMatch,
         discovery_relevance: relevance,

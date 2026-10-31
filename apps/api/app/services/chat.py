@@ -928,6 +928,8 @@ def format_sql_context(results: list[SqlResult]) -> str:
             attributes.append(f"address={result.address}")
         if result.category:
             attributes.append(f"category={result.category}")
+        if result.cuisine:
+            attributes.append(f"cuisine={result.cuisine}")
         if result.price_range:
             attributes.append(f"price={result.price_range}")
         if result.opening_hours:
@@ -1002,6 +1004,8 @@ def format_recommendation_context(
             attributes.append(f"location={vendor.location}")
         if vendor.category:
             attributes.append(f"category={vendor.category}")
+        if vendor.cuisine:
+            attributes.append(f"cuisine={vendor.cuisine}")
         if vendor.price_range:
             attributes.append(f"price={vendor.price_range}")
         if vendor.opening_hours:

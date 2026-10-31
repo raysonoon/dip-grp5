@@ -18,7 +18,7 @@ type Props = {
   nearMe?: NearMeOption;
 };
 
-export default function DiscoverMultiSelect({ id, label, placeholder, icon, options, selected, onChange, nearMe }: Props) {
+export default function MultiSelect({ id, label, placeholder, icon, options, selected, onChange, nearMe }: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
