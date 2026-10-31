@@ -147,6 +147,9 @@ def list_vendors(
     location: Annotated[list[str] | None, Query()] = None,
     category: Annotated[list[str] | None, Query()] = None,
     cuisine: Annotated[list[str] | None, Query()] = None,
+    price_range: Annotated[list[str] | None, Query()] = None,
+    halal: Annotated[bool | None, Query()] = None,
+    vegetarian: Annotated[bool | None, Query()] = None,
     sort: Annotated[
         Literal["recommended", "reviews", "rating"],
         Query(),
@@ -193,6 +196,20 @@ def list_vendors(
     ]
     if cuisine_values:
         filters.append(Vendor.cuisine.in_(cuisine_values))
+
+    price_range_values = [
+        value.strip() for value in (price_range or []) if value.strip()
+    ]
+    if price_range_values:
+        filters.append(Vendor.price_range.in_(price_range_values))
+
+    # Dietary filters match only vendors explicitly marked true; unknown (NULL)
+    # vendors are excluded. Selecting both requires both conditions.
+    if halal is True:
+        filters.append(Vendor.halal.is_(True))
+
+    if vegetarian is True:
+        filters.append(Vendor.vegetarian.is_(True))
 
     total = session.scalar(
         select(func.count(Vendor.id)).where(*filters)

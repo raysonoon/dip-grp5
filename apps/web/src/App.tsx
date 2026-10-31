@@ -50,8 +50,11 @@ type TrendingVendor = {
   name: string;
   location: string | null;
   category: string | null;
+  cuisine: string | null;
   price_range: string | null;
   image_url: string | null;
+  halal: boolean | null;
+  vegetarian: boolean | null;
   average_rating: number | null;
   average_google_rating: number | null;
   review_count: number;
@@ -67,18 +70,25 @@ function StarRow({
   rating: number;
   size?: "sm" | "md";
 }) {
+  const starClass = size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4";
+
   return (
     <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <Star
-          key={i}
-          className={`${size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4"} ${
-            i <= Math.round(rating)
-              ? "fill-primary text-primary"
-              : "fill-transparent text-muted"
-          }`}
-        />
-      ))}
+      {[1, 2, 3, 4, 5].map((i) => {
+        const fill = Math.max(0, Math.min(1, rating - (i - 1)));
+        return (
+          <span key={i} className="relative inline-block">
+            <Star className={`${starClass} fill-transparent text-muted`} />
+            <span
+              className="absolute inset-0 overflow-hidden"
+              style={{ width: `${fill * 100}%` }}
+              aria-hidden="true"
+            >
+              <Star className={`${starClass} fill-primary text-primary`} />
+            </span>
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -301,18 +311,29 @@ function HomePage() {
                         </div>
                       )}
                       <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
-                        {vendor.category && (
-                          <span
-                            key={vendor.category}
-                            className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm"
-                          >
-                            {vendor.category}
+                        {vendor.cuisine && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm">
+                            {vendor.cuisine}
                           </span>
                         )}
                       </div>
                       <div className="absolute top-3 right-3 px-2 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-bold">
                         {rating != null ? `${rating.toFixed(1)}★` : "—"}
                       </div>
+                      {(vendor.halal === true || vendor.vegetarian === true) && (
+                        <div className="absolute bottom-3 right-3 flex gap-1.5 flex-wrap justify-end">
+                          {vendor.halal === true && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm">
+                              Halal
+                            </span>
+                          )}
+                          {vendor.vegetarian === true && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm">
+                              Vegetarian
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="p-4 flex flex-col flex-1">
@@ -338,7 +359,7 @@ function HomePage() {
                             {vendor.price_range ?? "Price unavailable"}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {vendor.category ?? "Food"}
+                            {vendor.category}
                           </span>
                         </div>
                       </div>
@@ -351,10 +372,10 @@ function HomePage() {
 
           <div className="mt-8 flex justify-center">
             <Link
-              to="/discover"
+              to="/food"
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
             >
-              Discover more <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              View more <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </Link>
           </div>
         </div>

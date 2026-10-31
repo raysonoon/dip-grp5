@@ -132,3 +132,45 @@ test("fetchVendorPage repeats each multi-select filter value", async (context) =
     "/vendors?limit=12&offset=0&location=North+Spine&location=South+Spine&category=Korean&cuisine=Japanese&cuisine=Korean&sort=recommended",
   ]);
 });
+
+test("fetchVendorPage sends price range, halal and vegetarian filters", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const requestedPaths = [];
+  globalThis.fetch = async (path) => {
+    requestedPaths.push(path);
+    return jsonResponse({ items: [], total: 0, limit: 12, offset: 0 });
+  };
+
+  await fetchVendorPage({
+    priceRanges: ["$1-10", "$20-30"],
+    halal: true,
+    vegetarian: true,
+    limit: 12,
+    offset: 0,
+  });
+
+  assert.deepEqual(requestedPaths, [
+    "/vendors?limit=12&offset=0&price_range=%241-10&price_range=%2420-30&halal=true&vegetarian=true&sort=recommended",
+  ]);
+});
+
+test("fetchVendorPage omits price and dietary filters when unused", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const requestedPaths = [];
+  globalThis.fetch = async (path) => {
+    requestedPaths.push(path);
+    return jsonResponse({ items: [], total: 0, limit: 12, offset: 0 });
+  };
+
+  await fetchVendorPage({ limit: 12, offset: 0 });
+
+  assert.deepEqual(requestedPaths, [
+    "/vendors?limit=12&offset=0&sort=recommended",
+  ]);
+});
