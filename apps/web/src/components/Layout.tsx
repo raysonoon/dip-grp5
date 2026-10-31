@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Outlet } from "react-router-dom";
 import { Bot, RotateCcw, RotateCw, Send, Square, X } from "lucide-react";
 import ChatMessageContent from "./ChatMessageContent";
+import { useChat as useChatUI } from "../contexts/ChatContext";
 import { useChatSession } from "../hooks/useChatSession";
 import Footer from "./Footer";
 import Header from "./Header";
@@ -22,7 +23,7 @@ export function FoodieChat() {
     wheelVendors,
     removeWheelVendor,
   } = useChatSession();
-  const [chatOpen, setChatOpen] = useState(false);
+  const { chatOpen, closeChat, toggleChat } = useChatUI();
   const [wheelOpen, setWheelOpen] = useState(false);
 
   return (
@@ -55,7 +56,7 @@ export function FoodieChat() {
               </button>
               <button
                 type="button"
-                onClick={() => setChatOpen(false)}
+                onClick={closeChat}
                 className="text-muted-foreground hover:text-foreground transition-colors p-1"
                 aria-label="Close chat"
               >
@@ -147,7 +148,7 @@ export function FoodieChat() {
       {/* Chat Toggle Button */}
       <button
         type="button"
-        onClick={() => setChatOpen((o) => !o)}
+        onClick={toggleChat}
         className="flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-primary text-primary-foreground font-semibold text-sm shadow-lg cursor-pointer hover:opacity-90 transition-opacity"
         aria-label="Open Foodie chatbot"
       >
