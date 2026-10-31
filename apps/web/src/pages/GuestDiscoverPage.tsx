@@ -135,11 +135,11 @@ export default function GuestDiscoverPage() {
 
       {!loading && !error && !showResults && (
         <form onSubmit={(event) => { event.preventDefault(); setVisibleCount(PAGE_SIZE); setShowResults(true); }} className="mx-auto max-w-2xl rounded-3xl border border-border bg-card p-6 shadow-sm sm:p-8">
+          <p className="mb-4 text-sm leading-relaxed text-muted-foreground">Pick as many as you like or leave everything open.</p>
           <div className="grid gap-6 sm:grid-cols-2">
             <MultiSelect id="discover-cuisines" label="Cuisine" placeholder="I'm open to anything" icon={<Utensils size={17} className="text-primary" aria-hidden="true" />} options={options.cuisines} selected={cuisines} onChange={setCuisines} />
             <MultiSelect id="discover-categories" label="Category" placeholder="Any type of place" icon={<Store size={17} className="text-primary" aria-hidden="true" />} options={options.categories} selected={categories} onChange={setCategories} />
           </div>
-          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Pick as many as you like, or leave everything open. Your cuisine and category picks, plus nearby places, come first; other spots stay on the list.</p>
 
           <div className="mt-6 grid gap-6 sm:grid-cols-2">
             <div className="min-w-0">
@@ -161,7 +161,7 @@ export default function GuestDiscoverPage() {
                 </label>
               ))}
             </div>
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Choose either, both, or leave these open. Matches use the dietary information listed by each vendor.</p>
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Matches use the dietary information listed by each vendor.</p>
           </fieldset>
 
           <button type="submit" className="mt-8 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">
