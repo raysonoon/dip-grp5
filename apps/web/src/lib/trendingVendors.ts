@@ -5,6 +5,7 @@ export const TRENDING_WEIGHTS = {
 };
 
 export type TrendingVendorLike = {
+  cuisine: string | null;
   created_at: string;
   review_count: number;
   average_rating: number | null;

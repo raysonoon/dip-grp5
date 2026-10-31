@@ -61,7 +61,8 @@ Food stalls displayed to users.
 | `name` | varchar(200) | no | |
 | `location` | varchar(255) | yes | |
 | `unit_code` | varchar(50) | yes | Stall / unit number |
-| `category` | varchar(100) | yes | |
+| `category` | varchar(100) | yes | Establishment type: `Restaurant`, `Bakery`, `Cafe`, `Canteen`, `Dessert`, `Drinks`, `Fast Food`, `Others` (`Demo` for demo rows) |
+| `cuisine` | varchar(100) | yes | Cuisine / food type, e.g. `Chinese`, `Korean`, `Local`; unknown cuisines fall back to `Others` |
 | `opening_hours` | varchar(255) | yes | |
 | `price_range` | varchar(20) | yes | e.g. `$1-10` |
 | `halal` | boolean | yes | |
@@ -71,7 +72,7 @@ Food stalls displayed to users.
 | `map_coordinates` | geography(Point, 4326) | yes | PostGIS point, longitude/latitude |
 | `created_at` | timestamptz | no | Defaults to `now()` |
 | `updated_at` | timestamptz | no | Defaults to `now()`, updates on change |
-| `search_document` | text | no | Computed `lower(trim(name unit_code category location))` |
+| `search_document` | text | no | Computed `lower(trim(name unit_code category cuisine location))` |
 | `website_url` | text | yes | |
 | `phone_number` | varchar(50) | yes | |
 | `address` | text | yes | |

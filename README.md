@@ -410,7 +410,7 @@ Geospatial and filter-helper endpoints used by the map and food pages:
 
 ```text
 GET /vendors/nearby    # lat, lng, max_distance_m, min_rating, limit
-GET /vendors/filters   # distinct locations and categories
+GET /vendors/filters   # distinct locations, categories and cuisines
 ```
 
 Vendor image metadata can be managed through these endpoints:

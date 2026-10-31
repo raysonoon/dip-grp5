@@ -35,9 +35,25 @@ function line(parent, text, className) {
 
 function buildPopup(vendor, point, navigate, extraLines) {
   const root = L.DomUtil.create("div", "vendor-popup");
-  line(root, vendor.name, "font-semibold").style.fontWeight = "600";
-  const meta = [vendor.category, vendor.location].filter(Boolean).join(" · ");
+
+  const nameRow = L.DomUtil.create("div", "", root);
+  nameRow.style.display = "flex";
+  nameRow.style.alignItems = "baseline";
+  nameRow.style.justifyContent = "flex-start";
+  nameRow.style.gap = "0.35rem";
+
+  const name = L.DomUtil.create("span", "", nameRow);
+  name.textContent = vendor.name;
+  name.style.fontWeight = "600";
+
+  const rating = vendor.average_rating ?? vendor.average_google_rating;
+  const ratingEl = L.DomUtil.create("span", "", nameRow);
+  ratingEl.textContent = rating != null ? `⭐ ${rating.toFixed(1)}` : "No rating yet";
+
+  const meta = [vendor.category, vendor.cuisine].filter(Boolean).join(" · ");
   if (meta) line(root, meta);
+  if (vendor.location) line(root, vendor.location);
+
   extraLines.forEach((t) => line(root, t));
 
   const row = L.DomUtil.create("div", "", root);

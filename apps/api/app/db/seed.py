@@ -101,7 +101,6 @@ def _normalize_location(value: str | None) -> str | None:
 
 GOOGLE_VENDOR_CORE_FIELD_MAP = (
     ("Level / unit", "unit_code"),
-    ("main_category", "category"),
     ("Opening hours", "opening_hours"),
     ("price_range", "price_range"),
 )
@@ -119,26 +118,120 @@ GOOGLE_VENDOR_DIETARY_FIELD_MAP = (
     ("Vegetarian", "vegetarian"),
 )
 
+# Directory categories collapse to a small, fixed establishment-type
+# vocabulary. Cuisine is stored separately on ``Vendor.cuisine``.
 CATEGORY_NORMALIZATION = {
-    "coffee": "Drinks",
-    "coffee shop": "Drinks",
-    "tea and coffee shop": "Drinks",
-    "bubble tea": "Drinks",
-    "bubble tea store": "Drinks",
-    "juice": "Drinks",
-    "juice shop": "Drinks",
     "canteen": "Canteen",
     "cafeteria": "Canteen",
     "food court": "Canteen",
-    "fast food/takeout": "Fast food restaurant",
-    "fast food restaurant": "Fast food restaurant",
+    "fast food/takeout": "Fast food",
+    "coffee": "Drinks",
+    "bubble tea": "Drinks",
+    "juice": "Drinks",
+    "dessert": "Dessert",
+    "bakery": "Bakery",
     "cafe": "Cafe",
+    "vending machine": "Others",
+    "café/restaurant": "Restaurant",
+    "cafe/restaurant": "Restaurant",
 }
 
+# "Café/Restaurant" lumps cafes and restaurants together in the directory, so
+# the cafe-style venues are pinned explicitly. Everything else defaults to
+# "Restaurant" through ``CATEGORY_NORMALIZATION``.
 VENDOR_CATEGORY_OVERRIDES = {
-    "V005": "Restaurant",
-    "V018": "Canteen",
-    "V035": "Canteen",
+    "V012": "Cafe",  # Co-op @ NTU Cafe
+    "V014": "Cafe",  # Connect 71 Cafe
+    "V026": "Cafe",  # Geláre
+    "V028": "Cafe",  # June's Breathe Cafe
+    "V046": "Cafe",  # Starbucks
+    "V027": "Restaurant",  # Hill Yard
+}
+
+# Cuisine-first signal from the Google CSV's "Cuisine / type" column.
+CUISINE_TYPE_ALIASES = {
+    "western casual dining": "Western",
+    "chinese-style casual dining": "Chinese",
+    "chinese rice bowls": "Chinese",
+    "italian / pasta": "Italian",
+    "chinese stir-fry": "Chinese",
+    "chinese braised dishes": "Chinese",
+    "soups / western casual dining": "Western",
+    "biryani / indian-muslim": "Indian",
+    "kopi / local breakfast": "Local",
+    "japanese desserts": "Japanese",
+    "taiwanese tea": "Taiwanese",
+}
+
+# Values that describe the establishment or a dish/drink rather than a
+# cuisine. They are skipped for ``Vendor.cuisine`` and handled as dishes by
+# ``CUISINE_TYPE_DISHES`` below.
+CUISINE_TYPE_IGNORED = {
+    "",
+    "not stated",
+    "n/a",
+    "unknown",
+    "café",
+    "cafe",
+    "fast food",
+    "food court / multiple cuisines",
+    "vending food & beverages",
+    "bakery / café",
+    "bakery / cafe",
+    "café / casual dining",
+    "cafe / casual dining",
+    "bubble tea / beverages",
+    "coffee / café",
+    "coffee / cafe",
+    "juices / smoothies",
+    "açaí bowls / desserts",
+    "acai bowls / desserts",
+    "soy-based snacks / beverages",
+    "fried chicken / fast food",
+    "hotpot",
+    "pizza",
+    "sandwiches",
+    "vegetarian / plant-based bowls",
+}
+
+# Dish/drink types that the "Cuisine / type" column mixes in. These belong in
+# ``Vendor.dishes`` instead of ``Vendor.cuisine``.
+CUISINE_TYPE_DISHES = {
+    "bubble tea / beverages": "Bubble Tea",
+    "coffee / café": "Coffee",
+    "coffee / cafe": "Coffee",
+    "juices / smoothies": "Juice",
+    "italian / pasta": "Pasta",
+    "soups / western casual dining": "Soup",
+    "pizza": "Pizza",
+    "sandwiches": "Sandwiches",
+}
+
+# Google establishment categories that carry a cuisine token. Pure
+# establishment tags (Cafe, Food court, Dessert shop, Bakery, Patisserie,
+# Halal restaurant, Fast food restaurant, ...) intentionally have no entry.
+CATEGORY_TO_CUISINE = {
+    "chinese restaurant": "Chinese",
+    "north indian restaurant": "North Indian",
+    "indian restaurant": "Indian",
+    "korean restaurant": "Korean",
+    "thai restaurant": "Thai",
+    "asian restaurant": "Asian",
+    "asian fusion restaurant": "Asian fusion",
+    "western restaurant": "Western",
+}
+
+# Google categories that describe a dish/drink. These feed ``Vendor.dishes``.
+CATEGORY_TO_DISH = {
+    "tea and coffee shop": "Coffee",
+    "coffee shop": "Coffee",
+    "bubble tea store": "Bubble Tea",
+    "juice shop": "Juice",
+    "pasta shop": "Pasta",
+    "salad shop": "Salad",
+    "soup restaurant": "Soup",
+    "hamburger restaurant": "Burger",
+    "pizza restaurant": "Pizza",
 }
 
 VENDOR_DISHES_OVERRIDES = {
@@ -222,6 +315,100 @@ def _normalize_vendor_category(
         normalized.casefold(),
         normalized,
     )
+
+
+def _has_mojibake(value: str) -> bool:
+    return any(marker in value for marker in MOJIBAKE_MARKERS)
+
+
+def _normalize_vendor_cuisine(
+    cuisine_type: str | None,
+    main_category: str | None = None,
+    categories: str | None = None,
+) -> str | None:
+    """Derive a cuisine from the directory type, else Google categories.
+
+    The CSV's ``Cuisine / type`` column is the richest signal. When it only
+    describes the establishment (e.g. ``Café / casual dining``), fall back to
+    cuisine-bearing Google category values such as ``Chinese restaurant``.
+    Values containing mojibake are ignored, matching the other CSV fields.
+    """
+    if cuisine_type and not _has_mojibake(cuisine_type):
+        normalized = " ".join(cuisine_type.split())
+        folded = normalized.casefold()
+
+        if folded in CUISINE_TYPE_ALIASES:
+            return CUISINE_TYPE_ALIASES[folded]
+
+        if folded not in CUISINE_TYPE_IGNORED:
+            return normalized
+
+    candidates: list[str] = []
+
+    if main_category and not _has_mojibake(main_category):
+        candidates.append(main_category)
+
+    try:
+        parsed = json.loads(categories or "[]")
+    except (json.JSONDecodeError, TypeError):
+        parsed = []
+
+    if isinstance(parsed, list):
+        candidates.extend(
+            str(item)
+            for item in parsed
+            if not _has_mojibake(str(item))
+        )
+
+    for candidate in candidates:
+        mapped = CATEGORY_TO_CUISINE.get(candidate.strip().casefold())
+        if mapped:
+            return mapped
+
+    return None
+
+
+def _derive_vendor_dishes(
+    cuisine_type: str | None,
+    main_category: str | None = None,
+    categories: str | None = None,
+) -> list[str]:
+    """Extract dish/drink terms from the Google cuisine/category fields.
+
+    Coffee, bubble tea, juice, pasta, salad, soup and burger are dish types,
+    not cuisines, so they are stored on ``Vendor.dishes`` instead.
+    """
+    dishes: list[str] = []
+
+    if cuisine_type and not _has_mojibake(cuisine_type):
+        folded = " ".join(cuisine_type.split()).casefold()
+        mapped = CUISINE_TYPE_DISHES.get(folded)
+        if mapped:
+            dishes.append(mapped)
+
+    candidates: list[str] = []
+
+    if main_category and not _has_mojibake(main_category):
+        candidates.append(main_category)
+
+    try:
+        parsed = json.loads(categories or "[]")
+    except (json.JSONDecodeError, TypeError):
+        parsed = []
+
+    if isinstance(parsed, list):
+        candidates.extend(
+            str(item)
+            for item in parsed
+            if not _has_mojibake(str(item))
+        )
+
+    for candidate in candidates:
+        mapped = CATEGORY_TO_DISH.get(candidate.strip().casefold())
+        if mapped:
+            dishes.append(mapped)
+
+    return list(dict.fromkeys(dishes))
 
 
 def _parse_nullable_bool(
@@ -654,24 +841,28 @@ def seed_vendor_google_metadata(
                     )
                     continue
 
-                if target_field == "category":
-                    value = _normalize_vendor_category(
-                        value,
-                        directory_id,
-                    )
-
-                    if (
-                        vendor.category == "Drinks"
-                        and value == "Cafe"
-                    ):
-                        value = vendor.category
-
                 if value is not None and _set_if_changed(
                     vendor,
                     target_field,
                     value,
                 ):
                     changed_field_count += 1
+
+            # Cuisine: "Cuisine / type" first, then cuisine-bearing Google
+            # categories. Unknown cuisines fall back to "Others" so stale
+            # dish values from earlier seeds are also cleared.
+            cuisine = _normalize_vendor_cuisine(
+                row.get("Cuisine / type"),
+                row.get("main_category"),
+                row.get("categories"),
+            ) or "Others"
+
+            if _set_if_changed(
+                vendor,
+                "cuisine",
+                cuisine,
+            ):
+                changed_field_count += 1
 
             # Address, website and phone metadata.
             for (
@@ -1296,6 +1487,23 @@ def seed_vendor_dishes(session: Session) -> tuple[int, int]:
             except (json.JSONDecodeError, TypeError):
                 continue
 
+    # Dish/drink terms from the Google cuisine/category fields (coffee, bubble
+    # tea, juice, pasta, salad, soup, burger) belong in Vendor.dishes.
+    vendor_category_dishes: dict[str, list[str]] = {}
+
+    with GOOGLE_RATINGS_CSV.open(newline="", encoding="utf-8-sig") as file:
+        for row in csv.DictReader(file):
+            directory_id = (row.get("ID") or "").strip()
+            if not directory_id:
+                continue
+            terms = _derive_vendor_dishes(
+                row.get("Cuisine / type"),
+                row.get("main_category"),
+                row.get("categories"),
+            )
+            if terms:
+                vendor_category_dishes[directory_id] = terms
+
     vendors = session.scalars(
         select(Vendor).where(Vendor.directory_id.is_not(None))
     ).all()
@@ -1322,6 +1530,16 @@ def seed_vendor_dishes(session: Session) -> tuple[int, int]:
                 dishes_str = ", ".join([str(d).strip().title() for d in override if str(d).strip()])
             else:
                 dishes_str = str(override).strip()
+
+        # Merge dish/drink terms derived from the Google cuisine/category
+        # fields (coffee, bubble tea, juice, pasta, salad, soup, burger).
+        merged_dishes = [
+            dish.strip()
+            for dish in (dishes_str or "").split(",")
+            if dish.strip()
+        ]
+        merged_dishes.extend(vendor_category_dishes.get(v_id, []))
+        dishes_str = ", ".join(dict.fromkeys(merged_dishes)) or None
 
         if dishes_str:
             if _set_if_changed(vendor, "dishes", dishes_str):
