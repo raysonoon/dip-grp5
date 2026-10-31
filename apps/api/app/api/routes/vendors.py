@@ -151,7 +151,7 @@ def list_vendors(
     halal: Annotated[bool | None, Query()] = None,
     vegetarian: Annotated[bool | None, Query()] = None,
     sort: Annotated[
-        Literal["recommended", "reviews", "rating"],
+        Literal["recommended", "nearby", "reviews", "rating", "alphabetical"],
         Query(),
     ] = "recommended",
     lat: Annotated[float | None, Query(ge=-90, le=90)] = None,
@@ -299,6 +299,23 @@ def list_vendors(
             *nearby_order,
             Vendor.created_at.desc(),
             Vendor.id.desc(),
+        )
+
+    elif sort == "nearby":
+        # Pure distance. Without a usable position (no lat/lng, or a database
+        # without PostGIS) this degrades silently to alphabetical A-Z.
+        statement = statement.order_by(
+            *search_plan.order_by,
+            *nearby_order,
+            func.lower(Vendor.name).asc(),
+            Vendor.id.asc(),
+        )
+
+    elif sort == "alphabetical":
+        statement = statement.order_by(
+            *search_plan.order_by,
+            func.lower(Vendor.name).asc(),
+            Vendor.id.asc(),
         )
 
     elif recommended_ids:

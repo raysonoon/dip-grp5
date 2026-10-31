@@ -28,8 +28,10 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 const SORT_OPTIONS = [
   { value: "recommended", label: "Recommended" },
+  { value: "nearby", label: "Nearby" },
   { value: "reviews", label: "Most Reviews" },
   { value: "rating", label: "Highest Rating" },
+  { value: "alphabetical", label: "Alphabetical (A–Z)" },
 ];
 
 function displayError(error) {
@@ -230,10 +232,11 @@ export default function FoodPage() {
 
   const [sort, setSort] = useState("recommended");
 
-  // undefined = still detecting, null = unavailable/denied, {lat,lng} = known
+  // undefined = still checking, null = not known (not asked / denied / unavailable),
+  // {lat,lng} = known. Once known, every sort uses it as a distance tie-break.
   const [userCoords, setUserCoords] = useState(undefined);
-  const [geoStatus, setGeoStatus] = useState("idle");
-  const [useDistance, setUseDistance] = useState(true);
+  // "checking" -> "prompt" | "requesting" | "granted" | "denied" | "unavailable"
+  const [geoStatus, setGeoStatus] = useState("checking");
 
   const [locations, setLocations] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -271,9 +274,9 @@ export default function FoodPage() {
     return () => window.clearTimeout(timeoutId);
   }, [searchTerm, setSearchParams]);
 
-  // Ask for the user's location once; the recommended sort uses it to rank
-  // nearby vendors. Denied, unsupported or slow -> fall back to A-Z.
-  const requestLocation = useCallback(() => {
+  // Reads the device position. If the site has no permission yet, the browser
+  // shows its prompt; after a denial the browser rejects without prompting.
+  const readPosition = useCallback(() => {
     if (!("geolocation" in navigator)) {
       setUserCoords(null);
       setGeoStatus("unavailable");
@@ -298,9 +301,53 @@ export default function FoodPage() {
     );
   }, []);
 
+  // On load, never prompt. Only reuse a permission the user already granted,
+  // so the distance tie-break works for returning users. Everyone else is
+  // asked the first time they choose "Nearby".
   useEffect(() => {
-    requestLocation();
-  }, [requestLocation]);
+    let cancelled = false;
+
+    if (!("geolocation" in navigator)) {
+      setUserCoords(null);
+      setGeoStatus("unavailable");
+      return undefined;
+    }
+
+    if (!navigator.permissions?.query) {
+      // Permissions API unsupported: wait for an explicit "Nearby" choice.
+      setUserCoords(null);
+      setGeoStatus("prompt");
+      return undefined;
+    }
+
+    navigator.permissions
+      .query({ name: "geolocation" })
+      .then((permission) => {
+        if (cancelled) return;
+        if (permission.state === "granted") {
+          readPosition();
+        } else {
+          setUserCoords(null);
+          setGeoStatus(permission.state === "denied" ? "denied" : "prompt");
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setUserCoords(null);
+        setGeoStatus("prompt");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [readPosition]);
+
+  // "Nearby" without a usable location falls back to A-Z, silently.
+  useEffect(() => {
+    if (sort === "nearby" && (geoStatus === "denied" || geoStatus === "unavailable")) {
+      setSort("alphabetical");
+    }
+  }, [sort, geoStatus]);
 
   // Load filter dropdown values once
   useEffect(() => {
@@ -322,17 +369,17 @@ export default function FoodPage() {
     return () => controller.abort();
   }, []);
 
-  // Distance ordering only applies while the "Near me" toggle is on.
-  const coords = useDistance ? userCoords : null;
-  const isNearby = useDistance && userCoords != null;
-
   // Load one filtered/paginated vendor page
   useEffect(() => {
     const controller = new AbortController();
 
-    // Wait for the location answer before the first recommended fetch,
-    // so the list loads once in the right order instead of twice.
-    if (sort === "recommended" && userCoords === undefined) {
+    // Wait for the silent permission check on load, and for the browser's
+    // answer after choosing "Nearby", so the list loads once in the right order.
+    const waitingForLocation =
+      userCoords === undefined ||
+      (sort === "nearby" && (geoStatus === "prompt" || geoStatus === "requesting"));
+    if (waitingForLocation) {
+      setIsLoading(true);
       return () => controller.abort();
     }
 
@@ -350,8 +397,8 @@ export default function FoodPage() {
       sort,
       limit: PAGE_LIMIT,
       offset,
-      lat: coords?.lat ?? null,
-      lng: coords?.lng ?? null,
+      lat: userCoords?.lat ?? null,
+      lng: userCoords?.lng ?? null,
       signal: controller.signal,
     })
       .then((page) => {
@@ -382,7 +429,7 @@ export default function FoodPage() {
     offset,
     loadAttempt,
     userCoords,
-    useDistance,
+    geoStatus,
   ]);
 
   const hasNextPage = offset + PAGE_LIMIT < total;
@@ -421,16 +468,15 @@ export default function FoodPage() {
     setOffset(0);
   };
 
-  const requestNearbyCoords = () => {
+  const handleSortChange = (value) => {
     setOffset(0);
-
-    if (isNearby) {
-      setUseDistance(false);
-      return;
+    setSort(value);
+    // First time "Nearby" is chosen: ask for permission. A granted permission
+    // is reused (coords already known); a denial is never re-asked and the
+    // effect above switches to A-Z instead.
+    if (value === "nearby" && geoStatus === "prompt") {
+      readPosition();
     }
-
-    setUseDistance(true);
-    if (userCoords == null) requestLocation();
   };
 
   useEffect(() => {
@@ -541,28 +587,11 @@ export default function FoodPage() {
         <SingleSelect
           id="food-sort"
           label="Sort vendors"
+          icon={<ArrowUpDown size={17} className="text-primary" aria-hidden="true" />}
           options={SORT_OPTIONS}
           value={sort}
-          onChange={(value) => {
-            setSort(value);
-            setOffset(0);
-          }}
+          onChange={handleSortChange}
         />
-
-        <button
-          type="button"
-          onClick={requestNearbyCoords}
-          disabled={geoStatus === "requesting"}
-          aria-pressed={isNearby}
-          title={isNearby ? "Stop sorting by distance" : "Sort vendors by distance from you"}
-          className={`w-full sm:w-auto px-3.5 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${
-            isNearby
-              ? "border-primary bg-primary/10 text-primary cursor-pointer"
-              : "border-border bg-background text-foreground cursor-pointer hover:bg-muted"
-          } ${geoStatus === "requesting" ? "cursor-wait opacity-70" : ""}`}
-        >
-          {geoStatus === "requesting" ? "Locating..." : isNearby ? "Nearby ✓" : "Near me"}
-        </button>
 
         {hasActiveFilters && (
           <button
@@ -680,17 +709,6 @@ export default function FoodPage() {
           </div>
         </fieldset>
       </FilterDialog>
-
-      {!isNearby && geoStatus === "denied" && (
-        <p className="mb-4 text-center text-sm text-muted-foreground">
-          Location access was denied — vendors are shown alphabetically. Allow location in your browser to sort by distance.
-        </p>
-      )}
-      {!isNearby && geoStatus === "unavailable" && (
-        <p className="mb-4 text-center text-sm text-muted-foreground">
-          We couldn't determine your location — vendors are shown alphabetically.
-        </p>
-      )}
 
       {isLoading && <p className="text-center text-muted-foreground">Loading vendors...</p>}
 
