@@ -13,6 +13,7 @@ import VendorsPage from "./pages/VendorsPage";
 import FoodPreferencesOnboarding from "./components/FoodPreferencesOnboarding";
 import { fetchMyPreferences } from "./api/preferences.js";
 import { useAuth } from "./contexts/AuthContext";
+import { useChat } from "./contexts/ChatContext";
 import VendorMap from "./pages/VendorMap";
 import MapPage from "./pages/MapPage";
 import NotFoundPage from "./pages/NotFoundPage";
@@ -72,21 +73,27 @@ function StarRow({
 
   return (
     <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <Star
-          key={i}
-          className={`${size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4"} ${
-            i <= Math.round(rating)
-              ? "fill-primary text-primary"
-              : "fill-transparent text-muted"
-          }`}
-        />
-      ))}
+      {[1, 2, 3, 4, 5].map((i) => {
+        const fill = Math.max(0, Math.min(1, rating - (i - 1)));
+        return (
+          <span key={i} className="relative inline-block">
+            <Star className={`${starClass} fill-transparent text-muted`} />
+            <span
+              className="absolute inset-0 overflow-hidden"
+              style={{ width: `${fill * 100}%` }}
+              aria-hidden="true"
+            >
+              <Star className={`${starClass} fill-primary text-primary`} />
+            </span>
+          </span>
+        );
+      })}
     </div>
   );
 }
 
 function HomePage() {
+  const { openChat } = useChat();
   const [reviewsPaused, setReviewsPaused] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
@@ -254,7 +261,7 @@ function HomePage() {
               </div>
 
               {/* Frame 2: The Crowded Bowl (Slightly Lower) */}
-              <div className="w-1/2 sm:w-50x bg-[#FFFDF9] rounded-3xl p-2.5 border border-[#E8DCD0] shadow-[6px_6px_0px_0px_rgba(203,137,126,0.35)] translate-y-4 transform hover:translate-y-2 hover:shadow-[8px_8px_0px_0px_rgba(203,137,126,0.45)] transition-all duration-300">
+              <div className="w-1/2 sm:w-52 bg-[#FFFDF9] rounded-3xl p-2.5 border border-[#E8DCD0] shadow-[6px_6px_0px_0px_rgba(203,137,126,0.35)] translate-y-4 transform hover:translate-y-2 hover:shadow-[8px_8px_0px_0px_rgba(203,137,126,0.45)] transition-all duration-300">
                 <div className="relative h-44 sm:h-52 rounded-2xl overflow-hidden mb-3 bg-amber-100">
                   <img
                     src="/data/vendor_photos/downloads/V002_2.jpg"
@@ -373,12 +380,9 @@ function HomePage() {
                         </div>
                       )}
                       <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
-                        {vendor.category && (
-                          <span
-                            key={vendor.category}
-                            className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm"
-                          >
-                            {vendor.category}
+                        {vendor.cuisine && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm">
+                            {vendor.cuisine}
                           </span>
                         )}
                       </div>
@@ -431,7 +435,7 @@ function HomePage() {
                             {vendor.price_range ?? "Price unlisted"}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {vendor.category ?? "Food"}
+                            {vendor.category}
                           </span>
                         </div>
                       </div>
@@ -561,6 +565,78 @@ function HomePage() {
 
       {/* ── FLOATING CHATBOT WIDGET ───────────────────── */}
       <FoodieChat />
+
+      {/* ── STILL UNSURE OF WHAT TO EAT? (Dark Red Section Background #f0404b) ── */}
+      <section className="relative bg-[#f0404b] overflow-hidden text-white border-b border-amber-900/10">
+        <div className="grid md:grid-cols-12 items-stretch min-h-[420px]">
+          
+          {/* Left Side: White Text & Button Container */}
+          <div className="md:col-span-6 p-8 sm:p-12 lg:p-16 flex flex-col justify-center relative z-10 bg-[#f0404b]">
+            
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-serif text-white font-normal leading-tight mb-4">
+              Still Unsure of <br />
+              What to Eat?
+            </h2>
+            
+            <p className="text-xs sm:text-sm lg:text-base text-amber-100/90 font-light mb-8">
+              Chat with Foodie for personalised food recommendations in NTU.
+            </p>
+
+            <div>
+              <button
+                type="button"
+                onClick={openChat}
+                className="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-full bg-white text-[#B22222] font-semibold text-sm shadow-lg hover:bg-amber-50 hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer"
+              >
+                <div className="w-6 h-6 rounded-full bg-[#B22222]/10 flex items-center justify-center p-0.5 flex-shrink-0">
+                  <img
+                    src="/ntummy_mascot_head.svg"
+                    alt="NTUmmy Mascot"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <span>Foodie</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Center Floating NTUmmy Logo Badge */}
+          <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none">
+            <div className="w-24 h-24 lg:w-28 lg:h-28 rounded-full bg-white p-3 shadow-2xl border border-white/20 flex items-center justify-center transform hover:scale-105 transition-transform">
+              <img
+                src="/ntummy_logo.svg"
+                alt="NTUmmy Logo"
+                className="w-full h-full object-contain"
+              />
+            </div>
+          </div>
+
+          {/* Right Side: NTUmmy mascot */}
+          <div className="md:col-span-6 relative min-h-[380px] md:min-h-full bg-gradient-to-br from-[#fff8f2] via-[#fde8e2] to-[#faf6f0] flex items-center justify-end pr-6 sm:pr-12 md:pr-16 p-8 overflow-hidden border-l border-amber-900/10">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-72 h-72 bg-rose-300/60 rounded-full blur-3xl" />
+            </div>
+
+            {/* Centered Container */}
+            <div className="relative max-w-sm w-full flex flex-col items-center justify-center pt-6">
+              {/* Speech Bubble: Positioned above-left of mascot head with downward pointing tail */}
+              <div className="absolute top-2 -left-12 sm:-left-20 lg:-left-40 z-25 bg-white text-[#4A3328] px-4 py-5 rounded-2xl shadow-xl border border-amber-900/10 max-w-[220px] sm:max-w-[250px] text-xs sm:text-sm font-medium leading-snug">
+                <p>Hi! I'm Foodie, your campus food guide! Ask me anything about campus food.</p>
+
+                {/* Speech bubble tail pointing downwards towards Foodie's head */}
+                <div className="absolute -bottom-1.5 right-2 w-4 h-4 rotate-[30deg] border-r border-b border-amber-900/10 bg-white" />
+              </div>
+
+              {/* Mascot Image: Centered */}
+              <img
+                src="/ntummy_mascot.svg"
+                alt="Foodie Mascot"
+                className="w-52 sm:w-64 h-auto object-contain drop-shadow-xl z-10 mt-6"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* ── FOOTER ───────────────────────────────────── */}
       <Footer />

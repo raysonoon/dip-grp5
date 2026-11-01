@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Outlet } from "react-router-dom";
-import { Bot, RotateCcw, RotateCw, Send, Square, X } from "lucide-react";
+import { RotateCcw, RotateCw, Send, Square, X } from "lucide-react";
 import ChatMessageContent from "./ChatMessageContent";
 import { useChat as useChatUI } from "../contexts/ChatContext";
 import { useChatSession } from "../hooks/useChatSession";
@@ -53,7 +53,7 @@ export function FoodieChat() {
               <button
                 type="button"
                 onClick={() => { setWheelOpen(false); startNewChat(); }}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                className="text-amber-100/80 hover:text-white transition-colors p-1"
                 aria-label="Start a new chat session"
                 title="New chat"
               >
@@ -62,7 +62,7 @@ export function FoodieChat() {
               <button
                 type="button"
                 onClick={closeChat}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                className="text-amber-100/80 hover:text-white transition-colors p-1"
                 aria-label="Close chat"
               >
                 <X className="w-4 h-4" />
@@ -150,10 +150,11 @@ export function FoodieChat() {
 
       {wheelOpen && <VendorWheel vendors={wheelVendors} onRemove={removeWheelVendor} onClose={() => setWheelOpen(false)} />}
 
-      {/* Chat Toggle Button */}
+      {/* Chat Toggle Button with White Circle Behind Mascot */}
       <button
         type="button"
         onClick={toggleChat}
+        aria-label="Open Foodie chatbot"
         className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#B22222] text-white font-semibold text-sm shadow-2xl border-2 border-white/20 cursor-pointer hover:scale-105 active:scale-95 transition-all duration-300 group"
       >
         {chatOpen ? (
