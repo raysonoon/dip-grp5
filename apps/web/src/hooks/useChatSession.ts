@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 
 import { normalizeChatQuestion, streamChat } from "../api/chat";
 import { useAuth } from "../contexts/AuthContext";
+import { createWheelSession, wheelSessionReducer } from "../lib/vendorWheel.js";
 import {
   chatFailureMessage,
   completeChatHistory,
@@ -46,6 +47,7 @@ export function useChatSession() {
   );
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [wheelSession, dispatchWheel] = useReducer(wheelSessionReducer, undefined, createWheelSession);
   const requestPendingRef = useRef(false);
   const historyRef = useRef<ChatHistoryMessage[]>([]);
   const sessionIdRef = useRef("");
@@ -106,6 +108,7 @@ export function useChatSession() {
         },
       });
       if (controller.signal.aborted || requestId !== requestIdRef.current) return;
+      dispatchWheel({ type: "sources", sources: response.sources });
       historyRef.current = completeChatHistory(
         historyForRequest,
         question,
@@ -158,6 +161,7 @@ export function useChatSession() {
     stopResponse();
     historyRef.current = [];
     sessionIdRef.current = createChatSessionId();
+    dispatchWheel({ type: "reset" });
     setMessages(initialChatMessages(displayName));
     setInput("");
   }
@@ -170,5 +174,7 @@ export function useChatSession() {
     setInput,
     startNewSession,
     stopResponse,
+    wheelVendors: wheelSession.vendors,
+    removeWheelVendor: (vendorId: number) => dispatchWheel({ type: "remove", vendorId }),
   };
 }

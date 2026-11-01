@@ -234,13 +234,17 @@ def test_resolve_vendor_ids(session: Session) -> None:
 
 def test_review_count_is_aggregated(session: Session) -> None:
     _seed_vendors(session)
-    user = User(
-        display_name="Reviewer",
-        email_address="reviewer@example.com",
-        password_hash="x",
-        role="user",
-    )
-    session.add(user)
+    # One review per user per vendor, so each review needs its own author.
+    users = [
+        User(
+            display_name=f"Reviewer {index}",
+            email_address=f"reviewer{index}@example.com",
+            password_hash="x",
+            role="user",
+        )
+        for index in range(2)
+    ]
+    session.add_all(users)
     session.flush()
     vendor = session.scalar(
         select(Vendor).where(Vendor.name == "Halal Nook")
@@ -249,8 +253,8 @@ def test_review_count_is_aggregated(session: Session) -> None:
 
     session.add_all(
         [
-            Review(user_id=user.id, vendor_id=vendor.id, rating_half_steps=8),
-            Review(user_id=user.id, vendor_id=vendor.id, rating_half_steps=10),
+            Review(user_id=users[0].id, vendor_id=vendor.id, rating_half_steps=8),
+            Review(user_id=users[1].id, vendor_id=vendor.id, rating_half_steps=10),
         ]
     )
     session.commit()

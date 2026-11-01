@@ -12,6 +12,12 @@ OPENAPI_URL="http://127.0.0.1:8000/openapi.json"
 die() {
   echo
   echo "[ERROR] $1"
+  # Keep the window open so the traceback above stays readable when the
+  # launcher is started from a GUI terminal that closes on exit.
+  if [ -t 0 ]; then
+    printf 'Press Enter to close...'
+    read -r _ || true
+  fi
   exit 1
 }
 
@@ -87,6 +93,7 @@ api_is_ready() {
 ready=0
 for _ in $(seq 1 60); do
   api_is_ready && { ready=1; break; }
+  kill -0 "$SERVER_PID" 2>/dev/null || break
   sleep 2
 done
 
@@ -94,9 +101,9 @@ if [ "$ready" -eq 1 ]; then
   echo "      FastAPI is ready at $DOCS_URL"
   command -v open >/dev/null 2>&1 && open "$DOCS_URL"
   wait "$SERVER_PID"
-else
-  echo
-  echo "[ERROR] FastAPI did not become ready within 60 seconds."
+elif kill -0 "$SERVER_PID" 2>/dev/null; then
   kill "$SERVER_PID" 2>/dev/null || true
-  exit 1
+  die "FastAPI did not become ready within 60 seconds."
+else
+  die "FastAPI exited before it became ready (see the traceback above)."
 fi

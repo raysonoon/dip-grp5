@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { fetchVendorById, fetchVendors } from "./vendors.js";
+import { fetchVendorById, fetchVendorPage, fetchVendors } from "./vendors.js";
 
 const VENDOR = {
   id: 12,
@@ -106,5 +106,71 @@ test("fetchVendors sends a trimmed search query to every backend page", async (c
   assert.deepEqual(requestedPaths, [
     "/vendors?limit=100&offset=0&q=Chicken+Rice&sort=recommended",
     "/vendors?limit=100&offset=1&q=Chicken+Rice&sort=recommended",
+  ]);
+});
+
+test("fetchVendorPage repeats each multi-select filter value", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const requestedPaths = [];
+  globalThis.fetch = async (path) => {
+    requestedPaths.push(path);
+    return jsonResponse({ items: [], total: 0, limit: 12, offset: 0 });
+  };
+
+  await fetchVendorPage({
+    locations: ["North Spine", "South Spine"],
+    categories: ["Korean"],
+    cuisines: ["Japanese", "Korean"],
+    limit: 12,
+    offset: 0,
+  });
+
+  assert.deepEqual(requestedPaths, [
+    "/vendors?limit=12&offset=0&location=North+Spine&location=South+Spine&category=Korean&cuisine=Japanese&cuisine=Korean&sort=recommended",
+  ]);
+});
+
+test("fetchVendorPage sends price range, halal and vegetarian filters", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const requestedPaths = [];
+  globalThis.fetch = async (path) => {
+    requestedPaths.push(path);
+    return jsonResponse({ items: [], total: 0, limit: 12, offset: 0 });
+  };
+
+  await fetchVendorPage({
+    priceRanges: ["$1-10", "$20-30"],
+    halal: true,
+    vegetarian: true,
+    limit: 12,
+    offset: 0,
+  });
+
+  assert.deepEqual(requestedPaths, [
+    "/vendors?limit=12&offset=0&price_range=%241-10&price_range=%2420-30&halal=true&vegetarian=true&sort=recommended",
+  ]);
+});
+
+test("fetchVendorPage omits price and dietary filters when unused", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const requestedPaths = [];
+  globalThis.fetch = async (path) => {
+    requestedPaths.push(path);
+    return jsonResponse({ items: [], total: 0, limit: 12, offset: 0 });
+  };
+
+  await fetchVendorPage({ limit: 12, offset: 0 });
+
+  assert.deepEqual(requestedPaths, [
+    "/vendors?limit=12&offset=0&sort=recommended",
   ]);
 });

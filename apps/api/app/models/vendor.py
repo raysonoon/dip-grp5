@@ -90,6 +90,11 @@ class Vendor(Base):
         nullable=True,
     )
 
+    cuisine: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
     opening_hours: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
@@ -156,6 +161,7 @@ class Vendor(Base):
             "coalesce(name, '') || ' ' || "
             "coalesce(unit_code, '') || ' ' || "
             "coalesce(category, '') || ' ' || "
+            "coalesce(cuisine, '') || ' ' || "
             "coalesce(location, '')"
             "))",
             persisted=True,

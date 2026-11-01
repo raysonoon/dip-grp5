@@ -13,7 +13,14 @@ def _seed_data(session: Session) -> Vendor:
         password_hash="x",
         role="user",
     )
-    session.add(user)
+    # One review per user per vendor, so the blank review needs its own author.
+    other_user = User(
+        display_name="Second Reviewer",
+        email_address="second-reviewer@example.com",
+        password_hash="x",
+        role="user",
+    )
+    session.add_all([user, other_user])
     session.flush()
 
     vendor = Vendor(name="Demo Vendor 1", location="Demo Canteen")
@@ -30,7 +37,7 @@ def _seed_data(session: Session) -> Vendor:
     )
     session.add(
         Review(
-            user_id=user.id,
+            user_id=other_user.id,
             vendor_id=vendor.id,
             rating_half_steps=6,
             comment=None,

@@ -25,17 +25,20 @@ def read_current_user(current_user: CurrentUser) -> dict[str, object]:
 def list_my_reviews(
     current_user: CurrentUser,
     session: DbSession,
+    vendor_id: Annotated[int | None, Query(gt=0)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> MyReviewListRead:
     # Page through the User.reviews relationship, most recent first.
-    my_reviews = with_parent(current_user, User.reviews)
+    filters = [with_parent(current_user, User.reviews)]
+    if vendor_id is not None:
+        filters.append(Review.vendor_id == vendor_id)
 
-    total = session.scalar(select(func.count(Review.id)).where(my_reviews))
+    total = session.scalar(select(func.count(Review.id)).where(*filters))
     reviews = session.scalars(
         select(Review)
         .options(selectinload(Review.vendor))
-        .where(my_reviews)
+        .where(*filters)
         .order_by(Review.created_at.desc(), Review.id.desc())
         .offset(offset)
         .limit(limit)

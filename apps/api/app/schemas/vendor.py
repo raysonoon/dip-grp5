@@ -55,6 +55,7 @@ class VendorListItem(BaseModel):
     unit_code: str | None
     image_url: str | None
     category: str | None
+    cuisine: str | None
     opening_hours: str | None
     price_range: str | None
     halal: bool | None
@@ -68,6 +69,7 @@ class VendorListItem(BaseModel):
     images: list[VendorImageRead]
     map_coordinates: VendorCoordinates | None
     recommended: bool = False
+    distance_m: float | None = None
 
 
 class VendorNearbyItem(VendorListItem):
