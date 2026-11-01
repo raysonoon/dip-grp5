@@ -211,10 +211,6 @@ def list_vendors(
     if vegetarian is True:
         filters.append(Vendor.vegetarian.is_(True))
 
-    total = session.scalar(
-        select(func.count(Vendor.id)).where(*filters)
-    )
-
     # Distance ordering, used as a tiebreak after the primary sort so callers
     # that share their position see nearby vendors first. PostGIS computes it;
     # SQLite test runs fall back to the alphabetical order below.
@@ -255,8 +251,19 @@ def list_vendors(
                     recommendation.vendor.id
                     for recommendation in recommendations
                 ]
-            except (RuntimeError, ValueError):
-                recommended_ids = []
+            except (RuntimeError, ValueError) as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Personalized recommendations are temporarily unavailable.",
+                ) from error
+
+            # Completed preferences define the personalized result set, not
+            # just its order. An empty set must not become catalog results.
+            filters.append(Vendor.id.in_(recommended_ids))
+
+    total = session.scalar(
+        select(func.count(Vendor.id)).where(*filters)
+    )
 
     review_count = func.count(Review.id).label("review_count")
     distance_column = (
