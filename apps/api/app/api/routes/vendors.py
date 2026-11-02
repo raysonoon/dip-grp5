@@ -228,7 +228,17 @@ def list_vendors(
 
     recommended_ids: list[int] = []
 
-    if sort == "recommended" and current_user is not None:
+    # A typed query is a general search: never restrict its results to the
+    # user's personalized recommendation set, and never spend a rate-limited
+    # embedding call on every keystroke. Recommendations apply only to the
+    # unfiltered feed (empty query).
+    has_search_query = bool((q or "").strip())
+
+    if (
+        sort == "recommended"
+        and current_user is not None
+        and not has_search_query
+    ):
         preferences = session.scalar(
             select(UserFoodPreferences).where(
                 UserFoodPreferences.user_id == current_user.id
