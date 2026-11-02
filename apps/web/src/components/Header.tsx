@@ -24,6 +24,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [recommendedStalls, setRecommendedStalls] = useState<any[]>([]);
+  const [stallsLoading, setStallsLoading] = useState(true);
   const [recommendationsVersion, setRecommendationsVersion] = useState(getPreferencesVersion);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -135,6 +136,8 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
     const controller = new AbortController();
 
     async function loadRecommendedStalls() {
+      setStallsLoading(true);
+
   // Logged-in users: try personalized recommendations first.
     if (user) {
       try {
@@ -151,6 +154,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
 
         if (personalized.length > 0) {
           setRecommendedStalls(personalized.slice(0, 3));
+          setStallsLoading(false);
           return;
         }
       } catch (error) {
@@ -168,10 +172,12 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
     try {
       const vendors = await fetchVendors("", controller.signal, { auth: false });
       setRecommendedStalls(rankTrendingVendors(vendors, 3));
+      setStallsLoading(false);
     } catch (error) {
       if (!controller.signal.aborted) {
         console.error("Failed to load trending stalls:", error);
         setRecommendedStalls([]);
+        setStallsLoading(false);
       }
     }
   }
@@ -230,6 +236,19 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
     ) : searchResults.length === 0 ? (
       <p role="status" className="px-2 py-2 text-xs text-muted-foreground">
         No matching vendors found.
+      </p>
+    ) : null
+  );
+
+  const recommendedStatus = !hasSearchQuery && (
+    stallsLoading ? (
+      <div role="status" className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        Loading stalls...
+      </div>
+    ) : recommendedStalls.length === 0 ? (
+      <p role="status" className="px-2 py-2 text-xs text-muted-foreground">
+        No stalls available.
       </p>
     ) : null
   );
@@ -360,6 +379,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
                 </p>
                 <div className="flex flex-col gap-1">
                   {searchStatus}
+                  {recommendedStatus}
                   {displayedStalls.map((stall) => (
                     <button
                       key={hasSearchQuery ? stall.id : stall.name}
@@ -477,6 +497,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
             </p>
             <div className="flex flex-col gap-1">
               {searchStatus}
+              {recommendedStatus}
               {displayedStalls.map((stall) => (
                 <button
                   key={hasSearchQuery ? stall.id : stall.name}
