@@ -8,8 +8,8 @@ import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import "./vendorMap.css";
 import { vendorLatLng } from "../lib/locationBoundaries.js";
 
-export function googleMapsDirectionsUrl(name, lat, lng) {
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${name} ${lat},${lng}`)}`;
+export function googleMapsDirectionsUrl(lat, lng) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 }
 
 export const pinIcon = L.divIcon({
@@ -67,7 +67,7 @@ function buildPopup(vendor, point, navigate, extraLines) {
   });
 
   const dir = L.DomUtil.create("a", "", row);
-  dir.href = googleMapsDirectionsUrl(vendor.name, point.lat, point.lng);
+  dir.href = googleMapsDirectionsUrl(point.lat, point.lng);
   dir.target = "_blank";
   dir.rel = "noopener noreferrer";
   dir.textContent = "Directions →";
