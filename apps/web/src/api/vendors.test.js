@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { fetchVendorById, fetchVendorPage, fetchVendors } from "./vendors.js";
+import { apiClient } from "./client.js";
+import { supabase } from "../lib/supabase.js";
 
 const VENDOR = {
   id: 12,
@@ -28,6 +30,60 @@ function jsonResponse(payload, status = 200) {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+test("fetchVendorPage forwards a custom timeout and preserves omitted defaults", async (context) => {
+  const get = context.mock.method(apiClient, "get", async () => ({
+    items: [], total: 0, limit: 3, offset: 0,
+  }));
+  const controller = new AbortController();
+
+  await fetchVendorPage({ limit: 3, timeoutMs: 30_000, signal: controller.signal });
+  await fetchVendorPage({ limit: 3 });
+
+  assert.deepEqual(get.mock.calls[0].arguments, [
+    "/vendors?limit=3&offset=0&sort=recommended",
+    { auth: "optional", signal: controller.signal, timeoutMs: 30_000 },
+  ]);
+  assert.deepEqual(get.mock.calls[1].arguments, [
+    "/vendors?limit=3&offset=0&sort=recommended",
+    { auth: "optional", signal: undefined, timeoutMs: undefined },
+  ]);
+});
+
+test("fetchVendors can disable auth on every page while existing calls retain auth", async (context) => {
+  const descriptor = Object.getOwnPropertyDescriptor(supabase.auth, "getSession");
+  Object.defineProperty(supabase.auth, "getSession", {
+    configurable: true,
+    value: async () => ({ data: { session: { access_token: "vendor-token" } }, error: null }),
+  });
+  context.after(() => {
+    if (descriptor) Object.defineProperty(supabase.auth, "getSession", descriptor);
+    else delete supabase.auth.getSession;
+  });
+  const requests = [];
+  context.mock.method(globalThis, "fetch", async (path, options) => {
+    requests.push({ path, options });
+    const offset = Number(new URL(path, "https://example.test").searchParams.get("offset"));
+    return jsonResponse({
+      items: [{ ...VENDOR, id: 12 + offset }], total: 2, limit: 100, offset,
+    });
+  });
+
+  const fallback = await fetchVendors("", undefined, { auth: false });
+  const existing = await fetchVendors("");
+
+  assert.deepEqual(fallback.map((vendor) => vendor.id), [12, 13]);
+  assert.deepEqual(existing, fallback);
+  assert.deepEqual(requests.map(({ path }) => path), [
+    "/vendors?limit=100&offset=0&sort=recommended",
+    "/vendors?limit=100&offset=1&sort=recommended",
+    "/vendors?limit=100&offset=0&sort=recommended",
+    "/vendors?limit=100&offset=1&sort=recommended",
+  ]);
+  assert.deepEqual(requests.map(({ options }) => options.headers.Authorization), [
+    undefined, undefined, "Bearer vendor-token", "Bearer vendor-token",
+  ]);
+});
 
 test("fetchVendorById finds a backend vendor by its integer id", async (context) => {
   const originalFetch = globalThis.fetch;

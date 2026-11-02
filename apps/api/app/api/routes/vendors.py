@@ -211,10 +211,6 @@ def list_vendors(
     if vegetarian is True:
         filters.append(Vendor.vegetarian.is_(True))
 
-    total = session.scalar(
-        select(func.count(Vendor.id)).where(*filters)
-    )
-
     # Distance ordering, used as a tiebreak after the primary sort so callers
     # that share their position see nearby vendors first. PostGIS computes it;
     # SQLite test runs fall back to the alphabetical order below.
@@ -232,7 +228,17 @@ def list_vendors(
 
     recommended_ids: list[int] = []
 
-    if sort == "recommended" and current_user is not None:
+    # A typed query is a general search: never restrict its results to the
+    # user's personalized recommendation set, and never spend a rate-limited
+    # embedding call on every keystroke. Recommendations apply only to the
+    # unfiltered feed (empty query).
+    has_search_query = bool((q or "").strip())
+
+    if (
+        sort == "recommended"
+        and current_user is not None
+        and not has_search_query
+    ):
         preferences = session.scalar(
             select(UserFoodPreferences).where(
                 UserFoodPreferences.user_id == current_user.id
@@ -256,7 +262,14 @@ def list_vendors(
                     for recommendation in recommendations
                 ]
             except (RuntimeError, ValueError):
+                # Personalization is best-effort: if the recommender is
+                # unavailable, fall back to the plain catalog ordering rather
+                # than failing the whole feed.
                 recommended_ids = []
+
+    total = session.scalar(
+        select(func.count(Vendor.id)).where(*filters)
+    )
 
     review_count = func.count(Review.id).label("review_count")
     distance_column = (

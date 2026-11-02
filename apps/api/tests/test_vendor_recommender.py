@@ -20,6 +20,12 @@ class FakeEmbedder:
         return [self.vectors[text] for text in texts]
 
 
+class CachingFakeEmbedder(FakeEmbedder):
+    # A real embedder (GoogleEmbedder) exposes cache_key, which enables the
+    # content-addressed preference vector cache.
+    cache_key = ("test", "vendor-recommender-cache", 2)
+
+
 def _preferences(
     *,
     dietary_restrictions: list[str] | None = None,
@@ -145,6 +151,39 @@ def test_empty_preferences_have_no_semantic_vector() -> None:
 
     assert vector is None
     assert embedder.calls == []
+
+
+def test_preference_vector_is_cached_by_preference_content() -> None:
+    embedder = CachingFakeEmbedder(
+        {
+            "Likes: cache probe spicy": [1.0, 0.0],
+            "Likes: cache probe sweet": [0.0, 1.0],
+        }
+    )
+    recommender = VendorRecommender(session=None, embedder=embedder)
+
+    first = recommender._build_preference_vector(
+        _preferences(likes=["cache probe spicy"])
+    )
+    second = recommender._build_preference_vector(
+        _preferences(likes=["cache probe spicy"])
+    )
+
+    assert first == pytest.approx([1.0, 0.0])
+    assert second == pytest.approx([1.0, 0.0])
+    # Identical preference content is embedded once.
+    assert embedder.calls == [["Likes: cache probe spicy"]]
+
+    changed = recommender._build_preference_vector(
+        _preferences(likes=["cache probe sweet"])
+    )
+
+    assert changed == pytest.approx([0.0, 1.0])
+    # Changed content misses the cache and re-embeds.
+    assert embedder.calls == [
+        ["Likes: cache probe spicy"],
+        ["Likes: cache probe sweet"],
+    ]
 
 
 def test_recommendation_limit_is_six() -> None:
