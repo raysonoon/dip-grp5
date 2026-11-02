@@ -292,6 +292,7 @@ VENDOR_DISHES_OVERRIDES = {
     "V054": "Coffee",  # Venture Drive Coffee at Wee Cho Yaw Plaza
     "V055": "Fried Rice",  # Wok Express
     "V056": "Duck Rice",  # Yew Kee Specialities
+    "V057": "Pizza, Burger, Fries, Beer",  # Paolo Sports Bar
 }
 
 def _normalize_vendor_category(
