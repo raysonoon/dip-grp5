@@ -137,7 +137,7 @@ export default function SignInPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             {mode === "signin"
               ? "Sign in to access your NTUmmy account"
-              : "Sign up to start sharing your favorite campus stalls"}
+              : "Sign up to discover and share your favourite eats"}
           </p>
 
           {/* Mode Switcher */}
