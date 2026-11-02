@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 export default function NotFoundPage() {
+  useDocumentTitle("Page Not Found");
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
       <div className="text-center max-w-md">
