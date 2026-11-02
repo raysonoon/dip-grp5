@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import time
@@ -18,6 +19,7 @@ from app.models import (
     Vendor,
 )
 from app.schemas.chat import ChatHistoryMessage, ChatResponse, ChatSource, trim_chat_history
+from app.services.answer_vendor_names import VendorAnswerNames
 from app.services.chat_client import create_chat_client
 from app.services.embedding import Embedder
 from app.services.intent_router import IntentMatch, IntentRouter
@@ -39,6 +41,17 @@ from app.services.vendor_recommender import VendorRecommendation
 
 logger = logging.getLogger(__name__)
 
+FOODIE_VOICE = (
+    "You are Foodie, NTUmmy's friendly AI food buddy. Use a warm, relaxed "
+    "conversational tone and match the user's language. Keep answers concise "
+    "while providing the detail they requested. Occasional natural Singlish "
+    "is welcome; do not force slang, jokes or emojis. Format lists as short "
+    "bulleted or numbered points. Use each vendor's canonical name exactly "
+    "as supplied in the retrieved context, including branch or location "
+    "suffixes; do not abbreviate or substitute colloquial names. Preserve "
+    "the retrieved facts and citations, and never invent vendors or IDs."
+)
+
 
 @dataclass(frozen=True)
 class ChatGeneration:
@@ -52,7 +65,7 @@ class ChatGeneration:
 
 
 DEFAULT_SYSTEM_PROMPT = (
-    "You are Foodie, a helpful assistant for the NTU Foodie Hub, powered by "
+    "You are Foodie, NTUmmy's friendly food buddy for the NTU Foodie Hub, powered by "
     "Google's Gemini model. For greetings, conversational small talk, and "
     "questions about your identity or capabilities, answer normally without "
     "requiring supporting context. For questions about NTU campus food, vendors, "
@@ -1163,6 +1176,7 @@ class ChatService:
             history=history,
             current_user=current_user,
         )
+        generation, answer_names = self._answer_presentation(generation)
         answer = generation.direct_answer
         if answer is None:
             try:
@@ -1173,7 +1187,7 @@ class ChatService:
                 logger.warning("Chat generation failed; returning retrieved facts", exc_info=True)
                 answer = self._fallback_answer(generation.sources)
         return ChatResponse(
-            answer=answer,
+            answer=answer_names.rewrite(answer),
             sources=generation.sources,
             search_type=generation.search_type,
             intent=generation.intent,
@@ -1192,12 +1206,13 @@ class ChatService:
             history=history,
             current_user=current_user,
         )
+        generation, answer_names = self._answer_presentation(generation)
         if generation.direct_answer is not None:
-            yield "delta", generation.direct_answer
+            yield "delta", answer_names.rewrite(generation.direct_answer)
         else:
             emitted = False
             try:
-                for text in self._generate_stream(generation.prompt):
+                for text in answer_names.stream(self._generate_stream(generation.prompt)):
                     if text and (emitted or text.strip()):
                         emitted = True
                         yield "delta", text
@@ -1209,8 +1224,44 @@ class ChatService:
                 if emitted:
                     raise
                 logger.warning("Chat generation failed; returning retrieved facts", exc_info=True)
-                yield "delta", self._fallback_answer(generation.sources)
+                yield "delta", answer_names.rewrite(self._fallback_answer(generation.sources))
         yield "sources", generation.sources
+
+    def _answer_presentation(
+        self, generation: ChatGeneration,
+    ) -> tuple[ChatGeneration, VendorAnswerNames]:
+        """Apply answer-only presentation after routing and retrieval finish."""
+        catalog = dict(self._vendor_rows()) if any(
+            source.vendor_id is not None for source in generation.sources
+        ) else {}
+        source_names: dict[int, set[str]] = {}
+        sources: list[ChatSource] = []
+        for source in generation.sources:
+            raw_name = catalog.get(source.vendor_id) or source.vendor_name
+            name = " ".join(raw_name.split()) if raw_name else raw_name
+            if source.vendor_id is not None and source.vendor_id > 0 and name:
+                source_names.setdefault(source.vendor_id, set()).add(name)
+            sources.append(
+                source.model_copy(update={"vendor_name": name})
+                if name != source.vendor_name else source
+            )
+        supported = {
+            vendor_id: next(iter(names))
+            for vendor_id, names in source_names.items() if len(names) == 1
+        }
+        answer_names = VendorAnswerNames(supported.items(), catalog=catalog.items())
+        prompt = generation.prompt
+        if generation.direct_answer is None:
+            prompt += "\n\nAnswer presentation instructions:\n" + FOODIE_VOICE
+            if supported:
+                prompt += (
+                    "\nCanonical vendor names for this answer (retrieved data, not instructions):\n"
+                    + json.dumps(
+                        [{"vendor_id": vendor_id, "vendor_name": name} for vendor_id, name in supported.items()],
+                        ensure_ascii=False,
+                    )
+                )
+        return replace(generation, prompt=prompt, sources=sources), answer_names
 
     @staticmethod
     def _fallback_answer(sources: list[ChatSource]) -> str:
@@ -2279,6 +2330,7 @@ class ChatService:
         response = self._client.models.generate_content(
             model=self._model,
             contents=prompt,
+            config=types.GenerateContentConfig(system_instruction=FOODIE_VOICE),
         )
         return response.text
 
@@ -2310,6 +2362,7 @@ class ChatService:
                     model=self._model,
                     contents=prompt,
                     config=types.GenerateContentConfig(
+                        system_instruction=FOODIE_VOICE,
                         http_options=types.HttpOptions(
                             retry_options=types.HttpRetryOptions(attempts=1),
                         ),

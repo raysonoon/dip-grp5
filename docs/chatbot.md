@@ -29,6 +29,32 @@ The knowledge base is **unified**: internal reviews and external data
 
 ## Architecture
 
+### Answer presentation and vendor links
+
+Foodie uses concise, friendly replies, occasional natural Singlish, and bulleted
+or numbered lists. These presentation instructions do not change query rewriting
+or retrieval and do not provide fixed recommendations.
+
+Before generation, source vendor IDs are resolved to current database names,
+with display whitespace normalized. `answer_vendor_names.VendorAnswerNames`
+normalizes shortened names using the supported source vendors, the live catalog,
+and shared alias metadata. Ambiguous or unsupported names stay unchanged.
+Markdown formatting, code, and link destinations are preserved. Streaming holds
+possible name prefixes across chunks while emitting ordinary text through the
+existing `delta`/`sources` protocol.
+
+The web renderer links names only to valid vendor IDs in the response sources.
+Names shared by multiple vendor IDs remain plain text. Foodie uses the existing
+NTUmmy SVG mascots, with a clickable greeting and reduced-motion support.
+
+### Discover wheel
+
+Discover's results header offers a wheel containing the currently visible
+recommendations. Show more expands the next wheel's pool. Each opening creates
+a fresh snapshot; removing a wheel candidate does not alter Discover results.
+The wheel reuses the chat wheel and supports guests. The chat UI does not include
+a Food Picker.
+
 ![RAG Chatbot](../diagrams/chatbot_rag.jpg)
 
 ## Technology choices

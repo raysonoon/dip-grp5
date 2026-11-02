@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, DollarSign, Leaf, MapPin, SlidersHorizontal, Sparkles, Star, Store, Utensils } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, DollarSign, Leaf, MapPin, RotateCw, SlidersHorizontal, Sparkles, Star, Store, Utensils } from "lucide-react";
 import { apiUrl } from "../api/client";
 import { fetchVendors, type parseVendor } from "../api/vendors";
 import { guestDiscoveryOptions, recommendGuestVendors } from "../lib/guestDiscovery.js";
@@ -8,6 +8,8 @@ import { PRICE_BAND_OPTIONS, priceRangeValues } from "../lib/priceRange.js";
 import MultiSelect from "../components/MultiSelect";
 import { formatDistance } from "../lib/vendorRanking.js";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import VendorWheel from "../components/VendorWheel";
+import { createWheelSession, visibleResultsForWheel, wheelSessionReducer, type WheelSession } from "../lib/vendorWheel.js";
 
 type Vendor = ReturnType<typeof parseVendor>;
 type Recommendation = Vendor & {
@@ -35,6 +37,7 @@ export default function GuestDiscoverPage() {
   const [priceBands, setPriceBands] = useState<string[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [wheelSession, setWheelSession] = useState<WheelSession | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const locationRequestRef = useRef(0);
 
@@ -80,7 +83,7 @@ export default function GuestDiscoverPage() {
     const controller = new AbortController();
     setLoading(true);
     setError("");
-    fetchVendors("", controller.signal)
+    fetchVendors("", controller.signal, { auth: false })
       .then((catalog) => { if (!controller.signal.aborted) setVendors(catalog); })
       .catch((cause) => {
         if (!controller.signal.aborted) {
@@ -107,6 +110,17 @@ export default function GuestDiscoverPage() {
     : geoStatus === "denied" ? "Location access denied — pick a named area instead."
     : geoStatus === "unavailable" ? "Couldn't find your location — pick a named area instead."
     : "";
+
+  function openWheel() {
+    const visibleVendors = visibleResultsForWheel(recommendations, visibleCount);
+    if (visibleVendors.length) setWheelSession(createWheelSession(visibleVendors));
+  }
+
+  function removeWheelVendor(vendorId: number) {
+    setWheelSession((current) => current
+      ? wheelSessionReducer(current, { type: "remove", vendorId })
+      : current);
+  }
 
   return (
     <div className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-6 sm:py-14">
@@ -183,7 +197,10 @@ export default function GuestDiscoverPage() {
               <p role="status" className="mt-3 text-xs leading-relaxed text-muted-foreground">{recommendations.length} {recommendations.length === 1 ? "place" : "places"} to explore. {hasRankingPreferences ? "Food preferences and proximity first, with other places included." : "Best rated first."}</p>
               {hasDistancePreference && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Nearest from {distanceReferences}. Approximate straight-line distances; named areas use their centres.</p>}
             </div>
-            <button type="button" onClick={() => setShowResults(false)} className="flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-muted"><SlidersHorizontal size={15} aria-hidden="true" /> Change preferences</button>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <button type="button" onClick={openWheel} disabled={recommendations.length === 0} aria-haspopup="dialog" className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"><RotateCw size={15} aria-hidden="true" /> Spin the wheel</button>
+              <button type="button" onClick={() => setShowResults(false)} className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-muted"><SlidersHorizontal size={15} aria-hidden="true" /> Change preferences</button>
+            </div>
           </div>
 
           {recommendations.length === 0 ? (
@@ -221,6 +238,7 @@ export default function GuestDiscoverPage() {
           )}
         </section>
       )}
+      {wheelSession && <VendorWheel context="discover" vendors={wheelSession.vendors} onRemove={removeWheelVendor} onClose={() => setWheelSession(null)} />}
     </div>
   );
 }

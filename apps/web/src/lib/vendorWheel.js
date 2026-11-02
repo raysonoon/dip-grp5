@@ -13,9 +13,28 @@ export function wheelVendorLabel(name, count) {
   return characters.length > limit ? `${characters.slice(0, limit - 3).join("")}...` : name;
 }
 
-/** @returns {WheelSession} */
-export function createWheelSession() {
-  return { vendors: [], excludedIds: [] };
+/** @param {WheelVendor[]} [vendors] @returns {WheelSession} */
+export function createWheelSession(vendors = []) {
+  return { vendors: vendors.map((vendor) => ({ ...vendor })), excludedIds: [] };
+}
+
+/**
+ * Snapshot only the ranked results currently shown in Discover. Catalog detail
+ * loading may enrich these records later, but must never enlarge the pool.
+ * @param {Array<{ id: number, name: string, location?: string | null,
+ *   category?: string | null, average_rating?: number | null,
+ *   average_google_rating?: number | null }>} results
+ * @param {number} visibleCount
+ * @returns {WheelVendor[]}
+ */
+export function visibleResultsForWheel(results, visibleCount) {
+  return results.slice(0, visibleCount).map((vendor) => ({
+    id: vendor.id,
+    name: vendor.name,
+    location: text(vendor.location),
+    category: text(vendor.category),
+    rating: rating(vendor.average_rating) ?? rating(vendor.average_google_rating),
+  }));
 }
 
 /**
