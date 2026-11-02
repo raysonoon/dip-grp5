@@ -76,7 +76,7 @@ def save_preferences(client, headers, **changes):
         ("Halal", {"C Halal", "D Both"}),
     ],
 )
-def test_saved_dietary_preferences_filter_personalized_results(
+def test_saved_dietary_preferences_rank_matches_first(
     client, personalized_catalog, restriction, names,
 ):
     headers = personalized_catalog
@@ -88,10 +88,21 @@ def test_saved_dietary_preferences_filter_personalized_results(
     response = client.get("/vendors?sort=recommended&limit=3", headers=headers)
     assert response.status_code == 200
     page = response.json()
-    assert {item["name"] for item in page["items"]} == names
-    assert all(item["recommended"] for item in page["items"])
-    assert page["total"] == len(names)
-    assert client.get("/vendors?offset=2", headers=headers).json()["items"] == []
+    # All vendors are still returned; dietary matches are ranked first.
+    assert page["total"] == 5
+    assert {
+        item["name"] for item in page["items"][: len(names)]
+    } == names
+    assert all(
+        item["recommended"] for item in page["items"][: len(names)]
+    )
+    assert not any(
+        item["recommended"] for item in page["items"][len(names):]
+    )
+    remaining = client.get("/vendors?offset=2", headers=headers).json()
+    assert remaining["total"] == 5
+    assert len(remaining["items"]) == 3
+    assert all(not item["recommended"] for item in remaining["items"])
 
 
 def test_cuisine_location_and_dietary_preferences_combine(client, personalized_catalog):
@@ -101,20 +112,28 @@ def test_cuisine_location_and_dietary_preferences_combine(client, personalized_c
         cuisines=["Malay"], locations=["North Spine"],
     )
     page = client.get("/vendors", headers=personalized_catalog).json()
-    assert [item["name"] for item in page["items"]] == ["D Both"]
+    assert [item["name"] for item in page["items"]] == [
+        "D Both", "A Meat", "B Vegetarian", "C Halal", "E Unknown",
+    ]
     assert page["items"][0]["recommended"] is True
-    assert page["total"] == 1
+    assert all(not item["recommended"] for item in page["items"][1:])
+    assert page["total"] == 5
 
 
-def test_zero_personalized_matches_return_empty_page(client, personalized_catalog):
+def test_zero_personalized_matches_fall_back_to_full_catalog(client, personalized_catalog):
     save_preferences(client, personalized_catalog, cuisines=["No matching cuisine"])
     response = client.get("/vendors?limit=3", headers=personalized_catalog)
     assert response.status_code == 200
-    assert response.json() == {"items": [], "total": 0, "limit": 3, "offset": 0}
+    page = response.json()
+    assert page["total"] == 5
+    assert [item["name"] for item in page["items"]] == [
+        "A Meat", "B Vegetarian", "C Halal",
+    ]
+    assert all(not item["recommended"] for item in page["items"])
 
 
 @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
-def test_personalization_failure_is_not_silently_catalog(
+def test_personalization_failure_falls_back_to_catalog(
     client, personalized_catalog, monkeypatch, error_type,
 ):
     save_preferences(client, personalized_catalog)
@@ -124,8 +143,10 @@ def test_personalization_failure_is_not_silently_catalog(
 
     monkeypatch.setattr("app.services.vendor_recommender.VendorRecommender.recommend", fail)
     response = client.get("/vendors", headers=personalized_catalog)
-    assert response.status_code == 503
-    assert response.json()["detail"] == "Personalized recommendations are temporarily unavailable."
+    assert response.status_code == 200
+    page = response.json()
+    assert page["total"] == 5
+    assert all(not item["recommended"] for item in page["items"])
 
 
 @pytest.mark.parametrize("status", [None, "skipped"])
