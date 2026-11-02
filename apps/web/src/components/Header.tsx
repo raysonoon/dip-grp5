@@ -192,7 +192,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
       try {
         const page = await fetchVendorPage({
           q: query,
-          limit: 4,
+          limit: 3,
           signal: controller.signal,
         });
         if (!controller.signal.aborted) {
@@ -263,7 +263,8 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
   const handleViewMore = () => {
     setDropdownOpen(false);
     setMobileSearchOpen(false);
-    navigate("/food");
+    const query = searchQuery.trim();
+    navigate(query ? `/food?q=${encodeURIComponent(query)}` : "/food");
   };
 
   const toggleMobileMenu = () => {
