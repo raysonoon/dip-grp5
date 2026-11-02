@@ -22,7 +22,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 app = FastAPI(
-    title="NTU Foodie Hub API",
+    title="NTUmmy API",
     version="0.1.0",
     lifespan=lifespan,
 )
