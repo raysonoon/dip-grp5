@@ -1,5 +1,7 @@
 import math
+from collections import OrderedDict
 from dataclasses import dataclass
+from threading import Lock
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
@@ -11,6 +13,34 @@ from app.services.embedding import Embedder
 
 COSINE_RELEVANCE_FLOOR = 0.5
 MAX_RECOMMENDATIONS = 6
+
+_PREFERENCE_VECTOR_CACHE_LIMIT = 256
+_preference_vector_cache: "OrderedDict[tuple, list[float] | None]" = OrderedDict()
+_preference_vector_cache_lock = Lock()
+
+
+def _preference_vector_cache_key(
+    embedder: Embedder,
+    preferences: UserFoodPreferences,
+) -> tuple | None:
+    """Return a content-addressed cache key, or None when uncacheable.
+
+    Embedders without a ``cache_key`` (e.g. test doubles) are not cached, so
+    unrelated instances can never accidentally share an entry.
+    """
+    embedder_key = getattr(embedder, "cache_key", None)
+    if embedder_key is None:
+        return None
+
+    return (
+        embedder_key,
+        tuple(sorted(preferences.likes or [])),
+        tuple(sorted(preferences.lifestyle or [])),
+        tuple(sorted(preferences.dislikes or [])),
+        tuple(sorted(preferences.cuisines or [])),
+        tuple(sorted(preferences.locations or [])),
+        tuple(sorted(preferences.dietary_restrictions or [])),
+    )
 
 
 @dataclass
@@ -168,6 +198,39 @@ class VendorRecommender:
         return recommendations[:limit]
 
     def _build_preference_vector(
+        self,
+        preferences: UserFoodPreferences,
+    ) -> list[float] | None:
+        """Return the preference query vector, reusing cached work.
+
+        The embedding call is the expensive, rate-limited step, so a vector is
+        reused while the preference content and embedder stay the same.
+        """
+        cache_key = _preference_vector_cache_key(self._embedder, preferences)
+
+        if cache_key is not None:
+            with _preference_vector_cache_lock:
+                if cache_key in _preference_vector_cache:
+                    _preference_vector_cache.move_to_end(cache_key)
+                    return _preference_vector_cache[cache_key]
+
+        # Compute outside the lock so a slow embedding call does not block
+        # other users. Concurrent misses may duplicate the call, which is safe.
+        vector = self._compute_preference_vector(preferences)
+
+        if cache_key is not None:
+            with _preference_vector_cache_lock:
+                _preference_vector_cache[cache_key] = vector
+                _preference_vector_cache.move_to_end(cache_key)
+                while (
+                    len(_preference_vector_cache)
+                    > _PREFERENCE_VECTOR_CACHE_LIMIT
+                ):
+                    _preference_vector_cache.popitem(last=False)
+
+        return vector
+
+    def _compute_preference_vector(
         self,
         preferences: UserFoodPreferences,
     ) -> list[float] | None:
