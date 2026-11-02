@@ -18,6 +18,7 @@ import { fetchMyReviews } from "../api/account.js";
 import { fetchVendorById } from "../api/vendors";
 import VendorFavouriteButton from "../components/VendorFavouriteButton";
 import VendorLocationMap from "../components/VendorLocationMap";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -193,6 +194,8 @@ function VendorDetails() {
   const isValidVendorId = Number.isInteger(numericVendorId) && numericVendorId > 0;
 
   const [vendor, setVendor] = useState(null);
+  // Vendor name once loaded; plain site title while loading or not found.
+  useDocumentTitle(vendor?.name);
   const [vendorError, setVendorError] = useState("");
   const [isVendorLoading, setIsVendorLoading] = useState(isValidVendorId);
 

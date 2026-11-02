@@ -7,6 +7,7 @@ import { guestDiscoveryOptions, recommendGuestVendors } from "../lib/guestDiscov
 import { PRICE_BAND_OPTIONS, priceRangeValues } from "../lib/priceRange.js";
 import MultiSelect from "../components/MultiSelect";
 import { formatDistance } from "../lib/vendorRanking.js";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 type Vendor = ReturnType<typeof parseVendor>;
 type Recommendation = Vendor & {
@@ -19,6 +20,7 @@ type Recommendation = Vendor & {
 const PAGE_SIZE = 12;
 
 export default function GuestDiscoverPage() {
+  useDocumentTitle("Discover");
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

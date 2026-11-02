@@ -87,7 +87,7 @@ SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT INT TERM
 
 api_is_ready() {
-  "$PYTHON_EXE" -c "import json,sys,urllib.request; d=json.load(urllib.request.urlopen('$OPENAPI_URL', timeout=2)); sys.exit(0 if d.get('info',{}).get('title')=='NTU Foodie Hub API' else 1)" >/dev/null 2>&1
+  "$PYTHON_EXE" -c "import json,sys,urllib.request; d=json.load(urllib.request.urlopen('$OPENAPI_URL', timeout=2)); sys.exit(0 if d.get('info',{}).get('title')=='NTUmmy API' else 1)" >/dev/null 2>&1
 }
 
 ready=0

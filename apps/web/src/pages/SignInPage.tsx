@@ -2,10 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Mail, Lock, AlertCircle, ArrowLeft } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 type AuthMode = "signin" | "signup";
 
 export default function SignInPage() {
+  useDocumentTitle("Sign In");
   const navigate = useNavigate();
   const location = useLocation();
   const [mode, setMode] = useState<AuthMode>("signin");
@@ -135,7 +137,7 @@ export default function SignInPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             {mode === "signin"
               ? "Sign in to access your NTUmmy account"
-              : "Sign up to start sharing your favorite campus stalls"}
+              : "Sign up to discover and share your favourite eats"}
           </p>
 
           {/* Mode Switcher */}
