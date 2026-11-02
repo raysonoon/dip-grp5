@@ -281,8 +281,8 @@ def list_vendors(
 
     if sort == "reviews":
         statement = statement.order_by(
-            *search_plan.order_by,
             review_count.desc(),
+            *search_plan.order_by,
             *nearby_order,
             Vendor.created_at.desc(),
             Vendor.id.desc(),
@@ -294,27 +294,25 @@ def list_vendors(
             Vendor.average_google_rating,
         )
         statement = statement.order_by(
-            *search_plan.order_by,
             rating.desc().nullslast(),
+            *search_plan.order_by,
             *nearby_order,
             Vendor.created_at.desc(),
             Vendor.id.desc(),
         )
 
     elif sort == "nearby":
-        # Pure distance. Without a usable position (no lat/lng, or a database
-        # without PostGIS) this degrades silently to alphabetical A-Z.
         statement = statement.order_by(
-            *search_plan.order_by,
             *nearby_order,
+            *search_plan.order_by,
             func.lower(Vendor.name).asc(),
             Vendor.id.asc(),
         )
 
     elif sort == "alphabetical":
         statement = statement.order_by(
-            *search_plan.order_by,
             func.lower(Vendor.name).asc(),
+            *search_plan.order_by,
             Vendor.id.asc(),
         )
 

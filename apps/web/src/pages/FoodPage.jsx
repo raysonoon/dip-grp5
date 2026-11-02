@@ -237,6 +237,9 @@ export default function FoodPage() {
   const [userCoords, setUserCoords] = useState(undefined);
   // "checking" -> "prompt" | "requesting" | "granted" | "denied" | "unavailable"
   const [geoStatus, setGeoStatus] = useState("checking");
+  // Remembers that "Nearby" was picked while the permission check was still in
+  // flight, so the on-load effect can prompt once it resolves to "prompt".
+  const nearbyRequestedRef = useRef(false);
 
   const [locations, setLocations] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -325,29 +328,36 @@ export default function FoodPage() {
       .then((permission) => {
         if (cancelled) return;
         if (permission.state === "granted") {
+          nearbyRequestedRef.current = false;
           readPosition();
-        } else {
-          setUserCoords(null);
-          setGeoStatus(permission.state === "denied" ? "denied" : "prompt");
+          return;
+        }
+
+        const denied = permission.state === "denied";
+        setUserCoords(null);
+        setGeoStatus(denied ? "denied" : "prompt");
+
+        // "Nearby" was chosen while the check was in flight; if it resolved to
+        // "prompt", prompt for permission now.
+        if (!denied && nearbyRequestedRef.current) {
+          nearbyRequestedRef.current = false;
+          readPosition();
         }
       })
       .catch(() => {
         if (cancelled) return;
         setUserCoords(null);
         setGeoStatus("prompt");
+        if (nearbyRequestedRef.current) {
+          nearbyRequestedRef.current = false;
+          readPosition();
+        }
       });
 
     return () => {
       cancelled = true;
     };
   }, [readPosition]);
-
-  // "Nearby" without a usable location falls back to A-Z, silently.
-  useEffect(() => {
-    if (sort === "nearby" && (geoStatus === "denied" || geoStatus === "unavailable")) {
-      setSort("alphabetical");
-    }
-  }, [sort, geoStatus]);
 
   // Load filter dropdown values once
   useEffect(() => {
@@ -471,11 +481,14 @@ export default function FoodPage() {
   const handleSortChange = (value) => {
     setOffset(0);
     setSort(value);
-    // First time "Nearby" is chosen: ask for permission. A granted permission
-    // is reused (coords already known); a denial is never re-asked and the
-    // effect above switches to A-Z instead.
-    if (value === "nearby" && geoStatus === "prompt") {
-      readPosition();
+    if (value === "nearby") {
+      if (geoStatus === "prompt") {
+        readPosition();
+      } else if (geoStatus === "checking") {
+        nearbyRequestedRef.current = true;
+      }
+    } else {
+      nearbyRequestedRef.current = false;
     }
   };
 
@@ -603,6 +616,20 @@ export default function FoodPage() {
           </button>
         )}
       </div>
+
+      {sort === "nearby" &&
+        (geoStatus === "denied" || geoStatus === "unavailable") && (
+          <p
+            role="status"
+            className="mb-6 -mt-3 flex items-center gap-2 text-sm text-muted-foreground"
+          >
+            <MapPin className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+            <span>
+              Location access denied or unavailable — showing vendors in
+              alphabetical order.
+            </span>
+          </p>
+        )}
 
       <FilterDialog
         open={isFilterOpen}
