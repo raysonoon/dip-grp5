@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer } from 'react-leaflet';
-import { Link } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
 import { fetchVendors } from '../api/vendors';
 import VendorClusterLayer from '../components/VendorClusterLayer';
@@ -55,12 +54,6 @@ export default function VendorMap() {
           <VendorClusterLayer vendors={mappedVendors} />
           <LocationLegend vendors={mappedVendors} />
         </MapContainer>
-      </div>
-
-      <div className="mt-2 text-right">
-        <Link to="/map" className="text-sm font-semibold text-primary hover:underline">
-          View the full map →
-        </Link>
       </div>
     </div>
   );

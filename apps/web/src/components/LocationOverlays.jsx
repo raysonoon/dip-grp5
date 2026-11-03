@@ -30,7 +30,7 @@ export function LocationLegend({ vendors }) {
   return (
     <div
       ref={ref}
-      className="absolute bottom-6 left-2 z-[1000] max-h-48 overflow-y-auto rounded-lg bg-white/90 p-2 text-xs shadow"
+      className="absolute bottom-6 left-2 z-[1000] max-h-48 overflow-y-auto rounded-lg bg-white/90 p-2 text-xs text-gray-900 shadow"
     >
       {boundaries.map((b) => (
         <div key={b.location} className="flex items-center gap-2 py-0.5">
