@@ -25,6 +25,7 @@ import {
   Clock,
 } from "lucide-react";
 import { rankTrendingVendors } from "./lib/trendingVendors";
+import { useDocumentTitle } from "./hooks/useDocumentTitle";
 
 const BODY_FONT = "'Plus Jakarta Sans', sans-serif";
 
@@ -93,9 +94,7 @@ function StarRow({
 }
 
 function HomePage() {
-  const { session } = useAuth();
-  const userId = session?.user?.id ?? null;
-  const { openChat } = useChat();
+  useDocumentTitle("Home");
   const [reviewsPaused, setReviewsPaused] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);

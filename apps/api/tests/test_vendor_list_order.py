@@ -89,7 +89,7 @@ def test_vendor_list_rejects_out_of_range_coordinates(client) -> None:
     assert client.get("/vendors", params={"lat": 1.34, "lng": 181}).status_code == 422
 
 
-def test_recommended_vendors_come_first_then_alphabetical(
+def test_completed_preferences_order_recommended_first_then_alphabetical(
     client,
     session: Session,
     monkeypatch,
@@ -162,3 +162,4 @@ def test_recommended_vendors_come_first_then_alphabetical(
         False,
         False,
     ]
+    assert response.json()["total"] == 4
