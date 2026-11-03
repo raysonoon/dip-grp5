@@ -19,14 +19,13 @@ import MapPage from "./pages/MapPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import AccountPage from "./pages/AccountPage";
 import {
-  Star,
   MapPin,
   ChevronRight,
   Clock,
 } from "lucide-react";
+import StarRow from "./components/StarRow";
+import { cn } from "./lib/cn";
 import { rankTrendingVendors } from "./lib/trendingVendors";
-
-const BODY_FONT = "'Plus Jakarta Sans', sans-serif";
 
 type Review = {
   id: number;
@@ -62,39 +61,7 @@ type TrendingVendor = {
   topReview: string | null;
 };
 
-function StarRow({
-  rating,
-  size = "sm",
-}: {
-  rating: number;
-  size?: "sm" | "md";
-}) {
-  const starClass = size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4";
-
-  return (
-    <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((i) => {
-        const fill = Math.max(0, Math.min(1, rating - (i - 1)));
-        return (
-          <span key={i} className="relative inline-block">
-            <Star className={`${starClass} fill-transparent text-muted`} />
-            <span
-              className="absolute inset-0 overflow-hidden"
-              style={{ width: `${fill * 100}%` }}
-              aria-hidden="true"
-            >
-              <Star className={`${starClass} fill-primary text-primary`} />
-            </span>
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
 function HomePage() {
-  const { session } = useAuth();
-  const userId = session?.user?.id ?? null;
   const { openChat } = useChat();
   const [reviewsPaused, setReviewsPaused] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -155,7 +122,7 @@ function HomePage() {
           return;
         }
 
-        const ranked = rankTrendingVendors(vendors, 2);
+        const ranked = rankTrendingVendors(vendors, 4);
 
         const withTopReviews = await Promise.all(
           ranked.map(async (vendor) => {
@@ -181,330 +148,277 @@ function HomePage() {
   }, []);
 
   return (
-    <div
-      className="min-h-screen bg-[#FAF6F0] text-[#5C4033] overflow-x-hidden"
-      style={{ fontFamily: BODY_FONT }}
-    >
+    <div className="min-h-screen overflow-x-hidden bg-cream text-ink">
       {/* ── NAV ──────────────────────────────────────── */}
       <Header fixed />
 
-      {/* ── INTRO BANNER BEFORE HERO (Warm Pastel Gradient with Interactive Mascot & Red Speech Bubble) ── */}
-<section className="relative bg-[#FAF6F0] pt-24 pb-12 overflow-hidden border-b border-amber-900/10">
-  
-  {/* Organic Warm Pastel Gradient Background Blob/Container */}
-  <div className="absolute inset-x-4 top-20 bottom-4 sm:inset-x-8 sm:top-24 sm:bottom-6 bg-gradient-to-tr from-[#FFF3E0] via-[#FDE8E2] to-[#FCE4EC] rounded-[3rem] border border-rose-200/60 shadow-xl shadow-rose-900/5 pointer-events-none" />
-
-  <div className="relative z-10 max-w-[1400px] mx-auto px-8 sm:px-12 py-10">
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center min-h-[380px]">
-      
-      {/* Left Column (6 Cols): Editorial Header & Intro Copy */}
-      <div className="lg:col-span-6 space-y-6 text-center lg:text-left">
-        <div>
-          <span className="inline-block px-4 py-1.5 rounded-full bg-rose-500/10 text-rose-800 text-xs font-bold uppercase tracking-wider mb-4 border border-rose-500/20 shadow-sm">
-            Meet Your Campus Guide
-          </span>
-          
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold font-display leading-[1.15] text-[#4A3328] tracking-tight">
-            Welcome to <br />
-            <span className="text-rose-700 italic font-serif font-normal">
-              NTUmmy!
-            </span>
-          </h1>
+      {/* ── HERO ─────────────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden border-b border-line-warm bg-cream pb-12 pt-24 sm:pb-16 lg:pb-20">
+        <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+          <div className="absolute -left-40 top-10 h-[28rem] w-[28rem] rounded-full bg-rose-200/40 blur-3xl" />
+          <div className="absolute -right-40 bottom-0 h-[30rem] w-[30rem] rounded-full bg-brand-bright/10 blur-3xl" />
         </div>
 
-        <p className="text-base sm:text-lg text-[#6E5548] leading-relaxed font-normal max-w-xl mx-auto lg:mx-0">
-          No idea what to eat in campus? We've got you covered! At NTUmmy, we help you explore food options and decide what to eat in campus.
-        </p>
+        <div className="page-container relative z-10">
+          <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-12">
+            {/* Left: editorial copy */}
+            <div className="lg:col-span-6">
+              {/* Pill + mascot */}
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="badge badge-primary">
+                  Meet your campus guide
+                </span>
 
-        <div className="pt-2">
-          <Link
-            to="/discover"
-            className="inline-flex items-center gap-3 px-8 py-4 rounded-full bg-[#B22222] text-white font-bold text-sm shadow-xl shadow-rose-900/20 hover:bg-rose-800 hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer"
-          >
-            <span>Discover More</span>
-            <ChevronRight className="w-4 h-4" />
-          </Link>
-        </div>
-      </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={openChat}
+                    aria-label="Open Foodie chatbot"
+                    title="Ask Foodie"
+                    className="group shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+                  >
+                    <img
+                      src="/ntummy_mascot.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="h-14 w-14 animate-[mascot-float_2.4s_ease-in-out_infinite] object-contain transition-transform group-hover:scale-105 group-active:scale-95 sm:h-16 sm:w-16"
+                    />
+                  </button>
 
-      {/* Right Column (6 Cols): Interactive Mascot with Red Speech Bubble */}
-      <div className="lg:col-span-6 flex justify-center items-center relative py-6">
-        
-        {/* Soft Ambient Radial Glow */}
-        <div className="absolute w-64 h-64 sm:w-80 sm:h-80 bg-rose-300/40 rounded-full blur-3xl pointer-events-none" />
-
-        {/* Interactive Mascot Container */}
-        <button
-          type="button"
-          onClick={openChat}
-          className="relative z-10 flex items-center justify-center p-4 group cursor-pointer text-left focus:outline-none"
-          aria-label="Open Foodie Chatbot"
-        >
-          {/* Red Speech Bubble */}
-          <div className="absolute -top-10 sm:-top-0 left-2 sm:-left-48 z-20 bg-[#B22222] text-white px-4 py-3 rounded-2xl shadow-xl border border-rose-900/20 max-w-[210px] sm:max-w-[240px] text-xs sm:text-sm font-medium leading-snug group-hover:scale-105 transition-transform duration-300">
-            <p>Hi! I'm Foodie, your NTU campus food guide! Click on me to have a chat!</p>
-            {/* Speech bubble tail pointing towards the mascot */}
-            <div className="absolute -bottom-1.5 right-6 w-3 h-3 rotate-45 bg-[#B22222]" />
-          </div>
-
-          {/* Mascot Image */}
-          <img
-            src="/ntummy_mascot.svg"
-            alt="Foodie - NTUmmy Mascot"
-            className="w-44 sm:w-56 lg:w-64 h-auto object-contain drop-shadow-xl group-hover:scale-105 active:scale-95 transition-transform duration-500"
-          />
-        </button>
-
-      </div>
-
-    </div>
-  </div>
-</section>
-
-
-      {/* ── HERO SECTION WITH ROSE GRADIENT CARD, EDITORIAL FRAMES & MASCOT ── */}
-      <section className="relative min-h-[85vh] flex items-center py-16 bg-[#FAF6F0] overflow-hidden border-b border-amber-900/10">
-        {/* Soft background ambient glow highlights */}
-        <div className="absolute top-10 left-[-5%] w-96 h-96 bg-rose-200/40 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-[-10%] right-[-5%] w-[450px] h-[450px] bg-rose-300/30 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 max-w-[1400px] mx-auto px-6 py-8 w-full">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-            
-            {/* Left Column (5 Cols): Main Hero Card Container with Rose-Dominant Warm Pastel Gradient */}
-            <div className="lg:col-span-5 bg-gradient-to-br from-rose-200/90 via-pink-100/80 to-amber-100/80 backdrop-blur-md p-8 sm:p-10 rounded-[2.5rem] border border-rose-300/40 shadow-xl shadow-rose-900/10">
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-rose-500/25 bg-rose-500/10 text-rose-800 text-xs font-semibold mb-6 tracking-wide shadow-sm">
-                  BUILT BY STUDENTS, FOR STUDENTS
+                  <span
+                    aria-hidden="true"
+                    className="relative hidden max-w-[220px] rounded-xl border border-line-warm bg-surface-warm px-3 py-2 text-xs font-medium leading-snug text-ink shadow-lg sm:inline-block"
+                  >
+                    Hi! I&apos;m Foodie — click me to chat!
+                    <span className="absolute -left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rotate-45 border-b border-l border-line-warm bg-surface-warm" />
+                  </span>
+                </div>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold font-display leading-[1.1] mb-6 tracking-tight text-[#4A3328]">
-                Find Your Next
-                <span className="block text-rose-700 italic font-normal mt-1">
-                  Favourite Food
-                </span>
+              {/* Speech bubble on narrow screens */}
+              <p
+                aria-hidden="true"
+                className="relative mt-3 inline-block max-w-[240px] rounded-xl border border-line-warm bg-surface-warm px-3 py-2 text-xs font-medium leading-snug text-ink shadow-sm sm:hidden"
+              >
+                Hi! I&apos;m Foodie — click me to chat!
+                <span className="absolute -top-1.5 left-8 h-3 w-3 rotate-45 border-l border-t border-line-warm bg-surface-warm" />
+              </p>
+
+              <h1 className="type-display-xl mt-5 sm:mt-6">
+                Find your next
+                <span className="type-accent mt-1 block">favourite food</span>
               </h1>
 
-              <p className="text-sm sm:text-base text-[#6E5548] mb-8 leading-relaxed font-normal">
-                Discover hidden gems across 13 canteens, cozy cafes, fast food
-                outlets and restaurants — rated, reviewed, and recommended by your
+              <p className="type-body-lg mt-5 max-w-md text-ink-soft sm:mt-6">
+                Discover hidden gems across 13 canteens, cosy cafes, fast food
+                outlets and restaurants — rated, reviewed and recommended by
                 fellow NTU foodies.
               </p>
 
-              {/* Stats Section */}
-              <div className="grid grid-cols-3 gap-4 sm:gap-6 pt-6 border-t border-rose-900/15">
+              <div className="mt-8">
+                <Link
+                  to="/discover"
+                  className="btn btn-primary btn-lg btn-pill w-full sm:w-auto"
+                >
+                  Discover Now
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </Link>
+              </div>
+
+              <dl className="mt-8 grid max-w-md grid-cols-3 gap-3 border-t border-line-warm pt-6 sm:gap-4">
                 {[
-                  ["50+", "Food Stalls"],
+                  ["50+", "Food stalls"],
                   ["2,400+", "Reviews"],
                   ["13", "Canteens"],
-                ].map(([num, label]) => (
-                  <div key={label} className="space-y-0.5">
-                    <div className="text-2xl sm:text-3xl font-extrabold text-[#4A3328] font-display tracking-tight">
-                      {num}
-                    </div>
-                    <div className="text-[11px] font-medium text-[#7D6355] uppercase tracking-wider">
-                      {label}
-                    </div>
+                ].map(([value, label]) => (
+                  <div key={label}>
+                    <dt className="type-caption text-ink-muted">{label}</dt>
+                    <dd className="type-display mt-0.5 text-xl text-ink sm:text-2xl">
+                      {value}
+                    </dd>
                   </div>
                 ))}
-              </div>
+              </dl>
             </div>
 
-            {/* Center Column (4 Cols): Two Offset Editorial Frames */}
-            <div className="lg:col-span-4 flex items-center justify-center gap-3 sm:gap-4 py-4">
-            {trendingLoading ? (
-                <div className="flex gap-4 w-full justify-center">
-                  <div className="w-1/2 h-80 rounded-3xl bg-white/50 animate-pulse border border-[#E8DCD0]" />
-                  <div className="w-1/2 h-80 rounded-3xl bg-white/50 animate-pulse border border-[#E8DCD0]" />
+            {/* Right: two featured stalls */}
+            <div className="lg:col-span-6 lg:col-start-7 lg:row-start-1">
+              {trendingLoading ? (
+                <div className="flex justify-center gap-3 sm:gap-4">
+                  <div className="h-80 w-1/2 animate-pulse rounded-3xl border border-line-warm bg-surface-warm/60" />
+                  <div className="h-80 w-1/2 animate-pulse rounded-3xl border border-line-warm bg-surface-warm/60" />
                 </div>
               ) : trendingVendors.length === 0 ? (
-                <div className="p-8 text-center text-sm text-[#7D6355] bg-[#FFFDF9] rounded-3xl border border-[#E8DCD0]">
+                <div className="type-body rounded-3xl border border-line-warm bg-surface-warm p-8 text-center text-ink-muted">
                   No stalls available right now.
                 </div>
               ) : (
-                trendingVendors.map((vendor: TrendingVendor, index: number) => {
-                  const rating = vendor.average_rating ?? vendor.average_google_rating;
+                <div className="flex justify-center gap-3 sm:gap-4">
+                  {trendingVendors.slice(0, 2).map((vendor, index) => {
+                    const rating =
+                      vendor.average_rating ?? vendor.average_google_rating;
 
-                  return (
-                    <Link
-                      key={vendor.id}
-                      to={`/vendors/${vendor.id}`}
-                      className={`group w-1/2 bg-[#FFFDF9] rounded-3xl p-3 border border-[#E8DCD0] shadow-[6px_6px_0px_0px_rgba(203,137,126,0.35)] hover:shadow-[8px_8px_0px_0px_rgba(203,137,126,0.45)] transition-all duration-300 flex flex-col ${
-                        index === 0
-                          ? "-translate-y-3 hover:-translate-y-5"
-                          : "translate-y-3 hover:translate-y-1"
-                      }`}
-                    >
-                      {/* Photo Container */}
-                      <div className="relative h-56 sm:h-64 rounded-2xl overflow-hidden mb-3 bg-amber-100">
-                        {vendor.image_url ? (
-                          <img
-                            src={apiUrl(vendor.image_url)}
-                            alt={vendor.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-xs text-[#7D6355] font-medium p-2 text-center">
-                            No image available
-                          </div>
+                    return (
+                      <Link
+                        key={vendor.id}
+                        to={`/vendors/${vendor.id}`}
+                        className={cn(
+                          "group flex w-1/2 flex-col rounded-3xl border border-line-warm bg-surface-warm p-3 transition-all duration-300",
+                          index === 0
+                            ? "-translate-y-3 hover:-translate-y-5"
+                            : "translate-y-3 hover:translate-y-1"
                         )}
-                        <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-xl bg-[#B22222] text-white text-xs font-bold shadow-md">
-                          {rating != null ? `${rating.toFixed(1)}★` : "—"}
-                        </div>
-                      </div>
-
-                      {/* Bottom Stall Info Label */}
-                      <div className="px-1 pb-1">
-                        <div className="flex items-center justify-between text-xs sm:text-sm font-bold text-[#4A3328] mb-1">
-                          <span className="truncate">{vendor.name}</span>
-                          <span className="text-[#B22222] text-sm group-hover:translate-x-0.5 transition-transform">
-                            ›
+                      >
+                        <div className="relative mb-3 aspect-[3/4] overflow-hidden rounded-2xl bg-amber-100">
+                          {vendor.image_url ? (
+                            <img
+                              src={apiUrl(vendor.image_url)}
+                              alt={vendor.name}
+                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                            />
+                          ) : (
+                            <div className="type-caption flex h-full items-center justify-center p-2 text-center text-ink-muted">
+                              No image available
+                            </div>
+                          )}
+                          <span className="badge badge-rating absolute right-2 top-2">
+                            {rating != null ? `${rating.toFixed(1)}★` : "—"}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1 text-[11px] sm:text-xs text-[#7D6355]">
-                          <MapPin className="w-3 h-3 text-amber-800 flex-shrink-0" />
-                          <span className="truncate">{vendor.location ?? "NTU Campus"}</span>
+
+                        <div className="px-1 pb-1">
+                          <div className="flex items-center justify-between gap-1 text-sm font-bold text-ink">
+                            <span className="truncate">{vendor.name}</span>
+                            <span
+                              className="text-primary transition-transform group-hover:translate-x-0.5"
+                              aria-hidden="true"
+                            >
+                              ›
+                            </span>
+                          </div>
+                          <div className="type-caption mt-1 flex items-center gap-1 text-ink-muted">
+                            <MapPin className="h-3 w-3 shrink-0 text-primary/70" />
+                            <span className="truncate">
+                              {vendor.location ?? "NTU Campus"}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    </Link>
-                  );
-                })
+                      </Link>
+                    );
+                  })}
+                </div>
               )}
             </div>
-
-            {/* Right Column (3 Cols): NTUmmy Mascot Right of Editorial Frames */}
-            <div className="lg:col-span-3 flex justify-center lg:justify-end items-center">
-              <button
-                type="button"
-                onClick={openChat}
-                className="group relative p-2 focus:outline-none cursor-pointer"
-                aria-label="Open Foodie Chatbot"
-              >
-
-              <img
-                src="/ntummy_mascot_yay.png"
-                alt="NTUmmy Mascot"
-                className="w-56 sm:w-64 lg:w-72 h-auto object-contain pointer-events-none drop-shadow-[0_20px_30px_rgba(74,51,40,0.12)] transform hover:scale-105 transition-transform duration-500 ease-out"
-              />
-             </button> 
-            </div>
-
           </div>
         </div>
       </section>
 
-            {/* ── TRENDING STALLS (Dark Red Background #f0404b) ──── */}
-      <section className="relative py-20 bg-[#f0404b] text-white border-b border-amber-900/10 overflow-hidden">
-        <div className="relative z-10 max-w-7xl mx-auto px-6">
-          <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
+      {/* ── TRENDING STALLS ──────────────────────────────────────────────── */}
+      <section className="section border-b border-line-warm bg-brand-bright text-white">
+        <div className="page-container">
+          <div className="mb-10 flex flex-col justify-between gap-4 md:flex-row md:items-end">
             <div>
-              <span className="inline-block px-3.5 py-1 rounded-full bg-amber-500/20 text-amber-200 text-xs font-bold uppercase tracking-widest mb-3 border border-amber-400/20">
-                This Week's Picks
-              </span>
-              <h2 className="text-3xl md:text-4xl font-extrabold font-display tracking-tight text-white">
-                Trending on Campus
+              <span className="badge badge-on-brand">This week&apos;s picks</span>
+              <h2 className="type-display mt-4 text-white">
+                Trending on campus
               </h2>
             </div>
             <Link
               to="/food"
-              className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-200 hover:text-white transition-colors group"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-200 transition-colors hover:text-white"
             >
-              View all stalls{" "}
-              <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              View all stalls
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </Link>
           </div>
 
           {trendingLoading ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-2 gap-8">
+            <div className="grid gap-8 sm:grid-cols-2">
               {[0, 1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className="h-80 rounded-[2rem] bg-white/10 border border-white/20 animate-pulse shadow-sm"
+                  className="h-64 animate-pulse rounded-[2rem] border border-white/20 bg-white/10 sm:h-80"
                 />
               ))}
             </div>
           ) : trendingVendors.length === 0 ? (
-            <div className="text-center py-16 bg-white/10 rounded-[2rem] border border-white/20 text-amber-100/80 shadow-sm">
+            <div className="rounded-[2rem] border border-white/20 bg-white/10 py-16 text-center text-amber-100/80">
               No stalls to show yet.
             </div>
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-2 gap-8">
+            <div className="grid gap-8 sm:grid-cols-2">
               {trendingVendors.map((vendor) => {
                 const rating =
                   vendor.average_rating ?? vendor.average_google_rating;
+
                 return (
                   <Link
                     key={vendor.id}
                     to={`/vendors/${vendor.id}`}
-                    className="group rounded-[2rem] border border-amber-900/10 bg-white overflow-hidden hover:border-amber-300 hover:-translate-y-1.5 transition-all duration-300 shadow-xl flex flex-col cursor-pointer"
+                    className="group flex cursor-pointer flex-col overflow-hidden rounded-[2rem] border border-line-warm bg-card shadow-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-primary/30"
                   >
                     <div className="relative h-48 overflow-hidden bg-muted">
                       {vendor.image_url ? (
                         <img
                           src={apiUrl(vendor.image_url)}
                           alt={`${vendor.name} dish`}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                          className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs text-[#7D6355] font-medium">
+                        <div className="type-caption flex h-full items-center justify-center text-ink-muted">
                           No image available
                         </div>
                       )}
-                      <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
+                      <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
                         {vendor.cuisine && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm">
+                          <span className="badge badge-glass">
                             {vendor.cuisine}
                           </span>
                         )}
                       </div>
-                      <div className="absolute top-3 right-3 px-2.5 py-1 rounded-xl bg-[#B22222] text-white text-xs font-bold shadow-md">
+                      <span className="badge badge-rating absolute right-3 top-3">
                         {rating != null ? `${rating.toFixed(1)}★` : "—"}
-                      </div>
+                      </span>
                       {(vendor.halal === true || vendor.vegetarian === true) && (
-                        <div className="absolute bottom-3 right-3 flex gap-1.5 flex-wrap justify-end">
+                        <div className="absolute bottom-3 right-3 flex flex-wrap justify-end gap-1.5">
                           {vendor.halal === true && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm">
-                              Halal
-                            </span>
+                            <span className="badge badge-glass">Halal</span>
                           )}
                           {vendor.vegetarian === true && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm">
-                              Vegetarian
-                            </span>
+                            <span className="badge badge-glass">Vegetarian</span>
                           )}
                         </div>
                       )}
                     </div>
 
-                    <div className="p-5 flex flex-col flex-1 justify-between bg-white">
+                    <div className="flex flex-1 flex-col justify-between bg-card p-5">
                       <div>
-                        <h3 className="font-bold text-base leading-snug mb-1.5 text-[#4A3328] group-hover:text-rose-700 transition-colors">
+                        <h3 className="text-base font-bold leading-snug text-ink transition-colors group-hover:text-primary">
                           {vendor.name}
                         </h3>
-                        <div className="flex items-center gap-1.5 text-xs text-[#7D6355] mb-3">
-                          <MapPin className="w-3.5 h-3.5 flex-shrink-0 text-amber-800" />
+                        <div className="type-caption mt-1.5 flex items-center gap-1.5 text-ink-muted">
+                          <MapPin className="h-3.5 w-3.5 shrink-0 text-primary/70" />
                           <span className="truncate">
                             {vendor.location ?? "NTU"}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between text-xs text-[#7D6355] mb-4">
+                        <div className="type-caption mt-3 flex items-center justify-between text-ink-muted">
                           <StarRow rating={rating ?? 0} />
-                          <span className="font-medium">
-                            {vendor.review_count} reviews
-                          </span>
+                          <span>{vendor.review_count} reviews</span>
                         </div>
                       </div>
 
-                      <div className="border-t border-amber-900/10 pt-3.5 mt-auto">
+                      <div className="mt-auto border-t border-line-warm pt-3.5">
                         {vendor.topReview && (
-                          <p className="text-xs text-[#7D6355] italic leading-relaxed line-clamp-2 mb-3 bg-[#FAF6F0] p-2 rounded-xl">
+                          <p className="type-caption mb-3 line-clamp-2 rounded-xl bg-cream p-2 italic leading-relaxed text-ink-muted">
                             &ldquo;{vendor.topReview}&rdquo;
                           </p>
                         )}
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-[#4A3328]">
+                          <span className="type-caption font-bold text-ink">
                             {vendor.price_range ?? "Price unlisted"}
                           </span>
-                          <span className="text-xs font-medium text-[#7D6355] bg-amber-100/50 px-2 py-0.5 rounded-md">
+                          <span className="type-caption rounded-md bg-cream-deep px-2 py-0.5 text-ink-muted">
                             {vendor.category ?? "Food"}
                           </span>
                         </div>
@@ -516,50 +430,46 @@ function HomePage() {
             </div>
           )}
 
-          <div className="mt-8 flex justify-center">
-            <Link
-              to="/food"
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
-            >
-              View more <ChevronRight className="mt-0.5 h-4 w-4" aria-hidden="true" />
+          <div className="mt-10 flex justify-center">
+            <Link to="/food" className="btn btn-inverse btn-lg btn-pill">
+              View more
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </Link>
           </div>
         </div>
       </section>
-       
-            {/* ── REVIEWS ──────────────────── */}
-      <section className="relative py-20 bg-[#F5EFE6] overflow-hidden border-b border-amber-900/10">
-        <div className="relative z-10 max-w-7xl mx-auto px-6">
-          <div className="flex items-end justify-between mb-12">
-            <div>
-              <span className="inline-block px-3.5 py-1 rounded-full bg-orange-500/15 text-orange-900 text-xs font-bold uppercase tracking-widest mb-3">
-                From the Community
-              </span>
-              <h2 className="text-3xl md:text-4xl font-extrabold font-display tracking-tight text-[#4A3328]">
-                What students are saying
-              </h2>
-            </div>
+
+      {/* ── REVIEWS ──────────────────────────────────────────────────────── */}
+      <section className="section border-b border-line-warm bg-cream-deep">
+        <div className="page-container">
+          <div className="mb-12">
+            <span className="badge badge-primary">From the community</span>
+            <h2 className="type-display mt-4 text-ink">
+              What students are saying
+            </h2>
           </div>
 
           {reviewsLoading ? (
-            <div className="grid md:grid-cols-3 gap-6">
+            <div className="grid gap-6 md:grid-cols-3">
               {[0, 1, 2].map((item) => (
                 <div
                   key={item}
-                  className="p-6 rounded-[2rem] border border-amber-900/10 bg-white animate-pulse h-64 shadow-sm"
+                  className="h-64 animate-pulse rounded-[2rem] border border-line-warm bg-card shadow-sm"
                 />
               ))}
             </div>
           ) : reviews.length === 0 ? (
-            <div className="text-center py-16 text-[#7D6355] bg-white rounded-[2rem] border border-amber-900/10 shadow-sm">
+            <div className="type-body rounded-[2rem] border border-line-warm bg-card py-16 text-center text-ink-muted shadow-sm">
               No reviews available yet.
             </div>
           ) : (
             <>
               <div
-                className="grid md:grid-cols-3 gap-6"
+                className="grid gap-6 md:grid-cols-3"
                 onMouseEnter={() => setReviewsPaused(true)}
                 onMouseLeave={() => setReviewsPaused(false)}
+                onFocus={() => setReviewsPaused(true)}
+                onBlur={() => setReviewsPaused(false)}
               >
                 {reviews
                   .slice(reviewSlide * 3, reviewSlide * 3 + 3)
@@ -567,45 +477,43 @@ function HomePage() {
                     <Link
                       key={review.id}
                       to={`/vendors/${review.vendor.id}`}
-                      className="p-6 md:p-8 rounded-[2rem] border border-amber-900/10 bg-white flex flex-col hover:border-rose-400 hover:shadow-2xl hover:shadow-amber-900/10 transition-all duration-300 group cursor-pointer shadow-md"
+                      className="group flex cursor-pointer flex-col rounded-[2rem] border border-line-warm bg-card p-6 shadow-md transition-all duration-300 hover:border-primary/40 hover:shadow-2xl md:p-8"
                     >
-                      <div className="flex items-center justify-between mb-5">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary text-sm font-extrabold flex-shrink-0 shadow-sm">
+                      <div className="mb-5 flex items-center justify-between">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-extrabold text-primary shadow-sm">
                             {review.user.display_name.charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
-                            <div className="text-sm font-bold truncate text-[#4A3328] group-hover:text-primary transition-colors">
+                            <div className="truncate text-sm font-bold text-ink transition-colors group-hover:text-primary">
                               {review.user.display_name}
                             </div>
-                            <div className="text-xs text-[#7D6355] truncate font-medium">
+                            <div className="type-caption truncate text-ink-muted">
                               {review.user.affiliation || "NTU"}
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 text-[11px] font-medium text-[#7D6355] flex-shrink-0 bg-muted/60 px-2 py-1 rounded-full">
-                          <Clock className="w-3 h-3 text-[#7D6355]" />
+                        <div className="type-caption flex shrink-0 items-center gap-1 rounded-full bg-muted/60 px-2 py-1 text-ink-muted">
+                          <Clock className="h-3 w-3" aria-hidden="true" />
                           {new Date(review.created_at).toLocaleDateString()}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 mb-4 bg-amber-50/70 p-2.5 rounded-xl border border-amber-900/5">
+                      <div className="mb-4 flex items-center gap-2 rounded-xl border border-line-warm bg-cream p-2.5">
                         <StarRow rating={review.rating} />
-                        <span className="text-xs text-[#7D6355] font-medium">
-                          at
-                        </span>
-                        <span className="text-xs font-bold text-primary truncate">
+                        <span className="type-caption text-ink-muted">at</span>
+                        <span className="type-caption truncate font-bold text-primary">
                           {review.vendor.name}
                         </span>
                       </div>
 
-                      <p className="text-sm text-[#6E5548] leading-relaxed flex-1 mb-6 font-normal">
+                      <p className="type-body mb-6 flex-1 text-ink-soft">
                         &ldquo;{review.comment || ""}&rdquo;
                       </p>
 
-                      <div className="flex items-center justify-between text-xs text-[#7D6355] border-t border-amber-900/10 pt-4">
+                      <div className="type-caption flex items-center justify-between border-t border-line-warm pt-4 text-ink-muted">
                         <div className="flex items-center gap-1.5 font-medium">
-                          <MapPin className="w-3.5 h-3.5 text-primary/70" />
+                          <MapPin className="h-3.5 w-3.5 text-primary/70" />
                           {review.vendor.location || "NTU"}
                         </div>
                       </div>
@@ -613,122 +521,121 @@ function HomePage() {
                   ))}
               </div>
 
-              <div className="flex justify-center gap-2 mt-10">
-                {Array.from({ length: reviewSlideCount }).map((_, index) => (
-                  <button
-                    key={index}
-                    type="button"
-                    onClick={() => setReviewSlide(index)}
-                    aria-label={`Go to review slide ${index + 1}`}
-                    className={`h-2.5 rounded-full transition-all duration-300 ${
-                      reviewSlide === index
-                        ? "w-8 bg-primary"
-                        : "w-2.5 bg-amber-900/20 hover:bg-amber-900/40"
-                    }`}
-                  />
-                ))}
-              </div>
+              {reviewSlideCount > 1 && (
+                <div className="mt-10 flex justify-center gap-2">
+                  {Array.from({ length: reviewSlideCount }).map((_, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => setReviewSlide(index)}
+                      aria-label={`Go to review slide ${index + 1}`}
+                      aria-current={reviewSlide === index}
+                      className={cn(
+                        "h-2.5 cursor-pointer rounded-full transition-all duration-300",
+                        reviewSlide === index
+                          ? "w-8 bg-primary"
+                          : "w-2.5 bg-ink/20 hover:bg-ink/40"
+                      )}
+                    />
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
-      </section> 
+      </section>
 
-      {/* ── CAMPUS MAP TEASER ── */}
-      <section className="relative py-20 bg-[#F5EFE6] overflow-hidden border-b border-amber-900/10">
-        <div className="relative z-10 max-w-7xl mx-auto px-6">
-          <div className="bg-white/90 backdrop-blur-md rounded-[2.5rem] border border-amber-900/10 p-8 md:p-12 shadow-2xl shadow-amber-900/5 transition-all duration-300">
-            <div className="text-center max-w-xl mx-auto mb-10">
-              <span className="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-widest mb-3">
-                Navigate Campus
-              </span>
-              <h2 className="text-3xl md:text-4xl font-extrabold mb-3 font-display tracking-tight text-[#4A3328]">
-                All Food Places in 1 Map
+      {/* ── CAMPUS MAP TEASER ────────────────────────────────────────────── */}
+      <section className="section border-b border-line-warm bg-cream-deep">
+        <div className="page-container">
+          <div className="rounded-[2.5rem] border border-line-warm bg-card/90 p-8 shadow-2xl shadow-amber-900/5 backdrop-blur-md md:p-12">
+            <div className="mx-auto mb-10 max-w-xl text-center">
+              <span className="badge badge-primary">Navigate campus</span>
+              <h2 className="type-display mt-4 text-ink">
+                All food places in one map
               </h2>
-              <p className="text-[#6E5548] text-sm md:text-base leading-relaxed">
-                Check what's available nearby and plan your campus food route in seconds.
+              <p className="type-body mt-3 text-ink-soft">
+                Check what&apos;s available nearby and plan your campus food
+                route in seconds.
               </p>
             </div>
 
-            <div className="rounded-2xl overflow-hidden border border-border shadow-inner bg-muted/30">
+            <div className="overflow-hidden rounded-2xl border border-line-warm bg-muted/30 shadow-inner">
               <VendorMap />
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── FLOATING CHATBOT WIDGET ───────────────────── */}
-      <FoodieChat />
-
-{/* ── STILL UNSURE OF WHAT TO EAT? (Swapped Layout: Mascot Left, Text Right) ── */}
-      <section className="relative bg-[#f0404b] overflow-hidden text-white border-b border-amber-900/10">
-        <div className="grid md:grid-cols-12 items-stretch min-h-[420px]">
-          
-          {/* Left Side: Interactive NTUmmy Mascot & Speech Bubble */}
-          <div className="md:col-span-6 relative min-h-[380px] md:min-h-full bg-gradient-to-br from-[#fff8f2] via-[#fde8e2] to-[#faf6f0] flex items-center justify-start pl-6 sm:pl-12 md:pl-16 p-8 overflow-hidden border-r border-amber-900/10">
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-72 h-72 bg-rose-300/60 rounded-full blur-3xl" />
+      {/* ── SIGN-UP CTA ──────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden border-b border-line-warm bg-brand-bright text-white">
+        <div className="grid min-h-[420px] items-stretch md:grid-cols-12">
+          {/* Left: mascot */}
+          <div className="relative flex min-h-[380px] items-center justify-start overflow-hidden border-r border-line-warm bg-gradient-to-br from-rose-50 via-rose-100 to-cream p-8 pl-6 sm:pl-12 md:col-span-6 md:min-h-full md:pl-16">
+            <div
+              className="pointer-events-none absolute inset-0 flex items-center justify-center"
+              aria-hidden="true"
+            >
+              <div className="h-72 w-72 rounded-full bg-rose-300/50 blur-3xl" />
             </div>
 
-            {/* Centered Interactive Container */}
             <button
               type="button"
               onClick={openChat}
-              className="relative max-w-sm w-full flex flex-col items-center justify-center pt-6 group cursor-pointer text-left focus:outline-none"
+              className="group relative flex w-full max-w-sm cursor-pointer flex-col items-center justify-center pt-6 text-left focus-visible:outline-none"
               aria-label="Open Foodie Chatbot"
             >
-              {/* Speech Bubble: Positioned above-right of mascot head with downward tail */}
-              <div className="absolute top-11 -right-8 sm:-right-12 lg:-right-32 z-25 bg-white text-[#4A3328] px-4 py-4 sm:py-5 rounded-2xl shadow-xl border border-amber-900/10 max-w-[220px] sm:max-w-[250px] text-xs sm:text-sm font-medium leading-snug group-hover:scale-105 transition-transform duration-300">
-                <p>Too many food options? Sign up and I will recommend the one just for you!</p>
+              <span className="relative z-20 mb-2 block max-w-[250px] rounded-2xl border border-line-warm bg-card px-4 py-4 text-xs font-medium leading-snug text-ink shadow-xl transition-transform duration-300 group-hover:-translate-y-0.5 sm:text-sm">
+                Too many food options? Sign up and I&apos;ll recommend the one
+                just for you!
+                <span
+                  className="absolute -bottom-1.5 left-6 h-4 w-4 rotate-45 border-b border-r border-line-warm bg-card"
+                  aria-hidden="true"
+                />
+              </span>
 
-                {/* Speech bubble tail pointing downwards towards Foodie's head */}
-                <div className="absolute -bottom-1.5 left-6 w-4 h-4 rotate-[45deg] border-r border-b border-amber-900/10 bg-white" />
-              </div>
-
-              {/* Mascot Image */}
               <img
                 src="/ntummy_mascot_uncertain.png"
-                alt="Foodie Mascot"
-                className="w-52 sm:w-64 h-auto object-contain drop-shadow-xl z-10 mt-6 group-hover:scale-105 active:scale-95 transition-transform duration-500"
+                alt=""
+                className="z-10 mt-4 h-auto w-52 object-contain drop-shadow-xl transition-transform duration-500 group-hover:scale-105 group-active:scale-95 sm:w-64"
               />
             </button>
           </div>
 
-          {/* Center Floating NTUmmy Logo Badge */}
-          <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none">
-            <div className="w-24 h-24 lg:w-28 lg:h-28 rounded-full bg-white p-3 shadow-2xl border border-white/20 flex items-center justify-center transform hover:scale-105 transition-transform">
+          {/* Centre logo badge */}
+          <div className="pointer-events-none absolute left-1/2 top-1/2 z-20 hidden -translate-x-1/2 -translate-y-1/2 md:flex">
+            <div className="flex h-24 w-24 items-center justify-center rounded-full border border-white/20 bg-white p-3 shadow-2xl lg:h-28 lg:w-28">
               <img
                 src="/ntummy_logo.svg"
-                alt="NTUmmy Logo"
-                className="w-full h-full object-contain"
+                alt="NTUmmy logo"
+                className="h-full w-full object-contain"
               />
             </div>
           </div>
 
-          {/* Right Side: White Text & Sign Up Button Container */}
-          <div className="md:col-span-6 p-8 sm:p-12 lg:p-16 flex flex-col justify-center relative z-10 bg-[#f0404b]">
-            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-serif text-white font-normal leading-tight mb-4">
-              Still Unsure of <br />
-              What to Eat?
+          {/* Right: copy + CTA */}
+          <div className="relative z-10 flex flex-col justify-center bg-brand-bright p-8 sm:p-12 lg:p-16 md:col-span-6">
+            <h2 className="type-display text-white">
+              Still unsure of
+              <br />
+              what to eat?
             </h2>
-            
-            <p className="text-xs sm:text-sm lg:text-base text-amber-100/90 font-light mb-8">
-              Create a NTUmmy account for personalised food recommendations based on your preferences and dietary needs.
+
+            <p className="type-body mt-4 max-w-md text-amber-100/90">
+              Create a NTUmmy account for personalised food recommendations
+              based on your preferences and dietary needs.
             </p>
 
-            <div>
-              <Link
-                to="/signin"
-                className="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-full bg-white text-[#B22222] font-semibold text-sm shadow-lg hover:bg-amber-50 hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer"
-              >
-                <span>Sign Up</span>
+            <div className="mt-8">
+              <Link to="/signin" className="btn btn-inverse btn-lg btn-pill">
+                Sign up
               </Link>
             </div>
           </div>
-
         </div>
       </section>
 
-      {/* ── FOOTER ───────────────────────────────────── */}
+      {/* ── FOOTER ───────────────────────────────────────────────────────── */}
       <Footer />
     </div>
   );
@@ -820,11 +727,11 @@ function App() {
 
       {preferenceLoadError && (
         <div className="fixed bottom-6 right-6 z-[110] w-[min(92vw,380px)] rounded-2xl border border-border bg-card p-5 shadow-2xl backdrop-blur-md">
-          <p className="text-sm font-bold text-[#4A3328]">
+          <p className="text-sm font-bold text-ink">
             Unable to load food preferences
           </p>
 
-          <p className="mt-1 text-xs text-[#7D6355]">
+          <p className="mt-1 text-xs text-ink-muted">
             You can retry loading your preferences or close this message.
           </p>
 
@@ -832,7 +739,7 @@ function App() {
             <button
               type="button"
               onClick={() => setPreferenceLoadError(false)}
-              className="rounded-xl px-3 py-2 text-xs font-semibold text-[#7D6355] hover:text-[#4A3328] transition-colors"
+              className="btn btn-ghost btn-sm"
             >
               Close
             </button>
@@ -843,7 +750,7 @@ function App() {
                 setPreferenceLoadError(false);
                 setPreferenceRetry((current) => current + 1);
               }}
-              className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:opacity-95 shadow-md transition-opacity"
+              className="btn btn-primary btn-sm"
             >
               Retry
             </button>
