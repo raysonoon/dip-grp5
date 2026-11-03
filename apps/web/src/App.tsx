@@ -28,8 +28,6 @@ import { cn } from "./lib/cn";
 import { rankTrendingVendors } from "./lib/trendingVendors";
 import { useDocumentTitle } from "./hooks/useDocumentTitle";
 
-const BODY_FONT = "'Plus Jakarta Sans', sans-serif";
-
 type Review = {
   id: number;
   rating: number;
@@ -123,6 +121,7 @@ function ReviewCard({
 
 function HomePage() {
   useDocumentTitle("Home");
+  const { openChat } = useChat();
   const [reviewsPaused, setReviewsPaused] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
