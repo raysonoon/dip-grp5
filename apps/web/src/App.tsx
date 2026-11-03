@@ -26,6 +26,9 @@ import {
 import StarRow from "./components/StarRow";
 import { cn } from "./lib/cn";
 import { rankTrendingVendors } from "./lib/trendingVendors";
+import { useDocumentTitle } from "./hooks/useDocumentTitle";
+
+const BODY_FONT = "'Plus Jakarta Sans', sans-serif";
 
 type Review = {
   id: number;
@@ -119,7 +122,7 @@ function ReviewCard({
 }
 
 function HomePage() {
-  const { openChat } = useChat();
+  useDocumentTitle("Home");
   const [reviewsPaused, setReviewsPaused] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);

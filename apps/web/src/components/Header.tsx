@@ -4,6 +4,7 @@ import { ChevronDown, Loader2, LogOut, Menu, X, Search, Store, UserRound } from 
 import { useAuth } from "../contexts/AuthContext";
 import { fetchVendorPage, fetchVendors, type parseVendor } from "../api/vendors";
 import { rankTrendingVendors } from "../lib/trendingVendors";
+import { getPreferencesVersion } from "../api/preferences.js";
 
 type Vendor = ReturnType<typeof parseVendor>;
 
@@ -23,6 +24,8 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [recommendedStalls, setRecommendedStalls] = useState<any[]>([]);
+  const [stallsLoading, setStallsLoading] = useState(true);
+  const [recommendationsVersion, setRecommendationsVersion] = useState(getPreferencesVersion);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const hasSearchQuery = searchQuery.trim().length > 0;
@@ -133,12 +136,15 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
     const controller = new AbortController();
 
     async function loadRecommendedStalls() {
+      setStallsLoading(true);
+
   // Logged-in users: try personalized recommendations first.
     if (user) {
       try {
         const data = await fetchVendorPage({
           sort: "recommended",
-          limit: 4,
+          limit: 3,
+          timeoutMs: 30_000,
           signal: controller.signal,
         });
 
@@ -147,7 +153,8 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
         );
 
         if (personalized.length > 0) {
-          setRecommendedStalls(personalized.slice(0, 4));
+          setRecommendedStalls(personalized.slice(0, 3));
+          setStallsLoading(false);
           return;
         }
       } catch (error) {
@@ -163,12 +170,14 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
   // Logged-out users, users without recommendations,
   // or recommendation failures fall back to trending.
     try {
-      const vendors = await fetchVendors("", controller.signal);
-      setRecommendedStalls(rankTrendingVendors(vendors, 4));
+      const vendors = await fetchVendors("", controller.signal, { auth: false });
+      setRecommendedStalls(rankTrendingVendors(vendors, 3));
+      setStallsLoading(false);
     } catch (error) {
       if (!controller.signal.aborted) {
         console.error("Failed to load trending stalls:", error);
         setRecommendedStalls([]);
+        setStallsLoading(false);
       }
     }
   }
@@ -176,7 +185,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
     void loadRecommendedStalls();
 
     return () => controller.abort();
-  }, [user, loading]);
+  }, [user, loading, recommendationsVersion]);
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -189,7 +198,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
       try {
         const page = await fetchVendorPage({
           q: query,
-          limit: 4,
+          limit: 3,
           signal: controller.signal,
         });
         if (!controller.signal.aborted) {
@@ -231,6 +240,19 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
     ) : null
   );
 
+  const recommendedStatus = !hasSearchQuery && (
+    stallsLoading ? (
+      <div role="status" className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        Loading stalls...
+      </div>
+    ) : recommendedStalls.length === 0 ? (
+      <p role="status" className="px-2 py-2 text-xs text-muted-foreground">
+        No stalls available.
+      </p>
+    ) : null
+  );
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const query = searchQuery.trim();
@@ -251,6 +273,19 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
     navigate(`/food?q=${encodeURIComponent(query)}`);
   };
 
+  const handleSelectStall = (vendorId: Vendor["id"]) => {
+    setDropdownOpen(false);
+    setMobileSearchOpen(false);
+    navigate(`/vendors/${vendorId}`);
+  };
+
+  const handleViewMore = () => {
+    setDropdownOpen(false);
+    setMobileSearchOpen(false);
+    const query = searchQuery.trim();
+    navigate(query ? `/food?q=${encodeURIComponent(query)}` : "/food");
+  };
+
   const toggleMobileMenu = () => {
     if (!mobileMenuOpen) {
       setMobileSearchOpen(false);
@@ -261,6 +296,7 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
   const toggleMobileSearch = () => {
     if (!mobileSearchOpen) {
       setMobileMenuOpen(false);
+      if (user) setRecommendationsVersion(getPreferencesVersion());
     }
     setMobileSearchOpen(!mobileSearchOpen);
   };
@@ -296,7 +332,12 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
               <input
                 type="text"
                 value={searchQuery}
-                onFocus={() => setDropdownOpen(true)}
+                onFocus={() => {
+                  if (!dropdownOpen && user) {
+                    setRecommendationsVersion(getPreferencesVersion());
+                  }
+                  setDropdownOpen(true);
+                }}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 placeholder="Search dishes, stalls, canteens..."
                 className="w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none py-1"
@@ -338,11 +379,12 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
                 </p>
                 <div className="flex flex-col gap-1">
                   {searchStatus}
+                  {recommendedStatus}
                   {displayedStalls.map((stall) => (
                     <button
                       key={hasSearchQuery ? stall.id : stall.name}
                       type="button"
-                      onClick={() => handleSelectSearch(hasSearchQuery ? searchQuery.trim() : stall.name)}
+                      onClick={() => handleSelectStall(stall.id)}
                       className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-muted/60 transition-colors cursor-pointer flex items-center justify-between gap-2"
                     >
                       <div className="flex items-center gap-2 truncate">
@@ -356,6 +398,13 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
                       </span>
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={handleViewMore}
+                    className="w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold text-primary hover:bg-muted/60 transition-colors cursor-pointer"
+                  >
+                    View more
+                  </button>
                 </div>
               </div>
             </div>
@@ -448,11 +497,12 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
             </p>
             <div className="flex flex-col gap-1">
               {searchStatus}
+              {recommendedStatus}
               {displayedStalls.map((stall) => (
                 <button
                   key={hasSearchQuery ? stall.id : stall.name}
                   type="button"
-                  onClick={() => handleSelectSearch(hasSearchQuery ? searchQuery.trim() : stall.name)}
+                  onClick={() => handleSelectStall(stall.id)}
                   className="w-full text-left px-2 py-1 rounded-lg hover:bg-muted/60 transition-colors flex items-center justify-between gap-2"
                 >
                   <span className="text-xs text-foreground truncate">
@@ -463,6 +513,13 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
                   </span>
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={handleViewMore}
+                className="w-full text-left px-2 py-1 rounded-lg text-xs font-semibold text-primary hover:bg-muted/60 transition-colors cursor-pointer"
+              >
+                View more
+              </button>
             </div>
           </div>
         </div>

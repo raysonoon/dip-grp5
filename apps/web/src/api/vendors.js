@@ -126,7 +126,8 @@ export function parseVendorList(value) {
  * @param {{ q?: string, locations?: string[], categories?: string[],
  *   cuisines?: string[], priceRanges?: string[], halal?: boolean,
  *   vegetarian?: boolean, sort?: string, limit?: number, offset?: number,
- *   lat?: number|null, lng?: number|null, signal?: AbortSignal }} options
+ *   lat?: number|null, lng?: number|null, signal?: AbortSignal,
+ *   timeoutMs?: number, auth?: boolean|"optional" }} options
  */
 export async function fetchVendorPage({
   q = "",
@@ -142,6 +143,8 @@ export async function fetchVendorPage({
   lat = null,
   lng = null,
   signal,
+  timeoutMs,
+  auth = "optional",
 } = {}) {
   const params = new URLSearchParams({
     limit: String(limit),
@@ -190,7 +193,7 @@ export async function fetchVendorPage({
 
   const payload = await apiClient.get(
     `/vendors?${params.toString()}`,
-    { auth: "optional", signal },
+    { auth, signal, timeoutMs },
   );
 
   return parseVendorList(payload);
@@ -237,7 +240,7 @@ export async function fetchNearbyVendors({
   return page.items.map(parseVendor);
 }
 
-export async function fetchVendors(query = "", signal) {
+export async function fetchVendors(query = "", signal, { auth = "optional" } = {}) {
   const vendors = [];
   const limit = 100;
   let offset = 0;
@@ -248,6 +251,7 @@ export async function fetchVendors(query = "", signal) {
       limit,
       offset,
       signal,
+      auth,
     });
 
     vendors.push(...page.items);

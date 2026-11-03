@@ -85,7 +85,7 @@ ping 127.0.0.1 -n 3 >nul
 exit /b 0
 
 :api_is_ready
-"%PYTHON_EXE%" -c "import json, sys, urllib.request; document = json.load(urllib.request.urlopen('%OPENAPI_URL%', timeout=2)); sys.exit(0 if document.get('info', {}).get('title') == 'NTU Foodie Hub API' else 1)" >nul 2>&1
+"%PYTHON_EXE%" -c "import json, sys, urllib.request; document = json.load(urllib.request.urlopen('%OPENAPI_URL%', timeout=2)); sys.exit(0 if document.get('info', {}).get('title') == 'NTUmmy API' else 1)" >nul 2>&1
 exit /b %errorlevel%
 
 :pip_failed

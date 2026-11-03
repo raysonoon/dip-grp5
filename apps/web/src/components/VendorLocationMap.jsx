@@ -40,7 +40,7 @@ export default function VendorLocationMap({ vendor }) {
                 <div style={{ fontWeight: 600 }}>{vendor.name}</div>
                 {vendor.location && <div>{vendor.location}</div>}
                 <a
-                  href={googleMapsDirectionsUrl(vendor.name, point.lat, point.lng)}
+                  href={googleMapsDirectionsUrl(point.lat, point.lng)}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

@@ -221,3 +221,59 @@ def test_vendor_list_falls_back_when_recommendations_fail(
     assert len(response.json()["items"]) == 1
     assert response.json()["items"][0]["recommended"] is False
     assert response.json()["items"][0]["name"] == "Newer Vendor"
+
+
+def test_typed_query_is_general_search_not_recommendation_filtered(
+    client: TestClient,
+    session: Session,
+    monkeypatch,
+) -> None:
+    _seed_search_vendors(session)
+
+    user = User(
+        display_name="Searching User",
+        email_address="searching@test.com",
+        email_canonical="searching@test.com",
+        password_hash="test",
+        role="user",
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    session.add(
+        UserFoodPreferences(
+            user_id=user.id,
+            dietary_restrictions=[],
+            cuisines=[],
+            locations=[],
+            likes=["Coffee"],
+            dislikes=[],
+            lifestyle=[],
+            onboarding_status="completed",
+        )
+    )
+    session.commit()
+
+    def fail_recommendation(*args, **kwargs):
+        # A typed query must not reach the recommender (no embedding call).
+        raise RuntimeError("embedding should not run for search")
+
+    monkeypatch.setattr(
+        "app.api.routes.vendors.VendorRecommender.recommend",
+        fail_recommendation,
+    )
+
+    response = client.get(
+        "/vendors",
+        headers={"Authorization": f"Bearer {user.id}"},
+        params={"q": "coffee", "sort": "recommended"},
+    )
+
+    assert response.status_code == 200
+    assert [item["name"] for item in response.json()["items"]] == [
+        "Starbucks - NTU"
+    ]
+    assert all(
+        not item["recommended"] for item in response.json()["items"]
+    )

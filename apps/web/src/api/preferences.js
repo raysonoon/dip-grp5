@@ -1,6 +1,13 @@
 import { apiUrl } from "./client.js";
 import { getAccessToken } from "../lib/auth.js";
 
+let preferencesVersion = 0;
+
+// Read on search open so saving preferences never eagerly refetches vendors.
+export function getPreferencesVersion() {
+  return preferencesVersion;
+}
+
 async function authorizedRequest(path, options = {}) {
   const token = await getAccessToken();
 
@@ -35,5 +42,7 @@ export async function saveMyPreferences(preferences) {
     body: JSON.stringify(preferences),
   });
 
-  return response.json();
+  const saved = await response.json();
+  preferencesVersion += 1;
+  return saved;
 }
