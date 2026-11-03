@@ -61,6 +61,63 @@ type TrendingVendor = {
   topReview: string | null;
 };
 
+function ReviewCard({
+  review,
+  className,
+}: {
+  review: Review;
+  className?: string;
+}) {
+  return (
+    <Link
+      to={`/vendors/${review.vendor.id}`}
+      className={cn(
+        "group flex cursor-pointer flex-col rounded-[2rem] border border-line-warm bg-card p-6 shadow-md transition-all duration-300 hover:border-primary/40 hover:shadow-2xl md:p-8",
+        className
+      )}
+    >
+      <div className="mb-5 flex items-center justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-extrabold text-primary shadow-sm">
+            {review.user.display_name.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold text-ink transition-colors group-hover:text-primary">
+              {review.user.display_name}
+            </div>
+            <div className="type-caption truncate text-ink-muted">
+              {review.user.affiliation || "NTU"}
+            </div>
+          </div>
+        </div>
+        <div className="type-caption flex shrink-0 items-center gap-1 rounded-full bg-muted/60 px-2 py-1 text-ink-muted">
+          <Clock className="h-3 w-3" aria-hidden="true" />
+          {new Date(review.created_at).toLocaleDateString()}
+        </div>
+      </div>
+
+      <div className="mb-4 flex items-center gap-2 rounded-xl border border-line-warm bg-cream p-2.5">
+        <StarRow rating={review.rating} />
+        <span className="type-caption text-ink-muted">at</span>
+        <span className="type-caption truncate font-bold text-primary">
+          {review.vendor.name}
+        </span>
+      </div>
+
+      <p className="type-body mb-6 flex-1 text-ink-soft">
+        &ldquo;{review.comment || ""}&rdquo;
+      </p>
+
+      <div className="type-caption flex items-center justify-between border-t border-line-warm pt-4 text-ink-muted">
+        <div className="flex items-center gap-1.5 font-medium">
+          <MapPin className="h-3.5 w-3.5 text-primary/70" />
+          {review.vendor.location || "NTU"}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 function HomePage() {
   const { openChat } = useChat();
   const [reviewsPaused, setReviewsPaused] = useState(false);
@@ -122,7 +179,7 @@ function HomePage() {
           return;
         }
 
-        const ranked = rankTrendingVendors(vendors, 4);
+        const ranked = rankTrendingVendors(vendors, 3);
 
         const withTopReviews = await Promise.all(
           ranked.map(async (vendor) => {
@@ -153,13 +210,13 @@ function HomePage() {
       <Header fixed />
 
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden border-b border-line-warm bg-cream pb-12 pt-24 sm:pb-16 lg:pb-20">
+      <section className="relative overflow-hidden border-b border-line-warm bg-cream pb-12 pt-28 sm:pb-16 sm:pt-24 lg:pb-20">
         <div className="pointer-events-none absolute inset-0" aria-hidden="true">
           <div className="absolute -left-40 top-10 h-[28rem] w-[28rem] rounded-full bg-rose-200/40 blur-3xl" />
           <div className="absolute -right-40 bottom-0 h-[30rem] w-[30rem] rounded-full bg-brand-bright/10 blur-3xl" />
         </div>
 
-        <div className="page-container relative z-10">
+        <div className="page-container relative z-10 lg:px-10">
           <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-12">
             {/* Left: editorial copy */}
             <div className="lg:col-span-6">
@@ -175,7 +232,7 @@ function HomePage() {
                     onClick={openChat}
                     aria-label="Open Foodie chatbot"
                     title="Ask Foodie"
-                    className="group shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+                    className="group relative shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
                   >
                     <img
                       src="/ntummy_mascot.svg"
@@ -183,26 +240,26 @@ function HomePage() {
                       aria-hidden="true"
                       className="h-14 w-14 animate-[mascot-float_2.4s_ease-in-out_infinite] object-contain transition-transform group-hover:scale-105 group-active:scale-95 sm:h-16 sm:w-16"
                     />
+
+                    {/* Mobile-only bubble, centered above the mascot */}
+                    <span
+                      aria-hidden="true"
+                      className="absolute bottom-full left-1/2 z-10 w-max max-w-[130px] -translate-x-1/2 rounded-md border border-line-warm bg-surface-warm px-2 py-1 text-[10px] font-medium leading-snug text-ink shadow-md sm:hidden"
+                    >
+                      Hi, I&apos;m Foodie — hit me up!
+                      <span className="absolute -bottom-1 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45 border-b border-r border-line-warm bg-surface-warm" />
+                    </span>
                   </button>
 
                   <span
                     aria-hidden="true"
                     className="relative hidden max-w-[220px] rounded-xl border border-line-warm bg-surface-warm px-3 py-2 text-xs font-medium leading-snug text-ink shadow-lg sm:inline-block"
                   >
-                    Hi! I&apos;m Foodie — click me to chat!
+                    Hi, I&apos;m Foodie — hit me up!
                     <span className="absolute -left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rotate-45 border-b border-l border-line-warm bg-surface-warm" />
                   </span>
                 </div>
               </div>
-
-              {/* Speech bubble on narrow screens */}
-              <p
-                aria-hidden="true"
-                className="relative mt-3 inline-block max-w-[240px] rounded-xl border border-line-warm bg-surface-warm px-3 py-2 text-xs font-medium leading-snug text-ink shadow-sm sm:hidden"
-              >
-                Hi! I&apos;m Foodie — click me to chat!
-                <span className="absolute -top-1.5 left-8 h-3 w-3 rotate-45 border-l border-t border-line-warm bg-surface-warm" />
-              </p>
 
               <h1 className="type-display-xl mt-5 sm:mt-6">
                 Find your next
@@ -210,17 +267,25 @@ function HomePage() {
               </h1>
 
               <p className="type-body-lg mt-5 max-w-md text-ink-soft sm:mt-6">
-                Discover hidden gems across 13 canteens, cosy cafes, fast food
-                outlets and restaurants — rated, reviewed and recommended by
-                fellow NTU foodies.
+                No idea what to eat in campus? We've got you covered! At NTUmmy, we help you explore food options and decide what to eat in campus.
               </p>
 
-              <div className="mt-8">
+              <div className="mt-8 hidden lg:block">
                 <Link
                   to="/discover"
                   className="btn btn-primary btn-lg btn-pill w-full sm:w-auto"
                 >
                   Discover Now
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </Link>
+              </div>
+
+              <div className="mt-8 lg:hidden">
+                <Link
+                  to="/discover"
+                  className="btn btn-primary btn-lg btn-pill w-full"
+                >
+                  Discover now
                   <ChevronRight className="h-4 w-4" aria-hidden="true" />
                 </Link>
               </div>
@@ -233,7 +298,7 @@ function HomePage() {
                 ].map(([value, label]) => (
                   <div key={label}>
                     <dt className="type-caption text-ink-muted">{label}</dt>
-                    <dd className="type-display mt-0.5 text-xl text-ink sm:text-2xl">
+                    <dd className="type-display mt-0.5 text-[1.75rem] text-ink sm:text-[2rem]">
                       {value}
                     </dd>
                   </div>
@@ -244,16 +309,16 @@ function HomePage() {
             {/* Right: two featured stalls */}
             <div className="lg:col-span-6 lg:col-start-7 lg:row-start-1">
               {trendingLoading ? (
-                <div className="flex justify-center gap-3 sm:gap-4">
-                  <div className="h-80 w-1/2 animate-pulse rounded-3xl border border-line-warm bg-surface-warm/60" />
-                  <div className="h-80 w-1/2 animate-pulse rounded-3xl border border-line-warm bg-surface-warm/60" />
+                <div className="flex flex-col gap-4 sm:flex-row sm:justify-center sm:gap-4">
+                  <div className="h-44 w-full animate-pulse rounded-3xl border border-line-warm bg-surface-warm/60 sm:h-80 sm:w-1/2" />
+                  <div className="h-44 w-full animate-pulse rounded-3xl border border-line-warm bg-surface-warm/60 sm:h-80 sm:w-1/2" />
                 </div>
               ) : trendingVendors.length === 0 ? (
                 <div className="type-body rounded-3xl border border-line-warm bg-surface-warm p-8 text-center text-ink-muted">
                   No stalls available right now.
                 </div>
               ) : (
-                <div className="flex justify-center gap-3 sm:gap-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:justify-center sm:gap-4">
                   {trendingVendors.slice(0, 2).map((vendor, index) => {
                     const rating =
                       vendor.average_rating ?? vendor.average_google_rating;
@@ -263,13 +328,13 @@ function HomePage() {
                         key={vendor.id}
                         to={`/vendors/${vendor.id}`}
                         className={cn(
-                          "group flex w-1/2 flex-col rounded-3xl border border-line-warm bg-surface-warm p-3 transition-all duration-300",
+                          "group flex w-full flex-col rounded-3xl border border-line-warm bg-surface-warm p-3 transition-all duration-300 sm:w-1/2",
                           index === 0
-                            ? "-translate-y-3 hover:-translate-y-5"
-                            : "translate-y-3 hover:translate-y-1"
+                            ? "sm:-translate-y-3 sm:hover:-translate-y-5"
+                            : "sm:translate-y-3 sm:hover:translate-y-1"
                         )}
                       >
-                        <div className="relative mb-3 aspect-[3/4] overflow-hidden rounded-2xl bg-amber-100">
+                        <div className="relative mb-3 h-44 w-full overflow-hidden rounded-2xl bg-amber-100 sm:h-auto sm:aspect-[3/4]">
                           {vendor.image_url ? (
                             <img
                               src={apiUrl(vendor.image_url)}
@@ -316,25 +381,16 @@ function HomePage() {
       {/* ── TRENDING STALLS ──────────────────────────────────────────────── */}
       <section className="section border-b border-line-warm bg-brand-bright text-white">
         <div className="page-container">
-          <div className="mb-10 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-            <div>
-              <span className="badge badge-on-brand">This week&apos;s picks</span>
-              <h2 className="type-display mt-4 text-white">
-                Trending on campus
-              </h2>
-            </div>
-            <Link
-              to="/food"
-              className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-200 transition-colors hover:text-white"
-            >
-              View all stalls
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
+          <div className="mb-10">
+            <span className="badge badge-on-brand">This week&apos;s picks</span>
+            <h2 className="type-display mt-4 text-white">
+              Trending on campus
+            </h2>
           </div>
 
           {trendingLoading ? (
-            <div className="grid gap-8 sm:grid-cols-2">
-              {[0, 1, 2, 3].map((i) => (
+            <div className="grid gap-8 md:grid-cols-3">
+              {[0, 1, 2].map((i) => (
                 <div
                   key={i}
                   className="h-64 animate-pulse rounded-[2rem] border border-white/20 bg-white/10 sm:h-80"
@@ -346,7 +402,7 @@ function HomePage() {
               No stalls to show yet.
             </div>
           ) : (
-            <div className="grid gap-8 sm:grid-cols-2">
+            <div className="flex snap-x snap-mandatory gap-6 overflow-x-auto pb-4 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] md:grid md:grid-cols-3 md:gap-8 md:overflow-visible md:pb-0">
               {trendingVendors.map((vendor) => {
                 const rating =
                   vendor.average_rating ?? vendor.average_google_rating;
@@ -355,7 +411,7 @@ function HomePage() {
                   <Link
                     key={vendor.id}
                     to={`/vendors/${vendor.id}`}
-                    className="group flex cursor-pointer flex-col overflow-hidden rounded-[2rem] border border-line-warm bg-card shadow-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-primary/30"
+                    className="group flex w-[85%] shrink-0 snap-center cursor-pointer flex-col overflow-hidden rounded-[2rem] border border-line-warm bg-card shadow-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-primary/30 md:w-auto md:shrink"
                   >
                     <div className="relative h-48 overflow-hidden bg-muted">
                       {vendor.image_url ? (
@@ -464,170 +520,120 @@ function HomePage() {
             </div>
           ) : (
             <>
-              <div
-                className="grid gap-6 md:grid-cols-3"
-                onMouseEnter={() => setReviewsPaused(true)}
-                onMouseLeave={() => setReviewsPaused(false)}
-                onFocus={() => setReviewsPaused(true)}
-                onBlur={() => setReviewsPaused(false)}
-              >
-                {reviews
-                  .slice(reviewSlide * 3, reviewSlide * 3 + 3)
-                  .map((review) => (
-                    <Link
-                      key={review.id}
-                      to={`/vendors/${review.vendor.id}`}
-                      className="group flex cursor-pointer flex-col rounded-[2rem] border border-line-warm bg-card p-6 shadow-md transition-all duration-300 hover:border-primary/40 hover:shadow-2xl md:p-8"
-                    >
-                      <div className="mb-5 flex items-center justify-between">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-extrabold text-primary shadow-sm">
-                            {review.user.display_name.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-bold text-ink transition-colors group-hover:text-primary">
-                              {review.user.display_name}
-                            </div>
-                            <div className="type-caption truncate text-ink-muted">
-                              {review.user.affiliation || "NTU"}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="type-caption flex shrink-0 items-center gap-1 rounded-full bg-muted/60 px-2 py-1 text-ink-muted">
-                          <Clock className="h-3 w-3" aria-hidden="true" />
-                          {new Date(review.created_at).toLocaleDateString()}
-                        </div>
-                      </div>
-
-                      <div className="mb-4 flex items-center gap-2 rounded-xl border border-line-warm bg-cream p-2.5">
-                        <StarRow rating={review.rating} />
-                        <span className="type-caption text-ink-muted">at</span>
-                        <span className="type-caption truncate font-bold text-primary">
-                          {review.vendor.name}
-                        </span>
-                      </div>
-
-                      <p className="type-body mb-6 flex-1 text-ink-soft">
-                        &ldquo;{review.comment || ""}&rdquo;
-                      </p>
-
-                      <div className="type-caption flex items-center justify-between border-t border-line-warm pt-4 text-ink-muted">
-                        <div className="flex items-center gap-1.5 font-medium">
-                          <MapPin className="h-3.5 w-3.5 text-primary/70" />
-                          {review.vendor.location || "NTU"}
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
+              {/* Mobile: swipable carousel */}
+              <div className="flex snap-x snap-mandatory gap-6 overflow-x-auto pb-4 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] md:hidden">
+                {reviews.map((review) => (
+                  <ReviewCard
+                    key={review.id}
+                    review={review}
+                    className="w-[85%] shrink-0 snap-center"
+                  />
+                ))}
               </div>
 
-              {reviewSlideCount > 1 && (
-                <div className="mt-10 flex justify-center gap-2">
-                  {Array.from({ length: reviewSlideCount }).map((_, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      onClick={() => setReviewSlide(index)}
-                      aria-label={`Go to review slide ${index + 1}`}
-                      aria-current={reviewSlide === index}
-                      className={cn(
-                        "h-2.5 cursor-pointer rounded-full transition-all duration-300",
-                        reviewSlide === index
-                          ? "w-8 bg-primary"
-                          : "w-2.5 bg-ink/20 hover:bg-ink/40"
-                      )}
-                    />
-                  ))}
+              {/* Desktop: auto-advancing slide grid */}
+              <div className="hidden md:block">
+                <div
+                  className="grid gap-6 md:grid-cols-3"
+                  onMouseEnter={() => setReviewsPaused(true)}
+                  onMouseLeave={() => setReviewsPaused(false)}
+                  onFocus={() => setReviewsPaused(true)}
+                  onBlur={() => setReviewsPaused(false)}
+                >
+                  {reviews
+                    .slice(reviewSlide * 3, reviewSlide * 3 + 3)
+                    .map((review) => (
+                      <ReviewCard key={review.id} review={review} />
+                    ))}
                 </div>
-              )}
+
+                {reviewSlideCount > 1 && (
+                  <div className="mt-10 flex justify-center gap-2">
+                    {Array.from({ length: reviewSlideCount }).map((_, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setReviewSlide(index)}
+                        aria-label={`Go to review slide ${index + 1}`}
+                        aria-current={reviewSlide === index}
+                        className={cn(
+                          "h-2.5 cursor-pointer rounded-full transition-all duration-300",
+                          reviewSlide === index
+                            ? "w-8 bg-primary"
+                            : "w-2.5 bg-ink/20 hover:bg-ink/40"
+                        )}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
       </section>
 
       {/* ── CAMPUS MAP TEASER ────────────────────────────────────────────── */}
-      <section className="section border-b border-line-warm bg-cream-deep">
+      <section className="section border-b border-line-warm bg-brand-bright text-white">
         <div className="page-container">
-          <div className="rounded-[2.5rem] border border-line-warm bg-card/90 p-8 shadow-2xl shadow-amber-900/5 backdrop-blur-md md:p-12">
-            <div className="mx-auto mb-10 max-w-xl text-center">
-              <span className="badge badge-primary">Navigate campus</span>
-              <h2 className="type-display mt-4 text-ink">
-                All food places in one map
-              </h2>
-              <p className="type-body mt-3 text-ink-soft">
-                Check what&apos;s available nearby and plan your campus food
-                route in seconds.
-              </p>
-            </div>
+          <div className="mx-auto mb-10 max-w-xl text-center">
+            <span className="badge badge-on-brand">Navigate campus</span>
+            <h2 className="type-display mt-4 text-white">
+              All food places in one map
+            </h2>
+            <p className="type-body mt-3 text-amber-100/80">
+              Check what&apos;s available nearby and plan your campus food
+              route in seconds.
+            </p>
+          </div>
 
-            <div className="overflow-hidden rounded-2xl border border-line-warm bg-muted/30 shadow-inner">
-              <VendorMap />
-            </div>
+          <div className="overflow-hidden rounded-2xl border border-line-warm bg-card shadow-2xl">
+            <VendorMap />
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <Link
+              to="/map"
+              className="inline-flex items-center gap-1 text-sm font-semibold text-amber-200 transition-colors hover:text-amber-100"
+            >
+              View the full map
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
           </div>
         </div>
       </section>
 
       {/* ── SIGN-UP CTA ──────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden border-b border-line-warm bg-brand-bright text-white">
-        <div className="grid min-h-[420px] items-stretch md:grid-cols-12">
-          {/* Left: mascot */}
-          <div className="relative flex min-h-[380px] items-center justify-start overflow-hidden border-r border-line-warm bg-gradient-to-br from-rose-50 via-rose-100 to-cream p-8 pl-6 sm:pl-12 md:col-span-6 md:min-h-full md:pl-16">
-            <div
-              className="pointer-events-none absolute inset-0 flex items-center justify-center"
-              aria-hidden="true"
-            >
-              <div className="h-72 w-72 rounded-full bg-rose-300/50 blur-3xl" />
-            </div>
-
-            <button
-              type="button"
-              onClick={openChat}
-              className="group relative flex w-full max-w-sm cursor-pointer flex-col items-center justify-center pt-6 text-left focus-visible:outline-none"
-              aria-label="Open Foodie Chatbot"
-            >
-              <span className="relative z-20 mb-2 block max-w-[250px] rounded-2xl border border-line-warm bg-card px-4 py-4 text-xs font-medium leading-snug text-ink shadow-xl transition-transform duration-300 group-hover:-translate-y-0.5 sm:text-sm">
-                Too many food options? Sign up and I&apos;ll recommend the one
-                just for you!
-                <span
-                  className="absolute -bottom-1.5 left-6 h-4 w-4 rotate-45 border-b border-r border-line-warm bg-card"
+      <section className="section border-b border-line-warm bg-cream-deep">
+        <div className="page-container">
+          <div className="mx-auto max-w-xl text-center">
+            <div className="flex items-center justify-center">
+              <button
+                type="button"
+                onClick={openChat}
+                aria-label="Open Foodie chatbot"
+                title="Ask Foodie"
+                className="group shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+              >
+                <img
+                  src="/ntummy_mascot_uncertain.png"
+                  alt=""
                   aria-hidden="true"
+                  className="h-24 w-24 animate-[mascot-bounce_1.6s_ease-in-out_infinite] object-contain drop-shadow-md transition-transform duration-300 group-hover:scale-110 group-active:scale-95 sm:h-32 sm:w-32"
                 />
-              </span>
+              </button>
 
-              <img
-                src="/ntummy_mascot_uncertain.png"
-                alt=""
-                className="z-10 mt-4 h-auto w-52 object-contain drop-shadow-xl transition-transform duration-500 group-hover:scale-105 group-active:scale-95 sm:w-64"
-              />
-            </button>
-          </div>
-
-          {/* Centre logo badge */}
-          <div className="pointer-events-none absolute left-1/2 top-1/2 z-20 hidden -translate-x-1/2 -translate-y-1/2 md:flex">
-            <div className="flex h-24 w-24 items-center justify-center rounded-full border border-white/20 bg-white p-3 shadow-2xl lg:h-28 lg:w-28">
-              <img
-                src="/ntummy_logo.svg"
-                alt="NTUmmy logo"
-                className="h-full w-full object-contain"
-              />
+              <h2 className="type-display text-ink">
+                Still unsure of what to eat?
+              </h2>
             </div>
-          </div>
 
-          {/* Right: copy + CTA */}
-          <div className="relative z-10 flex flex-col justify-center bg-brand-bright p-8 sm:p-12 lg:p-16 md:col-span-6">
-            <h2 className="type-display text-white">
-              Still unsure of
-              <br />
-              what to eat?
-            </h2>
-
-            <p className="type-body mt-4 max-w-md text-amber-100/90">
-              Create a NTUmmy account for personalised food recommendations
+            <p className="type-body mt-4 text-ink-soft">
+              Create an NTUmmy account for personalised food recommendations
               based on your preferences and dietary needs.
             </p>
 
-            <div className="mt-8">
-              <Link to="/signin" className="btn btn-inverse btn-lg btn-pill">
+            <div className="mt-8 flex justify-center">
+              <Link to="/signin" className="btn btn-primary btn-lg btn-pill">
                 Sign up
               </Link>
             </div>
