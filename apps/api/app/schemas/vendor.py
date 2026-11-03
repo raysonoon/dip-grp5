@@ -70,6 +70,8 @@ class VendorListItem(BaseModel):
     map_coordinates: VendorCoordinates | None
     recommended: bool = False
     distance_m: float | None = None
+    website_url: str | None 
+    phone_number: str | None
 
 
 class VendorNearbyItem(VendorListItem):
@@ -93,3 +95,6 @@ class VendorListRead(BaseModel):
 class VendorAverageRatingRead(BaseModel):
     vendor_id: int
     average_rating: float | None
+
+class Confifg:
+    from_attributes = True

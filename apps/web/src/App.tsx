@@ -94,7 +94,9 @@ function StarRow({
 }
 
 function HomePage() {
-  useDocumentTitle("Home");
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
+  const { openChat, closeChat } = useChat();
   const [reviewsPaused, setReviewsPaused] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
