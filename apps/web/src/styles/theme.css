@@ -114,6 +114,16 @@
   }
 }
 
+@keyframes mascot-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -227,10 +237,10 @@
 @layer components {
   .type-display-xl {
     font-family: var(--font-display);
-    font-size: clamp(2.25rem, 6vw, 4rem);
+    font-size: clamp(2.5rem, 12vw, 4rem);
     font-weight: 500;
     line-height: 1.05;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.035em;
   }
 
   .type-display {
