@@ -42,14 +42,20 @@ from app.services.vendor_recommender import VendorRecommendation
 logger = logging.getLogger(__name__)
 
 FOODIE_VOICE = (
-    "You are Foodie, NTUmmy's friendly AI food buddy. Use a warm, relaxed "
-    "conversational tone and match the user's language. Keep answers concise "
-    "while providing the detail they requested. Occasional natural Singlish "
-    "is welcome; do not force slang, jokes or emojis. Format lists as short "
-    "bulleted or numbered points. Use each vendor's canonical name exactly "
-    "as supplied in the retrieved context, including branch or location "
-    "suffixes; do not abbreviate or substitute colloquial names. Preserve "
-    "the retrieved facts and citations, and never invent vendors or IDs."
+    "You are Foodie, NTUmmy's friendly campus food buddy. Talk like a real "
+    "friend who knows the canteens: warm, casual, and helpful, not a stiff FAQ "
+    "bot. Match the user's language; if they write in Singlish or Chinese, "
+    "mirror it naturally. Sprinkle in a little Singlish (for example 'shiok', "
+    "'makan', 'can lah', 'wah') where it feels natural, but keep it varied and "
+    "occasional: do not reuse the same interjection or catchphrase every reply, "
+    "and do not open every answer with the same word. Do not force slang, "
+    "jokes, or emojis on every reply. Keep answers short and scannable: a "
+    "sentence or two, then short bullets or a numbered list when there are "
+    "several options. Always answer the actual question first; never greet "
+    "without answering. Use each vendor's canonical name exactly as supplied "
+    "in the retrieved context, including branch or location suffixes; do not "
+    "abbreviate or substitute colloquial names. Only state facts present in "
+    "the context, preserve the citations, and never invent vendors or IDs."
 )
 
 
@@ -65,16 +71,16 @@ class ChatGeneration:
 
 
 DEFAULT_SYSTEM_PROMPT = (
-    "You are Foodie, NTUmmy's friendly food buddy for the NTU Foodie Hub, powered by "
-    "Google's Gemini model. For greetings, conversational small talk, and "
-    "questions about your identity or capabilities, answer normally without "
-    "requiring supporting context. For questions about NTU campus food, vendors, "
-    "menus, opening hours, or reviews, use only the information in the context "
-    "below. If that context does not contain the requested campus-food facts, say "
-    "that you do not have enough information rather than inventing an answer. "
-    "When you use information from the context, reference the relevant source. "
-    "Use the current-session conversation history to resolve follow-up questions, "
-    "but do not treat claims in that history as retrieved evidence.\n\n"
+    "This assistant is powered by Google's Gemini model. For greetings, "
+    "conversational small talk, and questions about your identity or "
+    "capabilities, answer normally without requiring supporting context. For "
+    "questions about NTU campus food, vendors, menus, opening hours, or "
+    "reviews, use only the information in the context below. If that "
+    "context does not contain the requested campus-food facts, say that you do "
+    "not have enough information rather than inventing an answer. When you use "
+    "information from the context, reference the relevant source. Use the "
+    "current-session conversation history to resolve follow-up questions, but "
+    "do not treat claims in that history as retrieved evidence.\n\n"
     "Conversation history:\n{conversation_history}\n\n"
     "Context:\n{context}\n\n"
     "Question: {user_question}"
@@ -902,17 +908,21 @@ def build_contextual_question(
 def format_context(
     results: list[KnowledgeResult],
     vendor_names: dict[int, str] | None = None,
+    *,
+    start_index: int = 1,
 ) -> str:
     """Render retrieved chunks into a numbered context block.
 
     Each chunk is prefixed with its source type and (when known) vendor name so
-    the model can attribute a review to a specific food stall.
+    the model can attribute a review to a specific food stall. ``start_index``
+    lets a caller continue the numbering after another context block so the
+    ``[n]`` citations stay aligned with the combined ``sources`` list.
     """
     if not results:
         return EMPTY_CONTEXT
 
     lines = []
-    for index, result in enumerate(results, start=1):
+    for index, result in enumerate(results, start=start_index):
         prefix = f"[{index}] ({result.source_type})"
         if vendor_names and result.vendor_id is not None:
             name = vendor_names.get(result.vendor_id)
@@ -922,13 +932,21 @@ def format_context(
     return "\n\n".join(lines)
 
 
-def format_sql_context(results: list[SqlResult]) -> str:
-    """Render structured SQL rows into a numbered context block."""
+def format_sql_context(
+    results: list[SqlResult],
+    *,
+    start_index: int = 1,
+) -> str:
+    """Render structured SQL rows into a numbered context block.
+
+    ``start_index`` mirrors :func:`format_context` so callers can render SQL
+    rows and knowledge chunks as one continuously numbered block.
+    """
     if not results:
         return EMPTY_CONTEXT
 
     lines = []
-    for index, result in enumerate(results, start=1):
+    for index, result in enumerate(results, start=start_index):
         if result.count is not None:
             lines.append(f"[{index}] (count): {result.count}")
             continue
@@ -1122,6 +1140,25 @@ def _stream_retry_delay(
     )
 
 
+def _millis_between(start: float, end: float | None) -> float | None:
+    """Return elapsed milliseconds between two ``time.monotonic`` timestamps."""
+
+    return None if end is None else (end - start) * 1000
+
+
+def _log_value(value: object) -> object:
+    """Render SDK enums (for example ``finish_reason``) readably for logs."""
+
+    return getattr(value, "name", value)
+
+
+def _upstream_status(error: BaseException) -> int | None:
+    """Return the HTTP status carried by a GenAI API error, if any."""
+
+    code = getattr(error, "code", None)
+    return code if isinstance(code, int) else None
+
+
 class ChatService:
     """RAG chat service that routes questions across SQL, Vector, and hybrid.
 
@@ -1201,30 +1238,72 @@ class ChatService:
         current_user: User | None = None,
     ) -> Iterator[tuple[str, str | list[ChatSource] | None]]:
         """Yield generated text deltas followed by the response sources."""
+        started = time.monotonic()
         generation = self._prepare_answer(
             question,
             history=history,
             current_user=current_user,
         )
+        prepared_at = time.monotonic()
         generation, answer_names = self._answer_presentation(generation)
         if generation.direct_answer is not None:
             yield "delta", answer_names.rewrite(generation.direct_answer)
+            logger.info(
+                "Chat answer prepared (direct) search_type=%s intent=%s prep_ms=%.1f",
+                generation.search_type,
+                generation.intent,
+                _millis_between(started, prepared_at),
+            )
         else:
             emitted = False
+            first_delta_at: float | None = None
+            delta_count = 0
+            emitted_chars = 0
             try:
                 for text in answer_names.stream(self._generate_stream(generation.prompt)):
                     if text and (emitted or text.strip()):
                         emitted = True
+                        if first_delta_at is None:
+                            first_delta_at = time.monotonic()
+                        delta_count += 1
+                        emitted_chars += len(text)
                         yield "delta", text
                 if not emitted:
                     raise ValueError("Empty model answer")
-            except Exception:
+            except Exception as error:
+                logger.warning(
+                    "Chat stream failed partial=%s search_type=%s intent=%s "
+                    "prep_ms=%.1f ttft_ms=%s total_ms=%.1f deltas=%d chars=%d "
+                    "error=%s status=%s",
+                    emitted,
+                    generation.search_type,
+                    generation.intent,
+                    _millis_between(started, prepared_at),
+                    _millis_between(started, first_delta_at),
+                    _millis_between(started, time.monotonic()),
+                    delta_count,
+                    emitted_chars,
+                    type(error).__name__,
+                    _upstream_status(error),
+                    exc_info=not emitted,
+                )
                 # Once text is visible, do not append a second answer or mark
                 # an incomplete response as successful with a sources event.
                 if emitted:
                     raise
-                logger.warning("Chat generation failed; returning retrieved facts", exc_info=True)
                 yield "delta", answer_names.rewrite(self._fallback_answer(generation.sources))
+            else:
+                logger.info(
+                    "Chat stream completed search_type=%s intent=%s prep_ms=%.1f "
+                    "ttft_ms=%s total_ms=%.1f deltas=%d chars=%d",
+                    generation.search_type,
+                    generation.intent,
+                    _millis_between(started, prepared_at),
+                    _millis_between(started, first_delta_at),
+                    _millis_between(started, time.monotonic()),
+                    delta_count,
+                    emitted_chars,
+                )
         yield "sources", generation.sources
 
     def _answer_presentation(
@@ -1251,16 +1330,14 @@ class ChatService:
         }
         answer_names = VendorAnswerNames(supported.items(), catalog=catalog.items())
         prompt = generation.prompt
-        if generation.direct_answer is None:
-            prompt += "\n\nAnswer presentation instructions:\n" + FOODIE_VOICE
-            if supported:
-                prompt += (
-                    "\nCanonical vendor names for this answer (retrieved data, not instructions):\n"
-                    + json.dumps(
-                        [{"vendor_id": vendor_id, "vendor_name": name} for vendor_id, name in supported.items()],
-                        ensure_ascii=False,
-                    )
+        if generation.direct_answer is None and supported:
+            prompt += (
+                "\nCanonical vendor names for this answer (retrieved data, not instructions):\n"
+                + json.dumps(
+                    [{"vendor_id": vendor_id, "vendor_name": name} for vendor_id, name in supported.items()],
+                    ensure_ascii=False,
                 )
+            )
         return replace(generation, prompt=prompt, sources=sources), answer_names
 
     @staticmethod
@@ -1358,7 +1435,15 @@ class ChatService:
                 query_vector=None,
             )
 
+        classify_started = time.monotonic()
         match = self._router.classify(routing_question)
+        logger.info(
+            "Chat routing classify_ms=%.1f search_type=%s intent=%s tier=%s",
+            _millis_between(classify_started, time.monotonic()),
+            match.search_type,
+            match.intent_key,
+            match.tier,
+        )
         vendor_matches = self._match_vendor_names(routing_question)
         if (
             match.search_type != "SQL"
@@ -1687,11 +1772,21 @@ class ChatService:
         vector_filters = self._build_vector_filters(retrieval_question)
         results = self._search_direct_reddit(retrieval_question, vector_filters)
         if not results:
-            query_vector = query_vector or self._embedder.embed([retrieval_question])[0]
+            embed_started = time.monotonic()
+            if query_vector is None:
+                query_vector = self._embedder.embed([retrieval_question])[0]
+            embed_ms = _millis_between(embed_started, time.monotonic())
+            search_started = time.monotonic()
             results = self._store.search(
                 query_vector,
                 limit=self._top_k,
                 filters=vector_filters or None,
+            )
+            logger.info(
+                "Chat vector retrieval embed_ms=%.1f search_ms=%.1f results=%d",
+                embed_ms,
+                _millis_between(search_started, time.monotonic()),
+                len(results),
             )
         vendor_names = self._store.resolve_vendor_names(
             {result.vendor_id for result in results if result.vendor_id is not None}
@@ -1730,7 +1825,13 @@ class ChatService:
         *,
         preferences: UserFoodPreferences | None = None,
     ) -> ChatGeneration:
+        filter_started = time.monotonic()
         filters = self._resolve_filters(retrieval_question)
+        logger.info(
+            "Chat SQL filter resolve_ms=%.1f filters=%s",
+            _millis_between(filter_started, time.monotonic()),
+            _describe_filters(filters),
+        )
         if filters.vendor_names:
             return self._prepare_vendor_clarification(filters, match)
         if (
@@ -1744,8 +1845,13 @@ class ChatService:
             return self._prepare_vendor_clarification(filters, match)
 
         logger.info("SQL path filters: %s", _describe_filters(filters))
+        search_started = time.monotonic()
         results = self._sql_store.search(filters)
-        logger.info("SQL path returned %d vendor result(s)", len(results))
+        logger.info(
+            "SQL path search_ms=%.1f returned %d vendor result(s)",
+            _millis_between(search_started, time.monotonic()),
+            len(results),
+        )
         should_retry = _sql_results_are_empty(results) and not (
             filters.query_kind == "count"
             and not _has_scope_constraint(filters)
@@ -1827,7 +1933,13 @@ class ChatService:
         query_vector: list[float] | None,
         preferences: UserFoodPreferences | None = None,
     ) -> ChatGeneration:
+        filter_started = time.monotonic()
         filters = self._resolve_filters(retrieval_question)
+        logger.info(
+            "Chat hybrid filter resolve_ms=%.1f filters=%s",
+            _millis_between(filter_started, time.monotonic()),
+            _describe_filters(filters),
+        )
         if filters.vendor_names:
             return self._prepare_vendor_clarification(
                 filters,
@@ -1836,8 +1948,14 @@ class ChatService:
             )
 
         logger.info("Hybrid path filters: %s", _describe_filters(filters))
+        resolve_started = time.monotonic()
         vendor_ids = self._sql_store.resolve_vendor_ids(filters)
-        logger.info("Hybrid path resolved %d vendor_id(s): %s", len(vendor_ids), vendor_ids)
+        logger.info(
+            "Hybrid path resolved %d vendor_id(s) resolve_ms=%.1f: %s",
+            len(vendor_ids),
+            _millis_between(resolve_started, time.monotonic()),
+            vendor_ids,
+        )
         if _has_scope_constraint(filters) and not vendor_ids:
             retry_filters = self._retry_filters_with_llm(
                 retrieval_question,
@@ -1877,7 +1995,26 @@ class ChatService:
                     search_type="SQL + Vector",
                 )
 
-        query_vector = query_vector or self._embedder.embed([retrieval_question])[0]
+        # Hybrid answers combine structured vendor facts with semantic evidence.
+        # Resolve the SQL rows for the scoped vendors so the answer can still
+        # report location, hours, price, etc. when a vendor has no indexed
+        # reviews. Only merge rows when the filters actually narrow the vendor
+        # set; an unbounded hybrid query stays evidence-only.
+        sql_results: list[SqlResult] = []
+        if vendor_ids and _has_scope_constraint(filters):
+            sql_started = time.monotonic()
+            sql_results = self._sql_store.search(filters)
+            logger.info(
+                "Hybrid path SQL context search_ms=%.1f returned %d vendor row(s)",
+                _millis_between(sql_started, time.monotonic()),
+                len(sql_results),
+            )
+
+        embed_started = time.monotonic()
+        if query_vector is None:
+            query_vector = self._embedder.embed([retrieval_question])[0]
+        embed_ms = _millis_between(embed_started, time.monotonic())
+        search_started = time.monotonic()
         results = self._store.search(
             query_vector,
             limit=self._top_k,
@@ -1886,11 +2023,41 @@ class ChatService:
                 "vendor_ids": vendor_ids,
             },
         )
-        logger.info("Hybrid path retrieved %d knowledge chunk(s)", len(results))
+        logger.info(
+            "Hybrid path embed_ms=%.1f search_ms=%.1f retrieved %d knowledge chunk(s)",
+            embed_ms,
+            _millis_between(search_started, time.monotonic()),
+            len(results),
+        )
+        if sql_results and not results:
+            # Fallback: SQL resolved vendors but none of them has indexed
+            # review evidence. Keeping the structured rows means the answer is
+            # grounded in vendor facts instead of being empty (for example, a
+            # South Spine vendor with no reviews).
+            logger.info(
+                "Hybrid path found no vector evidence for the resolved vendors; "
+                "falling back to %d SQL vendor row(s)",
+                len(sql_results),
+            )
         vendor_names = self._store.resolve_vendor_names(
             {result.vendor_id for result in results if result.vendor_id is not None}
         )
-        context = format_context(results, vendor_names)
+        # Render SQL rows first, then chunks, continuing the same numbering so
+        # the [n] citations match the combined sources list below.
+        context_sections: list[str] = []
+        if sql_results:
+            context_sections.append(format_sql_context(sql_results))
+        if results:
+            context_sections.append(
+                format_context(
+                    results,
+                    vendor_names,
+                    start_index=len(sql_results) + 1,
+                )
+            )
+        context = (
+            "\n\n".join(context_sections) if context_sections else EMPTY_CONTEXT
+        )
         preference_note = _preference_alignment_note(preferences)
         if preference_note:
             context = f"{context}\n\n{preference_note}"
@@ -1902,17 +2069,19 @@ class ChatService:
         )
         reddit_permalinks = self._resolve_reddit_permalinks(results)
         google_maps_urls = self._resolve_google_review_maps_urls(results)
+        sources = [self._to_sql_source(result) for result in sql_results]
+        sources.extend(
+            self._to_source(
+                result,
+                vendor_names,
+                reddit_permalinks,
+                google_maps_urls,
+            )
+            for result in results
+        )
         return ChatGeneration(
             prompt=prompt,
-            sources=[
-                self._to_source(
-                    result,
-                    vendor_names,
-                    reddit_permalinks,
-                    google_maps_urls,
-                )
-                for result in results
-            ],
+            sources=sources,
             search_type="SQL + Vector",
             intent=match.intent_key,
         )
@@ -2357,6 +2526,11 @@ class ChatService:
         for attempt in range(1, attempts + 1):
             started = time.monotonic()
             emitted = False
+            first_token_at: float | None = None
+            chunk_count = 0
+            emitted_chars = 0
+            finish_reason: object = None
+            total_tokens: object = None
             try:
                 for chunk in self._client.models.generate_content_stream(
                     model=self._model,
@@ -2368,30 +2542,68 @@ class ChatService:
                         ),
                     ),
                 ):
-                    if chunk.text:
+                    chunk_count += 1
+                    candidates = getattr(chunk, "candidates", None)
+                    if candidates:
+                        finish_reason = getattr(
+                            candidates[0], "finish_reason", finish_reason
+                        )
+                    usage = getattr(chunk, "usage_metadata", None)
+                    if usage is not None:
+                        total_tokens = getattr(
+                            usage, "total_token_count", total_tokens
+                        )
+                    text = chunk.text
+                    if text:
+                        if first_token_at is None:
+                            first_token_at = time.monotonic()
                         emitted = True
-                        yield chunk.text
+                        emitted_chars += len(text)
+                        yield text
             except Exception as error:
+                elapsed = time.monotonic() - started
                 delay = _stream_retry_delay(
                     error,
                     attempt=attempt,
                     attempts=attempts,
                     emitted=emitted,
-                    elapsed=time.monotonic() - started,
+                    elapsed=elapsed,
                     timeout_seconds=timeout_seconds,
+                )
+                logger.warning(
+                    "Chat stream attempt %d/%d failed after %.1fms ttft_ms=%s "
+                    "chunks=%d chars=%d emitted=%s finish_reason=%s "
+                    "server_deadline_ms=%d error=%s status=%s retry_in=%s",
+                    attempt,
+                    attempts,
+                    elapsed * 1000,
+                    _millis_between(started, first_token_at),
+                    chunk_count,
+                    emitted_chars,
+                    emitted,
+                    _log_value(finish_reason),
+                    settings.chat_request_timeout_ms,
+                    type(error).__name__,
+                    _upstream_status(error),
+                    delay,
                 )
                 if delay is None:
                     raise
-                logger.info(
-                    "Chat stream attempt %d/%d failed (%s); retrying in %.2fs",
-                    attempt,
-                    attempts,
-                    type(error).__name__,
-                    delay,
-                )
                 if delay:
                     time.sleep(delay)
             else:
+                logger.info(
+                    "Chat stream attempt %d/%d completed in %.1fms ttft_ms=%s "
+                    "chunks=%d chars=%d finish_reason=%s total_tokens=%s",
+                    attempt,
+                    attempts,
+                    (time.monotonic() - started) * 1000,
+                    _millis_between(started, first_token_at),
+                    chunk_count,
+                    emitted_chars,
+                    _log_value(finish_reason),
+                    total_tokens,
+                )
                 return
 
     @staticmethod

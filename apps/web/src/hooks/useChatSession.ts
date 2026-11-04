@@ -126,7 +126,10 @@ export function useChatSession() {
       });
     } catch (error) {
       if (controller.signal.aborted || requestId !== requestIdRef.current) return;
-      console.error("Chat request failed", error);
+      console.error("[chat] request failed", error, {
+        hasPartialAnswer: hasStreamMessage,
+        errorName: error instanceof Error ? error.name : typeof error,
+      });
       setMessages((previous) => [
         ...previous,
         {

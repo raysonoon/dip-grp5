@@ -200,8 +200,10 @@ def test_service_uses_actual_database_canonical_identity_after_retrieval(session
     assert sources[0].vendor_id == vendor.id
     assert sources[0].vendor_name == display_name
     assert "A custom answer template with retrieved facts." in prompts[0]
-    assert "Singlish" in prompts[0]
-    assert "bulleted or numbered" in prompts[0]
+    # The Foodie voice is applied once via system_instruction, not duplicated
+    # into the prompt text.
+    assert "Singlish" not in prompts[0]
+    assert "bulleted or numbered" not in prompts[0]
     assert display_name in prompts[0]
     assert "food picker" not in prompts[0].lower()
 

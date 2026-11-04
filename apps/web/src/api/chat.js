@@ -128,6 +128,26 @@ function parseSources(value) {
 export const CHAT_IDLE_TIMEOUT_MS = 30_000;
 export const CHAT_REQUEST_TIMEOUT_MS = 30_000;
 
+function timeoutError(timeoutMs, kind) {
+  const error = new ApiTimeoutError(timeoutMs);
+  error.kind = kind;
+  return error;
+}
+
+function logStreamTiming(outcome, error, timing) {
+  const payload = {
+    outcome,
+    error: error?.name,
+    timeoutKind: error instanceof ApiTimeoutError ? error.kind : undefined,
+    serverCode: error instanceof ApiError ? error.payload?.code : undefined,
+    ttftMs: timing.firstDeltaAt === null ? null : timing.firstDeltaAt - timing.startedAt,
+    totalMs: Date.now() - timing.startedAt,
+    deltas: timing.deltaCount,
+  };
+  if (outcome === "ok") console.info("[chat] stream completed", payload);
+  else console.warn("[chat] stream failed", payload);
+}
+
 /** @returns {Promise<ReturnType<typeof parseChatResponse>>} */
 export async function streamChat(
   question,
@@ -139,6 +159,14 @@ export async function streamChat(
     ...options
   } = {},
 ) {
+  const timing = { startedAt: Date.now(), firstDeltaAt: null, deltaCount: 0 };
+  const callerOnDelta = options.onDelta;
+  options.onDelta = (delta, answer) => {
+    timing.deltaCount += 1;
+    if (timing.firstDeltaAt === null) timing.firstDeltaAt = Date.now();
+    return callerOnDelta?.(delta, answer);
+  };
+
   const controller = new AbortController();
   let idleTimer;
   const abortFromCaller = () => controller.abort(
@@ -151,9 +179,15 @@ export async function streamChat(
   });
   const resetIdleTimeout = () => {
     clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => controller.abort(new ApiTimeoutError(idleTimeoutMs)), idleTimeoutMs);
+    idleTimer = setTimeout(
+      () => controller.abort(timeoutError(idleTimeoutMs, "idle")),
+      idleTimeoutMs,
+    );
   };
-  const totalTimer = setTimeout(() => controller.abort(new ApiTimeoutError(timeoutMs)), timeoutMs);
+  const totalTimer = setTimeout(
+    () => controller.abort(timeoutError(timeoutMs, "total")),
+    timeoutMs,
+  );
   resetIdleTimeout();
   if (signal?.aborted) abortFromCaller();
   else signal?.addEventListener("abort", abortFromCaller, { once: true });
@@ -161,7 +195,7 @@ export async function streamChat(
   try {
     // Race the whole operation so even a stalled auth lookup or response body
     // cannot leave the chat waiting after the deadline or a user cancellation.
-    return await Promise.race([
+    const result = await Promise.race([
       readChatStream(question, {
         ...options,
         signal: controller.signal,
@@ -169,7 +203,10 @@ export async function streamChat(
       }),
       aborted,
     ]);
+    logStreamTiming("ok", null, timing);
+    return result;
   } catch (error) {
+    logStreamTiming("failed", controller.signal.aborted ? controller.signal.reason : error, timing);
     if (controller.signal.aborted) throw controller.signal.reason;
     if (error instanceof TypeError) throw new ApiNetworkError("Chat connection interrupted", error);
     throw error;
@@ -253,8 +290,9 @@ async function readChatStream(
     } else if (parsed.event === "sources") {
       sources = parseSources(data);
     } else if (parsed.event === "error") {
-      // Only expose a stable public message, never server diagnostics.
-      throw new ApiError("Foodie is temporarily unavailable", 503, null);
+      // Only expose a stable public message and code, never server diagnostics.
+      const code = typeof data?.code === "string" ? data.code : "chat_unavailable";
+      throw new ApiError("Foodie is temporarily unavailable", 503, { code });
     }
   }
 

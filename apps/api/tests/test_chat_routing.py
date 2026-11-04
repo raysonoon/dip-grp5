@@ -544,8 +544,71 @@ def test_hybrid_path_filters_vector_results(session) -> None:
     response = service.answer("halal food that students recommend")
 
     assert response.search_type == "SQL + Vector"
-    assert [s.vendor_id for s in response.sources] == [1]
+    # The SQL vendor row is cited first, then the matching knowledge chunk. Both
+    # refer to the same vendor, and the [n] context numbering stays aligned with
+    # this sources order.
+    assert [s.source_type for s in response.sources] == [
+        "vendor",
+        "internal_review",
+    ]
+    assert [s.vendor_id for s in response.sources] == [1, 1]
     assert response.sources[0].vendor_name == "Halal Nook"
+
+
+def test_hybrid_falls_back_to_sql_when_vector_has_no_evidence(session) -> None:
+    from app.models import Vendor
+
+    vendor = Vendor(
+        name="South Spine Supper",
+        location="South Spine",
+        category="Mixed Rice",
+        opening_hours="10:00 - 22:00",
+    )
+    session.add(vendor)
+    session.commit()
+    question = "where can I get good food near south spine late at night"
+    _seed_prompt(
+        session,
+        intent_key="Q-HYBRID-FALLBACK",
+        question_text=question,
+        search_type="SQL + Vector",
+    )
+
+    # The only knowledge chunk belongs to a different vendor, so the hybrid
+    # vendor filter leaves the vector search empty.
+    store = FakeKnowledgeStore(
+        items=[
+            (
+                _vector(0.1),
+                KnowledgeResult(
+                    source_type="internal_review",
+                    source_id="other",
+                    vendor_id=999,
+                    content="unrelated review",
+                    metadata={},
+                ),
+            )
+        ],
+        vendor_names={999: "Other Vendor"},
+    )
+
+    service = ChatService(
+        FakeEmbedder(),
+        store,
+        generate=lambda _prompt: "South Spine Supper is open late.",
+        router=_make_router(session),
+        sql_store=PgSqlStore(session),
+    )
+
+    response = service.answer(question)
+
+    assert response.search_type == "SQL + Vector"
+    # No chunk matched the resolved vendor, so the structured SQL row is the
+    # fallback context/source instead of an empty answer.
+    assert [s.source_type for s in response.sources] == ["vendor"]
+    assert response.sources[0].vendor_id == vendor.id
+    assert response.sources[0].vendor_name == "South Spine Supper"
+    assert response.sources[0].opening_hours == "10:00 - 22:00"
 
 
 def test_hybrid_filters_applied_by_fake_store() -> None:
