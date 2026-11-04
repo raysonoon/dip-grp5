@@ -135,8 +135,8 @@ export function FoodieChat() {
                 <div
                   className={`max-w-[82%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                     msg.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-br-sm"
-                      : "bg-card border border-border text-foreground rounded-bl-sm"
+                      ? "bg-primary text-primary-foreground rounded-br-none"
+                      : "bg-card border border-border text-foreground rounded-bl-none"
                   }`}
                 >
                   {msg.role === "bot" ? (
@@ -149,7 +149,7 @@ export function FoodieChat() {
             ))}
             {isTyping && (
               <div className="flex justify-start">
-                <div className="px-4 py-3 rounded-2xl bg-card border border-border rounded-bl-sm">
+                <div className="px-4 py-3 rounded-2xl bg-card border border-border rounded-bl-none">
                   <div className="flex gap-1 items-center">
                     {[0, 1, 2].map((i) => (
                       <div
