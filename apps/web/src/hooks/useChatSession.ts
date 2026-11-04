@@ -9,7 +9,7 @@ import {
   removePendingRequestMessages,
 } from "./chatSessionState.js";
 
-const ANONYMOUS_CHAT_GREETING = "Hey there! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!";
+const ANONYMOUS_CHAT_GREETING = "Hey! Time to makan 🍜 What are you craving?";
 
 type ChatHistoryMessage = {
   role: "user" | "assistant";
@@ -30,7 +30,7 @@ function createChatSessionId() {
 
 function initialChatMessages(displayName: string | null): ChatUiMessage[] {
   const greeting = displayName
-    ? `Hey ${displayName}! I'm Foodie, your NTU campus food guide 🍜 Ask me about canteens, opening hours, or what's good today!`
+    ? `Hey ${displayName}! Time to makan 🍜 What are you craving?`
     : ANONYMOUS_CHAT_GREETING;
   return [{ role: "bot", text: greeting }];
 }
@@ -126,7 +126,10 @@ export function useChatSession() {
       });
     } catch (error) {
       if (controller.signal.aborted || requestId !== requestIdRef.current) return;
-      console.error("Chat request failed", error);
+      console.error("[chat] request failed", error, {
+        hasPartialAnswer: hasStreamMessage,
+        errorName: error instanceof Error ? error.name : typeof error,
+      });
       setMessages((previous) => [
         ...previous,
         {
