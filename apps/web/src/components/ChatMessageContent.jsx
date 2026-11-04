@@ -6,16 +6,13 @@ import { Link } from "react-router-dom";
 import remarkBreaks from "remark-breaks";
 
 import { CITATION_MARKER_PATTERN, citationNumbers } from "./citationMarkers.js";
+import { containsVendorName, vendorNameMentions } from "./vendorNameLinks.js";
 
 const SOURCE_LABELS = {
   google_review: "Google review",
   internal_review: "NTUmmy review",
   reddit: "Reddit comment",
 };
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function redditUrl(permalink) {
   if (!permalink) return null;
@@ -238,28 +235,22 @@ function CitationPopover({ source, citationNumber, showVendorLink }) {
 }
 
 function decorateText(text, sources, answerText) {
-  const vendors = [];
-  const seenVendors = new Set();
-  for (const source of sources) {
-    if (source.vendor_id == null || !source.vendor_name) continue;
-    const key = source.vendor_name.toLocaleLowerCase();
-    if (seenVendors.has(key)) continue;
-    seenVendors.add(key);
-    vendors.push(source);
-  }
-  vendors.sort((left, right) => right.vendor_name.length - left.vendor_name.length);
-
-  const patterns = [CITATION_MARKER_PATTERN, ...vendors.map((source) => escapeRegExp(source.vendor_name))];
-  const matcher = new RegExp(patterns.join("|"), "gi");
+  const tokens = [
+    ...vendorNameMentions(text, sources).map((mention) => ({ ...mention, kind: "vendor" })),
+    ...[...text.matchAll(new RegExp(CITATION_MARKER_PATTERN, "g"))].map((match) => ({
+      start: match.index, end: match.index + match[0].length, text: match[0],
+      kind: "citation", marker: match[1],
+    })),
+  ].sort((left, right) => left.start - right.start || (left.kind === "citation" ? -1 : 1));
   const parts = [];
   let cursor = 0;
 
-  for (const match of text.matchAll(matcher)) {
-    if (match.index > cursor) parts.push(text.slice(cursor, match.index));
-    const citationMatch = new RegExp(`^${CITATION_MARKER_PATTERN}$`).exec(match[0]);
+  for (const token of tokens) {
+    if (token.start < cursor) continue;
+    if (token.start > cursor) parts.push(text.slice(cursor, token.start));
 
-    if (citationMatch) {
-      const citations = citationNumbers(citationMatch[1]);
+    if (token.kind === "citation") {
+      const citations = citationNumbers(token.marker);
       parts.push(...citations.map((citationNumber) => {
         const source = sources[citationNumber - 1];
 
@@ -267,35 +258,32 @@ function decorateText(text, sources, answerText) {
 
         if (!Object.hasOwn(SOURCE_LABELS, source.source_type)) return null;
 
-        const vendorMentioned = source.vendor_name
-          ? answerText.toLocaleLowerCase().includes(source.vendor_name.toLocaleLowerCase())
-          : false;
+        const vendorMentioned = containsVendorName(answerText, source.vendor_name);
         return (
           <CitationPopover
-            key={`citation-${match.index}-${citationNumber}`}
+            key={`citation-${token.start}-${citationNumber}`}
             source={source}
             citationNumber={citationNumber}
             showVendorLink={!vendorMentioned}
           />
         );
       }));
-    } else {
-      const source = vendors.find(
-        (candidate) => candidate.vendor_name.toLocaleLowerCase() === match[0].toLocaleLowerCase(),
-      );
+    } else if (token.vendorId != null) {
       parts.push(
         <Link
-          key={`vendor-${match.index}-${source.vendor_id}`}
-          to={`/vendors/${source.vendor_id}`}
+          key={`vendor-${token.start}-${token.vendorId}`}
+          to={`/vendors/${token.vendorId}`}
           target="_blank"
           rel="noreferrer"
           className="font-medium text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
         >
-          {match[0]}
+          {token.text}
         </Link>,
       );
+    } else {
+      parts.push(token.text);
     }
-    cursor = match.index + match[0].length;
+    cursor = token.end;
   }
 
   if (cursor < text.length) parts.push(text.slice(cursor));

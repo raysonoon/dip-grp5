@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, DollarSign, Leaf, MapPin, SlidersHorizontal, Sparkles, Star, Store, Utensils } from "lucide-react";
+import { ArrowLeft, ArrowRight, DollarSign, Leaf, MapPin, RotateCw, SlidersHorizontal, Sparkles, Star, Store, Utensils } from "lucide-react";
 import { apiUrl } from "../api/client";
 import { fetchVendors, type parseVendor } from "../api/vendors";
 import { guestDiscoveryOptions, recommendGuestVendors } from "../lib/guestDiscovery.js";
@@ -8,6 +8,9 @@ import { PRICE_BAND_OPTIONS, priceRangeValues } from "../lib/priceRange.js";
 import MultiSelect from "../components/MultiSelect";
 import { formatDistance } from "../lib/vendorRanking.js";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import VendorWheel from "../components/VendorWheel";
+import { createWheelSession, visibleResultsForWheel, wheelSessionReducer, type WheelSession } from "../lib/vendorWheel.js";
+import { useChat } from "../contexts/ChatContext";
 
 type Vendor = ReturnType<typeof parseVendor>;
 type Recommendation = Vendor & {
@@ -19,8 +22,31 @@ type Recommendation = Vendor & {
 };
 const PAGE_SIZE = 12;
 
+function StarRow({ rating }: { rating: number }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((i) => {
+        const fill = Math.max(0, Math.min(1, rating - (i - 1)));
+        return (
+          <span key={i} className="relative inline-block">
+            <Star className="h-3.5 w-3.5 fill-transparent text-muted" />
+            <span
+              className="absolute inset-0 overflow-hidden"
+              style={{ width: `${fill * 100}%` }}
+              aria-hidden="true"
+            >
+              <Star className="h-3.5 w-3.5 fill-primary text-primary" />
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function GuestDiscoverPage() {
   useDocumentTitle("Discover");
+  const { openChat } = useChat();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -35,6 +61,7 @@ export default function GuestDiscoverPage() {
   const [priceBands, setPriceBands] = useState<string[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [wheelSession, setWheelSession] = useState<WheelSession | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const locationRequestRef = useRef(0);
 
@@ -80,7 +107,7 @@ export default function GuestDiscoverPage() {
     const controller = new AbortController();
     setLoading(true);
     setError("");
-    fetchVendors("", controller.signal)
+    fetchVendors("", controller.signal, { auth: false })
       .then((catalog) => { if (!controller.signal.aborted) setVendors(catalog); })
       .catch((cause) => {
         if (!controller.signal.aborted) {
@@ -103,10 +130,21 @@ export default function GuestDiscoverPage() {
   const hasRankingPreferences = cuisines.length > 0 || categories.length > 0 || hasDistancePreference;
   const distanceReferences = [...(userLocation ? ["you"] : []), ...locations].join(" or ");
   const locationStatus = geoStatus === "granted"
-    ? locations.length ? "Distances use the closest of you or a selected area." : "Distances are measured from you."
-    : geoStatus === "denied" ? "Location access denied — pick a named area instead."
-    : geoStatus === "unavailable" ? "Couldn't find your location — pick a named area instead."
+    ? locations.length ? "Distances use the closest of you or a selected area" : "Distances are measured from you"
+    : geoStatus === "denied" ? "Location access denied — pick a named area instead"
+    : geoStatus === "unavailable" ? "Couldn't find your location — pick a named area instead"
     : "";
+
+  function openWheel() {
+    const visibleVendors = visibleResultsForWheel(recommendations, visibleCount);
+    if (visibleVendors.length) setWheelSession(createWheelSession(visibleVendors));
+  }
+
+  function removeWheelVendor(vendorId: number) {
+    setWheelSession((current) => current
+      ? wheelSessionReducer(current, { type: "remove", vendorId })
+      : current);
+  }
 
   return (
     <div className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-6 sm:py-14">
@@ -116,20 +154,38 @@ export default function GuestDiscoverPage() {
         <li aria-current={showResults ? "step" : undefined} className={showResults ? "text-primary" : "text-muted-foreground"}>2. Your food picks</li>
       </ol>
 
-      <header className="mb-8 text-center">
-        <p className="mb-3 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-primary"><Sparkles size={15} aria-hidden="true" /> Find your next favourite</p>
-        <h1 ref={headingRef} tabIndex={-1} className="font-display text-3xl font-bold text-foreground outline-none sm:text-4xl">
-          {showResults ? "Places that fit your mood." : "What sounds good?"}
-        </h1>
-        <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
-          {showResults ? hasRankingPreferences ? "Your preferences come first. More campus food spots stay on the list." : "Explore campus food spots, starting with the best rated." : "Choose what sounds good, or jump straight to your recommendations."}
-        </p>
+      <header className={`mb-8 ${showResults ? "flex items-center justify-center" : "text-center"}`}>
+        {showResults && (
+          <button
+            type="button"
+            onClick={openChat}
+            aria-label="Open Foodie chatbot"
+            title="Ask Foodie"
+            className="group shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+          >
+            <img
+              src="/ntummy_mascot_yay.png"
+              alt=""
+              aria-hidden="true"
+              className="h-24 w-24 object-contain animate-[mascot-float_2.4s_ease-in-out_infinite] transition-transform group-hover:scale-105 group-active:scale-95"
+            />
+          </button>
+        )}
+        <div className="text-center">
+          <p className="mb-3 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-primary"><Sparkles size={15} aria-hidden="true" /> Find your next favourite</p>
+          <h1 ref={headingRef} tabIndex={-1} className="font-display text-3xl font-bold text-foreground outline-none sm:text-4xl">
+            {showResults ? "Places that fit your taste" : "What sounds good?"}
+          </h1>
+          <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
+            {showResults ? hasRankingPreferences ? "Your preferences come first. More campus food spots stay on the list" : "Explore campus food spots, starting with the best rated" : "Choose what sounds good, or jump straight to your recommendations"}
+          </p>
+        </div>
       </header>
 
       {loading && <p role="status" className="rounded-2xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">Finding campus food spots…</p>}
       {!loading && error && (
         <div role="alert" className="rounded-2xl border border-border bg-card p-8 text-center">
-          <p className="font-semibold">We couldn't load the food spots.</p>
+          <p className="font-semibold">We couldn't load the food spots</p>
           <p className="mt-2 text-sm text-muted-foreground">{error}</p>
           <button type="button" onClick={() => setAttempt((value) => value + 1)} className="mt-4 cursor-pointer rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">Try again</button>
         </div>
@@ -137,7 +193,7 @@ export default function GuestDiscoverPage() {
 
       {!loading && !error && !showResults && (
         <form onSubmit={(event) => { event.preventDefault(); setVisibleCount(PAGE_SIZE); setShowResults(true); }} className="mx-auto max-w-2xl rounded-3xl border border-border bg-card p-6 shadow-sm sm:p-8">
-          <p className="mb-4 text-sm leading-relaxed text-muted-foreground">Pick as many as you like or leave everything open.</p>
+          <p className="mb-4 text-sm leading-relaxed text-muted-foreground">Pick as many as you like or leave everything open</p>
           <div className="grid gap-6 sm:grid-cols-2">
             <MultiSelect id="discover-cuisines" label="Cuisine" placeholder="I'm open to anything" icon={<Utensils size={17} className="text-primary" aria-hidden="true" />} options={options.cuisines} selected={cuisines} onChange={setCuisines} />
             <MultiSelect id="discover-categories" label="Category" placeholder="Any type of place" icon={<Store size={17} className="text-primary" aria-hidden="true" />} options={options.categories} selected={categories} onChange={setCategories} />
@@ -163,7 +219,7 @@ export default function GuestDiscoverPage() {
                 </label>
               ))}
             </div>
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Matches use the dietary information listed by each vendor.</p>
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Matches use the dietary information listed by each vendor</p>
           </fieldset>
 
           <button type="submit" className="mt-8 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">
@@ -180,10 +236,13 @@ export default function GuestDiscoverPage() {
               <div className="flex flex-wrap gap-2">
                 {(selected.length ? selected : ["Open to anything"]).map((value) => <span key={value} className="rounded-full bg-primary/5 px-3 py-1 text-xs font-semibold text-primary">{value}</span>)}
               </div>
-              <p role="status" className="mt-3 text-xs leading-relaxed text-muted-foreground">{recommendations.length} {recommendations.length === 1 ? "place" : "places"} to explore. {hasRankingPreferences ? "Food preferences and proximity first, with other places included." : "Best rated first."}</p>
+              <p role="status" className="mt-3 text-xs leading-relaxed text-muted-foreground">{recommendations.length} {recommendations.length === 1 ? "place" : "places"} to explore. {hasRankingPreferences ? "Food preferences and proximity first, with other places included" : "Best rated first"}</p>
               {hasDistancePreference && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Nearest from {distanceReferences}. Approximate straight-line distances; named areas use their centres.</p>}
             </div>
-            <button type="button" onClick={() => setShowResults(false)} className="flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-muted"><SlidersHorizontal size={15} aria-hidden="true" /> Change preferences</button>
+            <div className="grid shrink-0 grid-cols-2 gap-2">
+              <button type="button" onClick={openWheel} disabled={recommendations.length === 0} aria-haspopup="dialog" className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:py-2.5"><RotateCw size={15} aria-hidden="true" /> Spin the wheel</button>
+              <button type="button" onClick={() => setShowResults(false)} className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted sm:px-4 sm:py-2.5"><SlidersHorizontal size={15} aria-hidden="true" /> Change preferences</button>
+            </div>
           </div>
 
           {recommendations.length === 0 ? (
@@ -191,7 +250,7 @@ export default function GuestDiscoverPage() {
               <Utensils className="mx-auto mb-4 text-primary" size={28} aria-hidden="true" />
               <h2 className="font-display text-xl font-bold">No places to show this time.</h2>
               <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">{(halal || vegetarian || priceBands.length > 0) ? "No places match all your selected preferences. You can review those choices or try again later." : "There aren't any campus food spots listed yet. Please check back later."}</p>
-              <button type="button" onClick={() => setShowResults(false)} className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground"><ArrowLeft size={16} aria-hidden="true" /> Change preferences</button>
+              <button type="button" onClick={() => setShowResults(false)} className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground"><ArrowLeft size={16} aria-hidden="true" /> Edit preferences</button>
             </div>
           ) : (
             <>
@@ -199,20 +258,97 @@ export default function GuestDiscoverPage() {
                 {recommendations.slice(0, visibleCount).map((vendor) => {
                   const rating = vendor.average_rating ?? vendor.average_google_rating;
                   return (
-                    <article key={vendor.id} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-                      {vendor.image_url ? <img src={apiUrl(vendor.image_url)} alt={vendor.name} loading="lazy" className="h-40 w-full object-cover" /> : <div className="grid h-40 place-items-center bg-muted text-muted-foreground"><Store size={36} aria-hidden="true" /></div>}
-                      <div className="flex flex-1 flex-col p-5">
-                        <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><MapPin size={13} className="shrink-0" aria-hidden="true" /> {vendor.location || "NTU"}</p>
-                        <h2 className="mt-2 font-display text-lg font-bold leading-snug">{vendor.name}</h2>
-                        <p className="mt-1 text-xs text-muted-foreground">{vendor.cuisine || vendor.category || "Food"}</p>
-                        {vendor.discovery_cuisine_match && <p className="mt-3 text-xs font-semibold text-primary">One of your cuisines</p>}
-                        {vendor.discovery_category_match && <p className={`${vendor.discovery_cuisine_match ? "mt-1" : "mt-3"} text-xs font-semibold text-primary`}>One of your categories</p>}
-                        {hasDistancePreference && <p className="mt-2 text-xs text-muted-foreground">{vendor.discovery_distance_m != null ? `~${formatDistance(vendor.discovery_distance_m)} from ${vendor.discovery_distance_from}` : vendor.discovery_location_match ? `In ${vendor.location}` : "Distance unavailable"}</p>}
-                        {rating != null && <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold"><Star size={13} className="fill-primary text-primary" aria-hidden="true" /> {rating.toFixed(1)} <span className="font-normal text-muted-foreground">{vendor.average_rating != null ? "Community rating" : "Google rating"}</span></p>}
-                        {(halal || vegetarian) && <p className="mt-3 flex items-center gap-1.5 text-xs text-primary"><Check size={13} aria-hidden="true" /> {[halal && "Halal", vegetarian && "Vegetarian"].filter(Boolean).join(" · ")}</p>}
-                        <Link to={`/vendors/${vendor.id}`} className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90">View vendor <ArrowRight size={15} aria-hidden="true" /></Link>
+                    <Link
+                      key={vendor.id}
+                      to={`/vendors/${vendor.id}`}
+                      className="group min-w-0 rounded-2xl border border-border bg-card overflow-hidden text-foreground no-underline hover:border-primary/25 transition-all duration-300 flex flex-col"
+                    >
+                      <div className="relative h-44 overflow-hidden bg-muted">
+                        {vendor.image_url ? (
+                          <img
+                            src={apiUrl(vendor.image_url)}
+                            alt={`${vendor.name} dish`}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
+                        ) : (
+                          <div
+                            role="img"
+                            aria-label={`${vendor.name} has no image`}
+                            className="w-full h-full flex items-center justify-center text-sm text-muted-foreground"
+                          >
+                            No image
+                          </div>
+                        )}
+                        {vendor.cuisine && (
+                          <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-muted-foreground border border-border/60 backdrop-blur-sm">
+                              {vendor.cuisine}
+                            </span>
+                          </div>
+                        )}
+                        {rating != null && (
+                          <div className="absolute top-3 right-3 px-2 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-bold">
+                            {rating.toFixed(1)}★
+                          </div>
+                        )}
+                        {(vendor.halal === true || vendor.vegetarian === true) && (
+                          <div className="absolute bottom-3 right-3 flex gap-1.5 flex-wrap justify-end">
+                            {vendor.halal === true && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm">
+                                Halal
+                              </span>
+                            )}
+                            {vendor.vegetarian === true && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/75 text-foreground border border-border/60 backdrop-blur-sm">
+                                Vegetarian
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </article>
+
+                      <div className="p-4 flex flex-col flex-1">
+                        {vendor.recommended && (
+                          <span className="self-start mb-2 text-xs font-semibold text-primary">
+                            Recommended
+                          </span>
+                        )}
+
+                        <h3 className="font-semibold text-sm leading-snug mb-1">
+                          {vendor.name}
+                        </h3>
+
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
+                          <MapPin className="w-3 h-3 flex-shrink-0" />
+                          {vendor.location || "NTU"}
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
+                          <StarRow rating={rating ?? 0} />
+                          <span>{vendor.review_count} reviews</span>
+                        </div>
+
+                        <div className="mt-auto border-t border-border pt-3">
+                          {hasDistancePreference && (
+                            <p className="text-xs font-semibold text-primary mb-3">
+                              {vendor.discovery_distance_m != null
+                                ? `~${formatDistance(vendor.discovery_distance_m)} from ${vendor.discovery_distance_from}`
+                                : vendor.discovery_location_match
+                                  ? `In ${vendor.location}`
+                                  : "Distance unavailable"}
+                            </p>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-foreground">
+                              {vendor.price_range ?? "Price unavailable"}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {vendor.category}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </Link>
                   );
                 })}
               </div>
@@ -221,6 +357,7 @@ export default function GuestDiscoverPage() {
           )}
         </section>
       )}
+      {wheelSession && <VendorWheel context="discover" vendors={wheelSession.vendors} onRemove={removeWheelVendor} onClose={() => setWheelSession(null)} />}
     </div>
   );
 }

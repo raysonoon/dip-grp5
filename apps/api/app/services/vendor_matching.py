@@ -55,6 +55,7 @@ VENDOR_ALIASES: Mapping[str, str] = {
     "nie canteen": "Food Court @ NIE",
     "nie food court": "Food Court @ NIE",
     "quad cafe": "Quad Cafe (SBS)",
+    "saraca canteen": "Nanyang Crescent Food Court",
     "south spine": "South Spine Food Court (Foodies' Clan)",
     "north hill canteen": "North Hill Food Court (Colour Box)",
     "north hill food court": "North Hill Food Court (Colour Box)",
@@ -183,6 +184,29 @@ def normalize_vendor_text(value: str) -> str:
     normalized = "".join(folded)
     normalized = _NON_ALPHANUMERIC_RE.sub(" ", normalized)
     return " ".join(normalized.split())
+
+
+def normalize_vendor_text_with_offsets(
+    text: str,
+) -> tuple[str, list[tuple[int, int]]]:
+    """Apply name normalization while retaining each character's raw span."""
+    characters: list[str] = []
+    offsets: list[tuple[int, int]] = []
+    for position, original in enumerate(text):
+        for character in unicodedata.normalize("NFKD", original.casefold()):
+            if character in _APOSTROPHE_CHARACTERS:
+                continue
+            if character.isascii() and character.isalnum():
+                characters.append(character)
+                offsets.append((position, position + 1))
+            elif unicodedata.category(character).startswith("M"):
+                if offsets and characters[-1] != " ":
+                    offsets[-1] = (offsets[-1][0], position + 1)
+                continue
+            elif characters and characters[-1] != " ":
+                characters.append(" ")
+                offsets.append((position, position + 1))
+    return "".join(characters), offsets
 
 
 def _vendor_name_forms(name: str) -> tuple[str, ...]:
@@ -342,6 +366,17 @@ def _get_alias_index(
     if aliases is CHAT_VENDOR_ALIASES:
         return _build_default_alias_index(tuple(vendors))
     return _build_alias_index(vendors, aliases)
+
+
+def vendor_name_aliases(
+    vendors: Iterable[VendorEntry],
+) -> Mapping[str, tuple[VendorEntry, ...]]:
+    """Return known and directory-derived names without guessing an identity.
+
+    Multiple targets are retained so answer presentation can leave ambiguous
+    branch names untouched rather than linking to whichever row came first.
+    """
+    return _get_alias_index(_prepare_vendors(vendors), CHAT_VENDOR_ALIASES)
 
 
 def match_vendor_mentions(

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chooseWheelSpin, completeWheelVendor, createWheelSession, wheelSessionReducer, wheelVendorLabel } from "./vendorWheel.js";
+import { chooseWheelSpin, completeWheelVendor, createWheelSession, visibleResultsForWheel, wheelSessionReducer, wheelVendorLabel } from "./vendorWheel.js";
 
 const source = (id, type = "vendor", fields = {}) => ({ source_type: type, vendor_id: id, vendor_name: `Place ${id}`, ...fields });
 const merge = (state, ...sources) => wheelSessionReducer(state, { type: "sources", sources });
@@ -121,4 +121,54 @@ test("catalog details enrich sparse review entries without adding unrelated cand
   assert.deepEqual(details, { id: 8, name: "Real cafe", location: "Hall 8", category: "Cafe", rating: 0 });
   assert.equal(vendor.name, "Vendor 8");
   assert.equal(completeWheelVendor(vendor, []), vendor);
+});
+
+test("Discover uses only the visible ranked results, including places revealed by Show more", () => {
+  const results = Object.freeze(Array.from({ length: 28 }, (_, index) => Object.freeze({
+    id: 80 - index,
+    name: `Campus place ${80 - index}`,
+    location: "Selected area",
+    category: "Cafe",
+    average_rating: null,
+    average_google_rating: 4.1,
+    discovery_distance_m: index * 100,
+  })));
+  const firstPage = visibleResultsForWheel(results, 12);
+  const expanded = visibleResultsForWheel(results, 24);
+  assert.deepEqual(firstPage.map((vendor) => vendor.id), results.slice(0, 12).map((vendor) => vendor.id));
+  assert.deepEqual(expanded.map((vendor) => vendor.id), results.slice(0, 24).map((vendor) => vendor.id));
+  assert.equal(visibleResultsForWheel(results, 36).length, 28);
+  assert.deepEqual(visibleResultsForWheel(results, 0), []);
+  assert.deepEqual(visibleResultsForWheel([], 12), []);
+  assert.equal(results.length, 28);
+});
+
+test("Discover maps live vendor details and prefers a valid community rating, including zero", () => {
+  const results = [
+    { id: 71, name: "New local kitchen", location: " Hall 1 ", category: " Restaurant ", average_rating: 0, average_google_rating: 4.9 },
+    { id: 72, name: "Another kitchen", location: null, category: "", average_rating: null, average_google_rating: 4.3 },
+    { id: 73, name: "Unrated kitchen", average_rating: null, average_google_rating: null },
+  ];
+  assert.deepEqual(visibleResultsForWheel(results, 12), [
+    { id: 71, name: "New local kitchen", location: "Hall 1", category: "Restaurant", rating: 0 },
+    { id: 72, name: "Another kitchen", location: null, category: null, rating: 4.3 },
+    { id: 73, name: "Unrated kitchen", location: null, category: null, rating: null },
+  ]);
+});
+
+test("Discover removals stay local to an opening and reopening resets from the current visible results", () => {
+  const results = [31, 27, 42, 99].map((id) => Object.freeze({ id, name: `Independent place ${id}` }));
+  const before = createWheelSession(visibleResultsForWheel(results, 3));
+  const removed = wheelSessionReducer(before, { type: "remove", vendorId: 27 });
+  assert.deepEqual(ids(removed), [31, 42]);
+  assert.deepEqual(ids(before), [31, 27, 42]);
+  assert.deepEqual(results.map((vendor) => vendor.id), [31, 27, 42, 99]);
+  assert.deepEqual(removed.excludedIds, [27]);
+
+  const reopened = createWheelSession(visibleResultsForWheel(results, 4));
+  assert.deepEqual(ids(reopened), [31, 27, 42, 99]);
+  assert.deepEqual(reopened.excludedIds, []);
+  const changedPreferences = createWheelSession(visibleResultsForWheel([results[3], results[1]], 12));
+  assert.deepEqual(ids(changedPreferences), [99, 27]);
+  assert.deepEqual(changedPreferences.excludedIds, []);
 });

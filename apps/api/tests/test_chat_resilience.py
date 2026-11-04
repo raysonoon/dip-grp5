@@ -2,11 +2,13 @@ import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
 import pytest
 from google.genai import errors
 from pydantic import SecretStr
 
 from app.api import dependencies
+from app.api.routes.chat import _error_code
 from app.core.config import settings
 from app.main import app
 from app.models import Vendor
@@ -264,3 +266,18 @@ def test_interactive_embedder_reuses_the_bounded_client():
             dependencies.get_embedder.__wrapped__()
     assert embedder.call_args.kwargs["client"] is provider
     assert embedder.call_args.kwargs["max_retries"] == 1
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (TimeoutError("model stalled"), "chat_timeout"),
+        (httpx.ReadTimeout("stream stalled"), "chat_timeout"),
+        (errors.ServerError(408, {"error": {"message": "timeout"}}), "chat_timeout"),
+        (errors.ServerError(504, {"error": {"message": "gateway timeout"}}), "chat_timeout"),
+        (unavailable(), "chat_unavailable"),
+        (RuntimeError("retrieval failed"), "chat_unavailable"),
+    ],
+)
+def test_stream_error_code_distinguishes_timeouts(error, expected):
+    assert _error_code(error) == expected

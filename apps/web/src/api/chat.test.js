@@ -343,7 +343,9 @@ test("chat times out while waiting for headers and aborts the request", async (c
     signal = options.signal;
     return new Promise(() => {});
   });
-  await assert.rejects(streamChat("Hello", { idleTimeoutMs: 10 }), ApiTimeoutError);
+  await assert.rejects(streamChat("Hello", { idleTimeoutMs: 10 }), (error) => (
+    error instanceof ApiTimeoutError && error.kind === "idle"
+  ));
   assert.equal(signal.aborted, true);
 });
 
@@ -465,7 +467,11 @@ test("active streams reset idle timeout but cannot run beyond the total deadline
     idleTimeoutMs: 30,
     timeoutMs: 80,
     onDelta: () => { chunks += 1; },
-  }), (error) => error instanceof ApiTimeoutError && error.timeoutMs === 80);
+  }), (error) => (
+    error instanceof ApiTimeoutError
+    && error.timeoutMs === 80
+    && error.kind === "total"
+  ));
   assert.ok(chunks > 1);
   assert.equal(cancelled, true);
 });
