@@ -124,6 +124,41 @@
   }
 }
 
+@keyframes foodie-talk {
+  from {
+    transform: translateY(0) rotate(-2deg);
+  }
+  to {
+    transform: translateY(-3px) rotate(2deg);
+  }
+}
+
+@keyframes foodie-hello {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) rotate(-8deg);
+  }
+  45% {
+    opacity: 1;
+    transform: rotate(8deg);
+  }
+  70% {
+    transform: rotate(-5deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes foodie-wave {
+  from {
+    transform: rotate(-14deg);
+  }
+  to {
+    transform: rotate(16deg);
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
