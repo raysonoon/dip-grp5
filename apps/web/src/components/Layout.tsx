@@ -76,7 +76,7 @@ export function FoodieChat() {
                 )}
               </div>
               <div>
-                <div className="text-sm font-bold text-white leading-tight">Foodie</div>
+                <div className="text-sm font-bold text-white leading-tight">Foodie <span aria-hidden="true" className="ml-1 text-[#dc9a27]">✦</span></div>
                 <div className="text-xs text-white/75 font-medium">Your campus makan buddy</div>
               </div>
             </div>
@@ -111,6 +111,7 @@ export function FoodieChat() {
                 className="relative mx-auto mb-1 flex h-24 w-24 items-center justify-center cursor-pointer"
               >
                 <img
+                  key={greetingCount}
                   src="/ntummy_mascot.svg"
                   alt=""
                   aria-hidden="true"
@@ -173,7 +174,7 @@ export function FoodieChat() {
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendMessage(chatInput)}
-                placeholder="Ask anything about campus food..."
+                placeholder="What are you craving today?"
                 className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40 transition-colors"
               />
               {isTyping ? (
