@@ -210,7 +210,7 @@ export function FoodieChat() {
         type="button"
         onClick={toggleChat}
         aria-label="Open Foodie chatbot"
-        className="group flex items-center gap-2.5 rounded-full border border-white/15 bg-primary px-4 py-2 text-primary-foreground shadow-lg cursor-pointer transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
+        className="group flex items-center gap-2.5 rounded-xl border border-white/15 bg-primary px-4 py-2 text-primary-foreground shadow-lg cursor-pointer transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
       >
         {chatOpen ? (
           <X className="h-5 w-5" />
