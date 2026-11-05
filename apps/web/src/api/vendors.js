@@ -89,6 +89,8 @@ export function parseVendor(value) {
     cuisine: nullableString(vendor.cuisine ?? null, "vendor cuisine"),
     dishes: nullableString(vendor.dishes ?? null, "vendor dishes"),
     opening_hours: nullableString(vendor.opening_hours, "vendor opening_hours"),
+    website_url: nullableString(vendor.website_url ?? null, "vendor website_url"),
+    phone_number: nullableString(vendor.phone_number ?? null, "vendor phone_number"),
     price_range: nullableString(vendor.price_range, "vendor price_range"),
     halal: nullableBoolean(vendor.halal, "vendor halal"),
     vegetarian: nullableBoolean(vendor.vegetarian, "vendor vegetarian"),
