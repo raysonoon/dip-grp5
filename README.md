@@ -154,8 +154,6 @@ The repeatable seed command creates or confirms these local placeholders:
 | --- | --- | --- |
 | Administrator | `Administrator` / `admin@local.invalid` | password `admin`, role `admin` |
 | Normal user | `Test User` / `test-user@local.invalid` | password `test`, role `user` |
-| Food stall | `Demo Vendor 1` | `Demo Canteen` |
-| Food stall | `Demo Vendor 2` | `Demo Canteen` |
 
 Passwords are stored as Argon2 hashes. Running the seed command again does not
 create duplicate placeholders. Its output shows the generated IDs.

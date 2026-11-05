@@ -319,9 +319,6 @@ by default, so re-runs embed ~0 documents and consume ~0 requests; pass
 preserves progress made so far. Reddit and CSV/JSON adapter ingestion are
 future work.
 
-The repeatable seed (`python -m app.db.seed`) now also seeds a few demo app
-reviews (`seed_demo_reviews`) so `internal_review` chunks have content to embed.
-
 > `POST /chat` and `python -m app.db.reindex` both require `GEMINI_API_KEY`
 > to be set; without it they raise a clear error. `knowledge_chunks` stays
 > empty until reindex is run after seeding.

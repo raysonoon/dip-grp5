@@ -147,7 +147,7 @@ Open <http://127.0.0.1:8000/docs>.
 - Seed result: 59 Chatbot questions
 - PostgreSQL port: `5433`
 
-The migration keeps existing users, reviews, vendors, and images. The seed adds or confirms the development accounts, demo vendors, and Chatbot questions without creating duplicates.
+The migration keeps existing users, reviews, vendors, and images. The seed adds or confirms the development accounts and Chatbot questions without creating duplicates.
 
 ## Important
 
