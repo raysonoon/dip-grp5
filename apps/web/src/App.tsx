@@ -460,13 +460,13 @@ function HomePage() {
                             {vendor.location ?? "NTU"}
                           </span>
                         </div>
-                        <div className="type-caption mt-3 flex items-center justify-between text-ink-muted">
+                        <div className="type-caption my-3 flex items-center justify-between text-ink-muted">
                           <StarRow rating={rating ?? 0} />
                           <span>{vendor.review_count} reviews</span>
                         </div>
                       </div>
 
-                      <div className="mt-auto border-t border-line-warm pt-3.5">
+                      <div className="mt-auto border-t border-line-warm pt-3">
                         {vendor.topReview && (
                           <p className="type-caption mb-3 line-clamp-2 rounded-xl bg-cream p-2 italic leading-relaxed text-ink-muted">
                             &ldquo;{vendor.topReview}&rdquo;
