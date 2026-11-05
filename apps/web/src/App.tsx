@@ -110,8 +110,8 @@ function ReviewCard({
       </p>
 
       <div className="type-caption flex items-center justify-between border-t border-line-warm pt-4 text-ink-muted">
-        <div className="flex items-center gap-1.5 font-medium">
-          <MapPin className="h-3.5 w-3.5 text-primary/70" />
+        <div className="flex items-center gap-1 font-medium">
+          <MapPin className="h-3.5 w-3.5 mb-1 text-primary/70" />
           {review.vendor.location || "NTU"}
         </div>
       </div>
@@ -287,8 +287,8 @@ function HomePage() {
                   to="/discover"
                   className="btn btn-primary btn-lg btn-pill w-full"
                 >
-                  Discover now
-                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                  Discover Now
+                  <ChevronRight className="mt-1 h-4 w-4" aria-hidden="true" />
                 </Link>
               </div>
 
@@ -364,7 +364,7 @@ function HomePage() {
                             </span>
                           </div>
                           <div className="type-caption mt-1 flex items-center gap-1 text-ink-muted">
-                            <MapPin className="h-3 w-3 shrink-0 text-primary/70" />
+                            <MapPin className="h-3 w-3 mb-0.5 shrink-0 text-primary/70" />
                             <span className="truncate">
                               {vendor.location ?? "NTU Campus"}
                             </span>
@@ -454,8 +454,8 @@ function HomePage() {
                         <h3 className="text-base font-bold leading-snug text-ink transition-colors group-hover:text-primary">
                           {vendor.name}
                         </h3>
-                        <div className="type-caption mt-1.5 flex items-center gap-1.5 text-ink-muted">
-                          <MapPin className="h-3.5 w-3.5 shrink-0 text-primary/70" />
+                        <div className="type-caption mt-1.5 flex items-center gap-1 text-ink-muted">
+                          <MapPin className="h-3.5 w-3.5 mb-1 shrink-0 text-primary/70" />
                           <span className="truncate">
                             {vendor.location ?? "NTU"}
                           </span>
@@ -468,7 +468,7 @@ function HomePage() {
 
                       <div className="mt-auto border-t border-line-warm pt-3">
                         {vendor.topReview && (
-                          <p className="type-caption mb-3 line-clamp-2 rounded-xl bg-cream p-2 italic leading-relaxed text-ink-muted">
+                          <p className="type-caption mb-3 line-clamp-2 rounded-xl bg-cream p-2 italic leading-relaxed text-ink-muted truncate">
                             &ldquo;{vendor.topReview}&rdquo;
                           </p>
                         )}
