@@ -42,6 +42,7 @@ from app.schemas import (
     VendorListRead,
     VendorNearbyItem,
     VendorNearbyRead,
+    VendorTrendingRead,
 )
 from app.services.vendor_search import build_vendor_search_plan
 from app.services.vendor_recommender import VendorRecommender
@@ -105,6 +106,35 @@ def _vendor_list_item(vendor: Vendor, review_count: int) -> VendorListItem:
         review_count=review_count,
         images=[_vendor_image_read(image) for image in vendor.images],
         map_coordinates=_vendor_coordinates(vendor),
+    )
+
+
+TRENDING_WEIGHTS = {"recency": 0.4, "reviews": 0.35, "rating": 0.25}
+
+
+def _trending_score(
+    vendor: Vendor,
+    review_count: int,
+    *,
+    min_created_at: float,
+    max_created_at: float,
+    max_review_count: int,
+) -> float:
+    """Same weighted score as the frontend's rankTrendingVendors helper."""
+    created_at = vendor.created_at.timestamp()
+    recency = (created_at - min_created_at) / max(max_created_at - min_created_at, 1)
+
+    reviews = review_count / max_review_count if max_review_count > 0 else 0
+
+    rating = vendor.average_rating
+    if rating is None:
+        rating = vendor.average_google_rating
+    rating_score = min(1, max(0, float(rating or 0)) / 5)
+
+    return (
+        TRENDING_WEIGHTS["recency"] * recency
+        + TRENDING_WEIGHTS["reviews"] * reviews
+        + TRENDING_WEIGHTS["rating"] * rating_score
     )
 
 
@@ -507,6 +537,67 @@ def get_vendor_filters(
         "categories": categories,
         "cuisines": cuisines,
     }
+
+
+@router.get("/trending", response_model=VendorTrendingRead)
+def list_trending_vendors(
+    session: DbSession,
+    limit: Annotated[int, Query(ge=1, le=20)] = 3,
+) -> VendorTrendingRead:
+    """Return the highest-scoring vendors for the header/home trending slots.
+
+    Ranking runs server-side so the browser only downloads the handful of
+    vendors it actually renders instead of the whole catalog.
+    """
+    rows = session.execute(
+        select(Vendor, func.count(Review.id).label("review_count"))
+        .outerjoin(Review, Review.vendor_id == Vendor.id)
+        .group_by(Vendor.id)
+        .order_by(Vendor.id.asc())
+    ).all()
+
+    if not rows:
+        return VendorTrendingRead(items=[])
+
+    created_times = [vendor.created_at.timestamp() for vendor, _ in rows]
+    min_created_at = min(created_times)
+    max_created_at = max(created_times)
+    max_review_count = max(int(review_count or 0) for _, review_count in rows)
+
+    ranked = sorted(
+        rows,
+        key=lambda row: (
+            -_trending_score(
+                row[0],
+                int(row[1] or 0),
+                min_created_at=min_created_at,
+                max_created_at=max_created_at,
+                max_review_count=max_review_count,
+            ),
+            row[0].id,
+        ),
+    )[:limit]
+
+    if not ranked:
+        return VendorTrendingRead(items=[])
+
+    # Load images only for the few vendors being returned, not the whole catalog.
+    top_ids = [vendor.id for vendor, _ in ranked]
+    top_vendors = {
+        vendor.id: vendor
+        for vendor in session.scalars(
+            select(Vendor)
+            .where(Vendor.id.in_(top_ids))
+            .options(selectinload(Vendor.images))
+        ).all()
+    }
+
+    return VendorTrendingRead(
+        items=[
+            _vendor_list_item(top_vendors[vendor.id], int(review_count or 0))
+            for vendor, review_count in ranked
+        ]
+    )
 
 
 @router.get(

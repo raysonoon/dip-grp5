@@ -5,7 +5,7 @@ import Footer from "./components/Footer";
 import Header from "./components/Header";
 import { apiUrl } from "./api/client";
 import { fetchReviews, fetchVendorReviews } from "./api/reviews.js";
-import { fetchVendors } from "./api/vendors";
+import { fetchTrendingVendors, fetchVendorPage } from "./api/vendors";
 import SignInPage from "./pages/SignInPage";
 import FoodPage from "./pages/FoodPage";
 import GuestDiscoverPage from "./pages/GuestDiscoverPage";
@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 import StarRow from "./components/StarRow";
 import { cn } from "./lib/cn";
-import { rankTrendingVendors } from "./lib/trendingVendors";
 import { useDocumentTitle } from "./hooks/useDocumentTitle";
 
 type Review = {
@@ -60,7 +59,10 @@ type TrendingVendor = {
   review_count: number;
   created_at: string;
   topReview: string | null;
+  recommended?: boolean;
 };
+
+type PreferenceStatus = "pending" | "completed" | "skipped" | null;
 
 function ReviewCard({
   review,
@@ -119,9 +121,10 @@ function ReviewCard({
   );
 }
 
-function HomePage() {
+function HomePage({ preferenceStatus }: { preferenceStatus: PreferenceStatus }) {
   useDocumentTitle("Home");
   const { openChat } = useChat();
+  const { user, loading: authLoading } = useAuth();
   const [reviewsPaused, setReviewsPaused] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
@@ -174,17 +177,15 @@ function HomePage() {
     const controller = new AbortController();
     setTrendingLoading(true);
 
-    fetchVendors("", controller.signal)
+    fetchTrendingVendors({ limit: 3, signal: controller.signal })
       .then(async (vendors: TrendingVendor[]) => {
         if (vendors.length === 0) {
           setTrendingVendors([]);
           return;
         }
 
-        const ranked = rankTrendingVendors(vendors, 3);
-
         const withTopReviews = await Promise.all(
-          ranked.map(async (vendor) => {
+          vendors.map(async (vendor) => {
             try {
               const page = await fetchVendorReviews(vendor.id, { limit: 1 });
               return { ...vendor, topReview: page.items[0]?.comment ?? null };
@@ -205,6 +206,65 @@ function HomePage() {
 
     return () => controller.abort();
   }, []);
+
+  const [featuredVendors, setFeaturedVendors] = useState<TrendingVendor[]>([]);
+  const [featuredLoading, setFeaturedLoading] = useState(true);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadFeaturedVendors() {
+      setFeaturedLoading(true);
+
+      if (!authLoading && user && preferenceStatus === "completed") {
+        try {
+          const page = await fetchVendorPage({
+            sort: "recommended",
+            limit: 3,
+            timeoutMs: 30_000,
+            signal: controller.signal,
+          });
+
+          if (controller.signal.aborted) return;
+
+          const recommended = (page.items ?? [])
+            .filter((vendor: TrendingVendor) => vendor.recommended)
+            .map((vendor: TrendingVendor) => ({
+              ...vendor,
+              topReview: null,
+            }));
+
+          if (recommended.length > 0) {
+            setFeaturedVendors(recommended);
+            setFeaturedLoading(false);
+            return;
+          }
+        } catch (error) {
+          if (controller.signal.aborted) return;
+
+          console.warn(
+            "Personalized recommendations unavailable, using trending stalls.",
+            error,
+          );
+        }
+      }
+
+      if (!controller.signal.aborted) {
+        setFeaturedVendors([]);
+        setFeaturedLoading(false);
+      }
+    }
+
+    void loadFeaturedVendors();
+
+    return () => controller.abort();
+  }, [authLoading, user, preferenceStatus]);
+
+  const heroVendors = (
+    featuredVendors.length > 0 ? featuredVendors : trendingVendors
+  ).slice(0, 2);
+  const heroLoading =
+    featuredLoading || (featuredVendors.length === 0 && trendingLoading);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-cream text-ink">
@@ -310,18 +370,18 @@ function HomePage() {
 
             {/* Right: two featured stalls */}
             <div className="lg:col-span-6 lg:col-start-7 lg:row-start-1">
-              {trendingLoading ? (
+              {heroLoading ? (
                 <div className="flex flex-col gap-4 sm:flex-row sm:justify-center sm:gap-4">
                   <div className="h-44 w-full animate-pulse rounded-3xl border border-line-warm bg-surface-warm/60 sm:h-80 sm:w-1/2" />
                   <div className="h-44 w-full animate-pulse rounded-3xl border border-line-warm bg-surface-warm/60 sm:h-80 sm:w-1/2" />
                 </div>
-              ) : trendingVendors.length === 0 ? (
+              ) : heroVendors.length === 0 ? (
                 <div className="type-body rounded-3xl border border-line-warm bg-surface-warm p-8 text-center text-ink-muted">
                   No stalls available right now.
                 </div>
               ) : (
                 <div className="flex flex-col gap-4 sm:flex-row sm:justify-center sm:gap-4">
-                  {trendingVendors.slice(0, 2).map((vendor, index) => {
+                  {heroVendors.map((vendor, index) => {
                     const rating =
                       vendor.average_rating ?? vendor.average_google_rating;
 
@@ -617,7 +677,7 @@ function HomePage() {
                 className="group shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
               >
                 <img
-                  src="/ntummy_mascot_uncertain.png"
+                  src="/ntummy_mascot_uncertain.webp"
                   alt=""
                   aria-hidden="true"
                   className="h-24 w-24 animate-[mascot-bounce_1.6s_ease-in-out_infinite] object-contain drop-shadow-md transition-transform duration-300 group-hover:scale-110 group-active:scale-95 sm:h-32 sm:w-32"
@@ -654,9 +714,8 @@ function App() {
   
   const userId = session?.user?.id ?? null;
 
-  const [preferenceStatus, setPreferenceStatus] = useState<
-    "pending" | "completed" | "skipped" | null
-  >(null);
+  const [preferenceStatus, setPreferenceStatus] =
+    useState<PreferenceStatus>(null);
 
   const [preferenceLoadError, setPreferenceLoadError] = useState(false);
   const [preferenceRetry, setPreferenceRetry] = useState(0);
@@ -711,7 +770,10 @@ function App() {
   return (
     <>
       <Routes>
-        <Route path="/" element={<HomePage />} />
+        <Route
+          path="/"
+          element={<HomePage preferenceStatus={preferenceStatus} />}
+        />
 
         <Route
           element={

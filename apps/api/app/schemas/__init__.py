@@ -20,6 +20,7 @@ from app.schemas.vendor import (
     VendorListRead,
     VendorNearbyItem,
     VendorNearbyRead,
+    VendorTrendingRead,
 )
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "VendorListRead",
     "VendorNearbyItem",
     "VendorNearbyRead",
+    "VendorTrendingRead",
 ]

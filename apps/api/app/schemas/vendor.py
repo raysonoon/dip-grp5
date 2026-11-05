@@ -92,6 +92,10 @@ class VendorListRead(BaseModel):
     offset: int
 
 
+class VendorTrendingRead(BaseModel):
+    items: list[VendorListItem]
+
+
 class VendorAverageRatingRead(BaseModel):
     vendor_id: int
     average_rating: float | None

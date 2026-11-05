@@ -522,12 +522,17 @@ export default function FoodPage() {
             title="Ask Foodie"
             className="group shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
           >
-            <img
-              src={`/ntummy_mascot_${mascotExpression}.png`}
-              alt=""
-              aria-hidden="true"
-              className="h-24 w-24 object-contain animate-[mascot-float_2.4s_ease-in-out_infinite] transition-transform group-hover:scale-105 group-active:scale-95"
-            />
+            {/* Float lives on the wrapper so the hover/active scale transition
+                on the image is not overridden by the keyframes. */}
+            <div className="relative h-24 w-24 animate-[mascot-float_2.4s_ease-in-out_infinite]">
+              <img
+                src={`/ntummy_mascot_${mascotExpression}.webp`}
+                alt=""
+                aria-hidden="true"
+                decoding="async"
+                className="h-full w-full object-contain transition-transform duration-200 ease-out group-hover:scale-105 group-active:scale-95"
+              />
+            </div>
           </button>
           <div className="text-center">
             <h1 className="text-foreground text-3xl font-bold font-display">
