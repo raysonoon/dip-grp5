@@ -89,6 +89,8 @@ export function parseVendor(value) {
     cuisine: nullableString(vendor.cuisine ?? null, "vendor cuisine"),
     dishes: nullableString(vendor.dishes ?? null, "vendor dishes"),
     opening_hours: nullableString(vendor.opening_hours, "vendor opening_hours"),
+    website_url: nullableString(vendor.website_url ?? null, "vendor website_url"),
+    phone_number: nullableString(vendor.phone_number ?? null, "vendor phone_number"),
     price_range: nullableString(vendor.price_range, "vendor price_range"),
     halal: nullableBoolean(vendor.halal, "vendor halal"),
     vegetarian: nullableBoolean(vendor.vegetarian, "vendor vegetarian"),
@@ -212,6 +214,32 @@ export async function fetchVendorFilters(signal) {
   };
 }
 
+/**
+ * Top vendors for the header/home trending slots, ranked by the backend so the
+ * client only downloads the few it renders.
+ *
+ * @param {{ limit?: number, signal?: AbortSignal, timeoutMs?: number,
+ *   auth?: boolean|"optional" }} options
+ */
+export async function fetchTrendingVendors({
+  limit = 3,
+  signal,
+  timeoutMs,
+  auth = "optional",
+} = {}) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const payload = await apiClient.get(
+    `/vendors/trending?${params.toString()}`,
+    { auth, signal, timeoutMs },
+  );
+
+  const page = objectValue(payload, "trending vendor list");
+  if (!Array.isArray(page.items)) {
+    throw new Error("Invalid items in trending vendor API response");
+  }
+  return page.items.map(parseVendor);
+}
+
 // Vendors within maxDistanceM of a point, each with distance_m computed by PostGIS.
 export async function fetchNearbyVendors({
   lat,
@@ -240,7 +268,41 @@ export async function fetchNearbyVendors({
   return page.items.map(parseVendor);
 }
 
-export async function fetchVendors(query = "", signal, { auth = "optional" } = {}) {
+const VENDOR_CATALOG_TTL_MS = 5 * 60 * 1000;
+const vendorCatalogCache = new Map();
+
+function abortReason(signal) {
+  if (signal?.reason instanceof Error) return signal.reason;
+  const error = new Error("The operation was aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+// Let one caller abort without cancelling a catalog load shared with others.
+function waitForSharedPromise(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+
+  return new Promise((resolve, reject) => {
+    function onAbort() {
+      reject(abortReason(signal));
+    }
+
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function loadVendorCatalog(query, auth) {
   const vendors = [];
   const limit = 100;
   let offset = 0;
@@ -250,7 +312,6 @@ export async function fetchVendors(query = "", signal, { auth = "optional" } = {
       q: query,
       limit,
       offset,
-      signal,
       auth,
     });
 
@@ -261,6 +322,35 @@ export async function fetchVendors(query = "", signal, { auth = "optional" } = {
       return vendors;
     }
   }
+}
+
+/** Clear the shared catalog cache (tests and manual invalidation). */
+export function clearVendorCatalogCache() {
+  vendorCatalogCache.clear();
+}
+
+export async function fetchVendors(query = "", signal, { auth = "optional" } = {}) {
+  const cacheKey = `${auth}\u0000${query.trim()}`;
+  const cached = vendorCatalogCache.get(cacheKey);
+
+  if (cached && Date.now() - cached.createdAt < VENDOR_CATALOG_TTL_MS) {
+    return waitForSharedPromise(cached.promise, signal);
+  }
+
+  const entry = {
+    createdAt: Date.now(),
+    promise: loadVendorCatalog(query, auth),
+  };
+  vendorCatalogCache.set(cacheKey, entry);
+
+  // Do not cache failed loads.
+  entry.promise.catch(() => {
+    if (vendorCatalogCache.get(cacheKey) === entry) {
+      vendorCatalogCache.delete(cacheKey);
+    }
+  });
+
+  return waitForSharedPromise(entry.promise, signal);
 }
 
 export async function fetchVendorById(vendorId, signal) {

@@ -19,6 +19,7 @@ import { fetchVendorById } from "../api/vendors";
 import VendorFavouriteButton from "../components/VendorFavouriteButton";
 import VendorLocationMap from "../components/VendorLocationMap";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { Clock, Globe, Phone, Utensils } from "lucide-react";
 
 const MAX_IMAGES = 5;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -579,6 +580,13 @@ function VendorDetails() {
   const location = vendor.location;
   const displayedRating = vendor.average_rating ?? vendor.average_google_rating;
 
+  const dishList = vendor.dishes
+    ? vendor.dishes
+        .split(",")
+        .map((dish) => dish.trim())
+        .filter(Boolean)
+    : [];
+
   const hasPrevReviewsPage = reviewOffset > 0;
   const hasNextReviewsPage = reviewOffset + REVIEWS_PAGE_LIMIT < reviewTotal;
   const totalReviewPages = Math.max(1, Math.ceil(reviewTotal / REVIEWS_PAGE_LIMIT));
@@ -823,12 +831,67 @@ function VendorDetails() {
           {[location, vendor.category, vendor.cuisine].filter(Boolean).join(" | ")}
           {displayedRating != null ? ` | ⭐ ${displayedRating}` : ""}
         </p>
+
+        {/* ── VENDOR CONTACT & OPENING HOURS INFO ── */}
+        <div className="flex flex-wrap gap-3 mt-3 text-xs sm:text-sm text-muted-foreground">
+          {vendor.opening_hours && (
+            <div className="flex items-center gap-1.5 bg-card px-3 py-1.5 rounded-lg border border-border">
+              <Clock className="w-4 h-4 text-primary shrink-0" />
+              <span>{vendor.opening_hours}</span>
+            </div>
+          )}
+
+          {vendor.website_url && (
+            <a
+              href={vendor.website_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 bg-card px-3 py-1.5 rounded-lg border border-border text-primary font-medium hover:underline"
+            >
+              <Globe className="w-4 h-4 shrink-0" />
+              <span>Website</span>
+            </a>
+          )}
+
+          {vendor.phone_number && (
+            <a
+              href={`tel:${vendor.phone_number}`}
+              className="flex items-center gap-1.5 bg-card px-3 py-1.5 rounded-lg border border-border text-primary font-medium hover:underline"
+            >
+              <Phone className="w-4 h-4 shrink-0" />
+              <span>{vendor.phone_number}</span>
+            </a>
+          )}
+        </div>
+
+        <div className="mt-3">
+          
+        </div>
         <VendorFavouriteButton key={`${user?.id ?? "guest"}:${numericVendorId}`} vendorId={numericVendorId} />
       </div>
       <VendorLocationMap vendor={vendor} />
+
+      {/* --MENU SECTION -- */}
       <section className="mb-8 bg-card border border-border p-5 rounded-xl">
-        <h2 className="text-lg font-bold text-foreground mb-3">Menu</h2>
-        <p className="text-muted-foreground">Menu information is not available yet.</p>
+        <div className="flex items-center gap-2 mb-3">
+          <Utensils className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-bold text-foreground">Menu & Popular Dishes</h2>
+        </div>
+
+        {dishList.length > 0 ? (
+          <div className="flex flex-wrap gap-2 pt-1">
+            {dishList.map((dish, index) => (
+              <span
+                key={index}
+                className="px-3 py-1 rounded-full text-xs font-semibold bg-muted text-foreground border border-border"
+              >
+                {dish}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-sm italic">Menu information is not available yet.</p>
+        )}
       </section>
 
       {isMyReviewLoading && !myReview ? (

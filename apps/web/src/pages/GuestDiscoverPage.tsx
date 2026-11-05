@@ -164,7 +164,7 @@ export default function GuestDiscoverPage() {
             className="group shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
           >
             <img
-              src="/ntummy_mascot_yay.png"
+              src="/ntummy_mascot_yay.webp"
               alt=""
               aria-hidden="true"
               className="h-24 w-24 object-contain animate-[mascot-float_2.4s_ease-in-out_infinite] transition-transform group-hover:scale-105 group-active:scale-95"

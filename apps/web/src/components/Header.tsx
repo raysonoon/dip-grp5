@@ -2,8 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ChevronDown, Loader2, LogOut, Menu, X, Search, Store, UserRound } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { fetchVendorPage, fetchVendors, type parseVendor } from "../api/vendors";
-import { rankTrendingVendors } from "../lib/trendingVendors";
+import { fetchVendorPage, fetchTrendingVendors, type parseVendor } from "../api/vendors";
 import { getPreferencesVersion } from "../api/preferences.js";
 
 type Vendor = ReturnType<typeof parseVendor>;
@@ -170,8 +169,12 @@ export default function Header({ fixed = false }: { fixed?: boolean }) {
   // Logged-out users, users without recommendations,
   // or recommendation failures fall back to trending.
     try {
-      const vendors = await fetchVendors("", controller.signal, { auth: false });
-      setRecommendedStalls(rankTrendingVendors(vendors, 3));
+      const vendors = await fetchTrendingVendors({
+        limit: 3,
+        signal: controller.signal,
+        auth: false,
+      });
+      setRecommendedStalls(vendors);
       setStallsLoading(false);
     } catch (error) {
       if (!controller.signal.aborted) {

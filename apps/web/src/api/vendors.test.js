@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
 
-import { fetchVendorById, fetchVendorPage, fetchVendors } from "./vendors.js";
+import {
+  clearVendorCatalogCache,
+  fetchTrendingVendors,
+  fetchVendorById,
+  fetchVendorPage,
+  fetchVendors,
+} from "./vendors.js";
 import { apiClient } from "./client.js";
 import { supabase } from "../lib/supabase.js";
+
+beforeEach(() => {
+  clearVendorCatalogCache();
+});
 
 const VENDOR = {
   id: 12,
@@ -229,4 +239,67 @@ test("fetchVendorPage omits price and dietary filters when unused", async (conte
   assert.deepEqual(requestedPaths, [
     "/vendors?limit=12&offset=0&sort=recommended",
   ]);
+});
+
+test("fetchTrendingVendors requests only the requested number of vendors", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const requestedPaths = [];
+  globalThis.fetch = async (path) => {
+    requestedPaths.push(path);
+    return jsonResponse({ items: [VENDOR] });
+  };
+
+  const vendors = await fetchTrendingVendors({ limit: 3, auth: false });
+
+  assert.deepEqual(requestedPaths, ["/vendors/trending?limit=3"]);
+  assert.equal(vendors.length, 1);
+  assert.equal(vendors[0].id, 12);
+});
+
+test("fetchVendors shares one in-flight catalog load across callers", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return jsonResponse({ items: [VENDOR], total: 1, limit: 100, offset: 0 });
+  };
+
+  const [first, second] = await Promise.all([
+    fetchVendors("", undefined, { auth: false }),
+    fetchVendors("", undefined, { auth: false }),
+  ]);
+
+  assert.equal(calls, 1);
+  assert.deepEqual(first.map((vendor) => vendor.id), [12]);
+  assert.deepEqual(second.map((vendor) => vendor.id), [12]);
+});
+
+test("aborting one caller does not cancel the shared catalog load", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  let resolveFetch;
+  globalThis.fetch = () =>
+    new Promise((resolve) => {
+      resolveFetch = () =>
+        resolve(jsonResponse({ items: [VENDOR], total: 1, limit: 100, offset: 0 }));
+    });
+
+  const controller = new AbortController();
+  const aborted = fetchVendors("", controller.signal, { auth: false });
+  const shared = fetchVendors("", undefined, { auth: false });
+
+  controller.abort();
+  resolveFetch();
+
+  await assert.rejects(aborted, (error) => error.name === "AbortError");
+  await assert.doesNotReject(shared);
+  assert.deepEqual((await shared).map((vendor) => vendor.id), [12]);
 });

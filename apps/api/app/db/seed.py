@@ -26,27 +26,6 @@ from app.models import (
 from app.models.knowledge import KnowledgeChunk
 
 
-DEMO_VENDORS = (
-    {
-        "name": "Demo Vendor 1",
-        "location": "Demo Canteen",
-        "category": "Demo",
-        "opening_hours": "09:00 - 21:00",
-    },
-    {
-        "name": "Demo Vendor 2",
-        "location": "Demo Canteen",
-        "category": "Demo",
-        "opening_hours": "10:00 - 22:00",
-    },
-)
-
-# Demo vendor name -> (lat, lng).
-DEMO_VENDOR_COORDINATES: dict[str, tuple[float, float]] = {
-    "Demo Vendor 1": (1.3483, 103.6831),
-    "Demo Vendor 2": (1.3483, 103.6831),
-}
-
 NTU_VENDOR_CSV = (
     Path(__file__).resolve().parents[4]
     / "data"
@@ -588,32 +567,6 @@ def seed_development_user(session: Session) -> tuple[User, bool]:
     )
 
 
-def seed_demo_vendors(
-    session: Session,
-) -> list[tuple[Vendor, bool]]:
-    results: list[tuple[Vendor, bool]] = []
-
-    for vendor_data in DEMO_VENDORS:
-        vendor = session.scalar(
-            select(Vendor)
-            .where(Vendor.name == vendor_data["name"])
-            .limit(1)
-        )
-
-        if vendor is not None:
-            results.append((vendor, False))
-            continue
-
-        vendor = Vendor(**vendor_data)
-        session.add(vendor)
-        session.commit()
-        session.refresh(vendor)
-
-        results.append((vendor, True))
-
-    return results
-
-
 def seed_ntu_vendors(
     session: Session,
 ) -> list[tuple[Vendor, bool]]:
@@ -1090,84 +1043,6 @@ def seed_google_reviews(
     )
 
 
-# One review per vendor: reviews are unique per (user_id, vendor_id).
-DEMO_REVIEWS = (
-    (
-        "Demo Vendor 1",
-        3.5,
-        "Decent halal options but a bit pricey.",
-    ),
-    (
-        "Demo Vendor 2",
-        2.5,
-        "Food was average and the queue was long.",
-    ),
-)
-
-
-def seed_demo_reviews(
-    session: Session,
-) -> tuple[int, int]:
-    """Seed a few app reviews with comments so internal chunks have content."""
-    test_user = session.scalar(
-        select(User).where(
-            User.email_canonical
-            == settings.seed_test_email_address.strip().lower()
-        )
-    )
-
-    if test_user is None:
-        return 0, 0
-
-    vendors = {
-        vendor.name: vendor
-        for vendor in session.scalars(
-            select(Vendor).where(
-                Vendor.name.in_(
-                    [name for name, _, _ in DEMO_REVIEWS]
-                )
-            )
-        ).all()
-    }
-
-    created_count = 0
-    skipped_count = 0
-
-    for name, rating, comment in DEMO_REVIEWS:
-        vendor = vendors.get(name)
-
-        if vendor is None:
-            skipped_count += 1
-            continue
-
-        # Any existing review by the test user counts, whatever its comment.
-        existing = session.scalar(
-            select(Review).where(
-                Review.user_id == test_user.id,
-                Review.vendor_id == vendor.id,
-            )
-        )
-
-        if existing is not None:
-            skipped_count += 1
-            continue
-
-        session.add(
-            Review(
-                user_id=test_user.id,
-                vendor_id=vendor.id,
-                rating_half_steps=int(rating * 2),
-                comment=comment,
-            )
-        )
-
-        created_count += 1
-
-    session.commit()
-
-    return created_count, skipped_count
-
-
 def seed_chatbot_questions(
     session: Session,
 ) -> tuple[int, int]:
@@ -1391,37 +1266,6 @@ def _make_map_coordinates(
     )
 
 
-def seed_demo_vendor_coordinates(session: Session) -> int:
-    """Backfill ``map_coordinates`` for demo vendors that lack them."""
-    if session.get_bind().dialect.name != "postgresql":
-        return 0
-
-    updated = 0
-
-    for name, (lat, lng) in DEMO_VENDOR_COORDINATES.items():
-        vendor = session.scalar(
-            select(Vendor).where(Vendor.name == name)
-        )
-
-        if vendor is None:
-            continue
-
-        map_value = _make_map_coordinates(
-            session,
-            lat,
-            lng,
-        )
-
-        if _set_map_coordinates_if_changed(
-            session,
-            vendor,
-            map_value,
-        ):
-            updated += 1
-
-    session.commit()
-    return updated
-
 def seed_vendor_dishes(session: Session) -> tuple[int, int]:
     """Populate Vendor.dishes from Google 'Recommended dishes' metadata
 
@@ -1572,9 +1416,7 @@ def main() -> None:
         admin, admin_created = seed_development_admin(session)
         test_user, test_user_created = seed_development_user(session)
 
-        vendors = seed_demo_vendors(session)
         ntu_vendors = seed_ntu_vendors(session)
-        demo_coords_backfilled = seed_demo_vendor_coordinates(session)
 
         vendor_images_created, vendor_images_skipped, vendors_missing_photos = (
             seed_vendor_images(session)
@@ -1597,10 +1439,6 @@ def main() -> None:
         dishes_updated_count, dishes_missing_count = seed_vendor_dishes(session)
 
         chatbot_created, chatbot_updated = seed_chatbot_questions(
-            session
-        )
-
-        reviews_created, reviews_skipped = seed_demo_reviews(
             session
         )
 
@@ -1629,13 +1467,6 @@ def main() -> None:
         f"{test_user.display_name} <{test_user.email_address}> "
         f"(id={test_user.id})"
     )
-
-    for vendor, created in vendors:
-        action = "Created" if created else "Confirmed"
-        print(
-            f"{action} demo vendor: "
-            f"{vendor.name} (id={vendor.id})"
-        )
 
     for vendor, created in ntu_vendors:
         action = "Created" if created else "Confirmed"
@@ -1675,12 +1506,6 @@ def main() -> None:
     )
 
     print(
-        "Demo app reviews: "
-        f"created={reviews_created}, "
-        f"skipped={reviews_skipped}"
-    )
-
-    print(
         "Reddit comments: "
         f"created={reddit_created}, "
         f"skipped={reddit_skipped}, "
@@ -1691,8 +1516,6 @@ def main() -> None:
         f"created={knowledge_created}, skipped={knowledge_skipped}, "
         f"unresolved_vendor={knowledge_unresolved}"
     )
-    print(f"Vendor map coordinates: demo_backfilled={demo_coords_backfilled}")
-
     print(
         "Vendor images: "
         f"created={vendor_images_created}, "

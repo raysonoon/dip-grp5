@@ -2,6 +2,7 @@
 
 :root {
   --font-size: 16px;
+  --word-spacing-body: 0.1em;
   --background: #F7F3EE;
   --foreground: #0D1B2A;
   --card: #FFFFFF;
@@ -39,6 +40,16 @@
   --sidebar-accent-foreground: #0D1B2A;
   --sidebar-border: rgba(13, 27, 42, 0.1);
   --sidebar-ring: #C41230;
+
+  /* Warm editorial surfaces used by the marketing/home pages */
+  --cream: #FAF6F0;
+  --cream-deep: #F5EFE6;
+  --surface-warm: #FFFDF9;
+  --ink: #4A3328;
+  --ink-soft: #6E5548;
+  --ink-muted: #7D6355;
+  --line-warm: #E8DCD0;
+  --brand-bright: #F0404B;
 }
 
 .dark {
@@ -76,11 +87,22 @@
   --sidebar-accent-foreground: #F7F3EE;
   --sidebar-border: rgba(247, 243, 238, 0.1);
   --sidebar-ring: #E01535;
+
+  /* Warm editorial surfaces — dark counterparts */
+  --cream: #0D1B2A;
+  --cream-deep: #122035;
+  --surface-warm: #122035;
+  --ink: #F7F3EE;
+  --ink-soft: #CFC7BD;
+  --ink-muted: #8A9BAC;
+  --line-warm: rgba(247, 243, 238, 0.12);
+  --brand-bright: #E01535;
 }
 
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Fraunces", serif;
+  --font-serif: "Fraunces", serif;
 }
 
 @keyframes mascot-float {
@@ -90,6 +112,51 @@
   }
   50% {
     transform: translateY(-2px);
+  }
+}
+
+@keyframes mascot-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes foodie-talk {
+  from {
+    transform: translateY(0) rotate(-2deg);
+  }
+  to {
+    transform: translateY(-3px) rotate(2deg);
+  }
+}
+
+@keyframes foodie-hello {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) rotate(-8deg);
+  }
+  45% {
+    opacity: 1;
+    transform: rotate(8deg);
+  }
+  70% {
+    transform: rotate(-5deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes foodie-wave {
+  from {
+    transform: rotate(-14deg);
+  }
+  to {
+    transform: rotate(16deg);
   }
 }
 
@@ -132,6 +199,14 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-cream: var(--cream);
+  --color-cream-deep: var(--cream-deep);
+  --color-surface-warm: var(--surface-warm);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-muted: var(--ink-muted);
+  --color-line-warm: var(--line-warm);
+  --color-brand-bright: var(--brand-bright);
 }
 
 @layer base {
@@ -141,6 +216,7 @@
 
   body {
     @apply bg-background text-foreground;
+    word-spacing: var(--word-spacing-body);
   }
 
   /**
@@ -192,5 +268,60 @@
     font-size: var(--text-base);
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
+  }
+}
+
+@layer components {
+  .type-display-xl {
+    font-family: var(--font-display);
+    font-size: clamp(2.5rem, 12vw, 4rem);
+    font-weight: 500;
+    line-height: 1.05;
+    letter-spacing: -0.035em;
+  }
+
+  .type-display {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 500;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  .type-eyebrow {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .type-body-lg {
+    font-family: var(--font-sans);
+    font-size: 1.0625rem;
+    font-weight: 400;
+    line-height: 1.7;
+  }
+
+  .type-body {
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    font-weight: 400;
+    line-height: 1.65;
+  }
+
+  .type-caption {
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  .type-accent {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 400;
+    color: var(--primary);
   }
 }
