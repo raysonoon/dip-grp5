@@ -128,9 +128,9 @@ export default function GuestDiscoverPage() {
   const selected = [...cuisines, ...categories, ...locations, ...priceBands, userLocation ? "Near me" : "", halal ? "Halal" : "", vegetarian ? "Vegetarian" : ""].filter(Boolean);
   const hasDistancePreference = userLocation != null || locations.length > 0;
   const hasRankingPreferences = cuisines.length > 0 || categories.length > 0 || hasDistancePreference;
-  const distanceReferences = [...(userLocation ? ["you"] : []), ...locations].join(" or ");
+  const distanceReferences = [...(userLocation ? ["you"] : []), ...locations].join(", ");
   const locationStatus = geoStatus === "granted"
-    ? locations.length ? "Distances use the closest of you or a selected area" : "Distances are measured from you"
+    ? locations.length ? "Show vendors closest to you or selected areas" : "Show vendors closest to you"
     : geoStatus === "denied" ? "Location access denied — pick a named area instead"
     : geoStatus === "unavailable" ? "Couldn't find your location — pick a named area instead"
     : "";
@@ -202,10 +202,11 @@ export default function GuestDiscoverPage() {
           <div className="mt-6 grid gap-6 sm:grid-cols-2">
             <div className="min-w-0">
               <MultiSelect id="discover-locations" label="Locations" placeholder="Anywhere on campus" icon={<MapPin size={17} className="text-primary" aria-hidden="true" />} options={options.locations} selected={locations} onChange={setLocations} nearMe={{ selected: userLocation != null, busy: geoStatus === "requesting", onToggle: () => { if (userLocation) clearLocation(); else requestLocation(); } }} />
+              {locationStatus && <p role="status" className="mt-3 text-xs leading-relaxed text-muted-foreground sm:hidden">{locationStatus}</p>}
             </div>
             <MultiSelect id="discover-price" label="Price range" placeholder="Any price" icon={<DollarSign size={17} className="text-primary" aria-hidden="true" />} options={PRICE_BAND_OPTIONS} selected={priceBands} onChange={setPriceBands} />
           </div>
-          {locationStatus && <p role="status" className="mt-3 text-xs leading-relaxed text-muted-foreground">{locationStatus}</p>}
+          {locationStatus && <p role="status" className="mt-3 hidden text-xs leading-relaxed text-muted-foreground sm:block">{locationStatus}</p>}
 
           <fieldset className="mt-7 border-t border-border pt-6">
             <legend className="float-left mb-3 flex w-full items-center gap-2 text-sm font-semibold"><Leaf size={17} className="text-primary" aria-hidden="true" /> Any dietary preferences?</legend>
@@ -237,7 +238,7 @@ export default function GuestDiscoverPage() {
                 {(selected.length ? selected : ["Open to anything"]).map((value) => <span key={value} className="rounded-full bg-primary/5 px-3 py-1 text-xs font-semibold text-primary">{value}</span>)}
               </div>
               <p role="status" className="mt-3 text-xs leading-relaxed text-muted-foreground">{recommendations.length} {recommendations.length === 1 ? "place" : "places"} to explore. {hasRankingPreferences ? "Food preferences and proximity first, with other places included" : "Best rated first"}</p>
-              {hasDistancePreference && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Nearest from {distanceReferences}. Approximate straight-line distances; named areas use their centres.</p>}
+              {hasDistancePreference && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Nearest from {distanceReferences}</p>}
             </div>
             <div className="grid shrink-0 grid-cols-2 gap-2">
               <button type="button" onClick={openWheel} disabled={recommendations.length === 0} aria-haspopup="dialog" className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:py-2.5"><RotateCw size={15} aria-hidden="true" /> Spin the wheel</button>
